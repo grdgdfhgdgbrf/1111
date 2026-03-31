@@ -46,6 +46,8 @@ SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 ADMIN_LOGS_FILE = os.path.join(DATA_DIR, "admin_logs.json")
 SUPPORT_FILE = os.path.join(DATA_DIR, "support.json")
 LOTTERY_FILE = os.path.join(DATA_DIR, "lottery.json")
+MINES_GAMES_FILE = os.path.join(DATA_DIR, "mines_games.json")
+CRASH_GAMES_FILE = os.path.join(DATA_DIR, "crash_games.json")
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -61,6 +63,8 @@ class GameStates(StatesGroup):
     playing_blackjack = State()
     playing_crash = State()
     playing_mines = State()
+    playing_mines_select = State()
+    playing_mines_open = State()
     playing_keno = State()
     playing_wheel = State()
     playing_hilo = State()
@@ -71,6 +75,14 @@ class CasinoStates(StatesGroup):
     waiting_roulette_choice = State()
     waiting_keno_numbers = State()
     waiting_hilo_choice = State()
+
+class MinesStates(StatesGroup):
+    waiting_mines_count = State()
+    playing_mines = State()
+
+class CrashStates(StatesGroup):
+    waiting_bet = State()
+    playing_crash = State()
 
 class AdminStates(StatesGroup):
     waiting_for_user_id = State()
@@ -142,6 +154,10 @@ async def init_data():
             "max_bet": 10000,
             "check_system_price": 100,
             "lottery_ticket_price": 50,
+            "crash_min_bet": 5,
+            "crash_max_bet": 5000,
+            "mines_min_bet": 10,
+            "mines_max_bet": 2000,
             "bot_id": BOT_ID
         }
         await save_json(SETTINGS_FILE, settings)
@@ -182,6 +198,8 @@ async def init_data():
     admin_logs = await load_json(ADMIN_LOGS_FILE, [])
     support = await load_json(SUPPORT_FILE, {"tickets": [], "messages": {}})
     lottery = await load_json(LOTTERY_FILE, {"active": None, "history": []})
+    mines_games = await load_json(MINES_GAMES_FILE, {})
+    crash_games = await load_json(CRASH_GAMES_FILE, {})
     
     return settings
 
@@ -304,450 +322,190 @@ async def check_achievements(user_id: int):
             except:
                 pass
 
-# Система чеков
-async def unlock_check_system(user_id: int) -> bool:
-    settings = await load_json(SETTINGS_FILE, {})
-    price = settings.get("check_system_price", 100)
+# Игра Crash
+async def start_crash_game(user_id: int, bet: int) -> Tuple[str, int]:
+    crash_games = await load_json(CRASH_GAMES_FILE, {})
+    game_id = f"{user_id}_{datetime.now().timestamp()}"
     
-    if await remove_stars(user_id, price, "Открытие системы чеков"):
-        await update_user(user_id, check_system_unlocked=True)
-        return True
-    return False
-
-async def create_check(user_id: int, amount: int) -> Tuple[bool, str, str]:
-    settings = await load_json(SETTINGS_FILE, {})
-    min_check = 100
-    max_check = 100000
-    
-    user = await get_user(user_id)
-    if not user.get("check_system_unlocked", False):
-        return False, f"Система чеков заблокирована! Откройте за {settings.get('check_system_price', 100)} ⭐", ""
-    
-    if amount < min_check:
-        return False, f"Минимальная сумма чека: {min_check} ⭐", ""
-    if amount > max_check:
-        return False, f"Максимальная сумма чека: {max_check} ⭐", ""
-    
-    if user["stars"] < amount:
-        return False, f"Недостаточно звезд! У вас {user['stars']} ⭐", ""
-    
-    await remove_stars(user_id, amount, f"Создание чека")
-    
-    checks = await load_json(CHECKS_FILE, {"checks": [], "used_checks": []})
-    code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(12))
-    
-    check = {
-        "code": code,
-        "amount": amount,
-        "creator": user_id,
-        "created_at": datetime.now().isoformat(),
-        "used": False,
-        "used_by": None,
-        "type": "user"
-    }
-    
-    checks["checks"].append(check)
-    await save_json(CHECKS_FILE, checks)
-    
-    return True, f"Чек создан!", code
-
-async def use_check(user_id: int, code: str) -> Tuple[bool, str, int]:
-    checks = await load_json(CHECKS_FILE, {"checks": [], "used_checks": []})
-    
-    for check in checks["checks"]:
-        if check["code"] == code:
-            if check["used"]:
-                return False, "Чек уже использован!", 0
-            
-            await add_stars(user_id, check["amount"], f"Активация чека {code}")
-            check["used"] = True
-            check["used_by"] = user_id
-            check["used_at"] = datetime.now().isoformat()
-            
-            checks["used_checks"].append(check)
-            checks["checks"].remove(check)
-            
-            await save_json(CHECKS_FILE, checks)
-            return True, f"Чек активирован! Получено {check['amount']} ⭐", check["amount"]
-    
-    return False, "Чек не найден!", 0
-
-# Система промокодов
-async def create_promo(admin_id: int, code: str, reward: int, limit: int) -> bool:
-    promo = await load_json(PROMO_FILE, {"promo_codes": [], "used_promo": {}})
-    
-    for p in promo["promo_codes"]:
-        if p["code"] == code:
-            return False
-    
-    promo["promo_codes"].append({
-        "code": code,
-        "reward": reward,
-        "limit": limit,
-        "used": 0,
-        "created_by": admin_id,
-        "created_at": datetime.now().isoformat(),
-        "active": True
-    })
-    
-    await save_json(PROMO_FILE, promo)
-    await log_admin_action(admin_id, "create_promo", None, f"Code: {code}, Reward: {reward}, Limit: {limit}")
-    return True
-
-async def use_promo(user_id: int, code: str) -> Tuple[bool, str, int]:
-    promo = await load_json(PROMO_FILE, {"promo_codes": [], "used_promo": {}})
-    
-    for promo_code in promo["promo_codes"]:
-        if promo_code["code"] == code:
-            if not promo_code["active"]:
-                return False, "Промокод неактивен!", 0
-            
-            if promo_code["used"] >= promo_code["limit"]:
-                return False, "Промокод достиг лимита!", 0
-            
-            user_id_str = str(user_id)
-            if user_id_str in promo["used_promo"] and code in promo["used_promo"][user_id_str]:
-                return False, "Вы уже использовали этот промокод!", 0
-            
-            await add_stars(user_id, promo_code["reward"], f"Активация промокода {code}")
-            promo_code["used"] += 1
-            if user_id_str not in promo["used_promo"]:
-                promo["used_promo"][user_id_str] = []
-            promo["used_promo"][user_id_str].append(code)
-            
-            await save_json(PROMO_FILE, promo)
-            return True, f"Промокод активирован! Получено {promo_code['reward']} ⭐", promo_code["reward"]
-    
-    return False, "Промокод не найден!", 0
-
-# Система заданий
-async def add_task(admin_id: int, name: str, link: str, reward: int) -> int:
-    tasks = await load_json(TASKS_FILE, {"sponsor_tasks": [], "completed_tasks": {}})
-    task_id = len(tasks["sponsor_tasks"]) + 1
-    tasks["sponsor_tasks"].append({
-        "id": task_id,
-        "name": name,
-        "link": link,
-        "reward": reward,
-        "required_bot": BOT_ID,
-        "created_at": datetime.now().isoformat(),
-        "created_by": admin_id
-    })
-    await save_json(TASKS_FILE, tasks)
-    await log_admin_action(admin_id, "add_task", None, f"Name: {name}, Reward: {reward}, Link: {link}")
-    return task_id
-
-async def check_task_completion(user_id: int, task: dict) -> Tuple[bool, str]:
-    channel = task["link"].split("/")[-1]
-    
-    try:
-        member = await bot.get_chat_member(channel, user_id)
-        if member.status not in ["member", "administrator", "creator"]:
-            return False, "❌ Вы не подписаны на канал!"
-        
-        bot_member = await bot.get_chat_member(channel, BOT_ID)
-        if bot_member.status not in ["member", "administrator", "creator"]:
-            return False, "❌ Бот не добавлен в канал администратором!"
-        
-        return True, "✅ Задание выполнено!"
-    except Exception as e:
-        return False, f"❌ Ошибка: бот не найден в канале!"
-
-async def complete_task(user_id: int, task_id: int):
-    tasks = await load_json(TASKS_FILE, {"sponsor_tasks": [], "completed_tasks": {}})
-    if str(user_id) not in tasks["completed_tasks"]:
-        tasks["completed_tasks"][str(user_id)] = []
-    tasks["completed_tasks"][str(user_id)].append(task_id)
-    await save_json(TASKS_FILE, tasks)
-
-async def is_task_completed(user_id: int, task_id: int) -> bool:
-    tasks = await load_json(TASKS_FILE, {"completed_tasks": {}})
-    return task_id in tasks["completed_tasks"].get(str(user_id), [])
-
-async def get_all_tasks() -> List[dict]:
-    tasks = await load_json(TASKS_FILE, {"sponsor_tasks": []})
-    return tasks["sponsor_tasks"]
-
-async def delete_task(task_id: int) -> bool:
-    tasks = await load_json(TASKS_FILE, {"sponsor_tasks": [], "completed_tasks": {}})
-    original_len = len(tasks["sponsor_tasks"])
-    tasks["sponsor_tasks"] = [t for t in tasks["sponsor_tasks"] if t["id"] != task_id]
-    if len(tasks["sponsor_tasks"]) < original_len:
-        await save_json(TASKS_FILE, tasks)
-        return True
-    return False
-
-# Система поддержки
-async def create_support_ticket(user_id: int, message: str) -> int:
-    support = await load_json(SUPPORT_FILE, {"tickets": [], "messages": {}})
-    ticket_id = len(support["tickets"]) + 1
-    
-    ticket = {
-        "id": ticket_id,
+    game = {
         "user_id": user_id,
-        "status": "open",
-        "created_at": datetime.now().isoformat(),
-        "last_message": datetime.now().isoformat()
-    }
-    support["tickets"].append(ticket)
-    
-    if str(ticket_id) not in support["messages"]:
-        support["messages"][str(ticket_id)] = []
-    
-    support["messages"][str(ticket_id)].append({
-        "from_user": user_id,
-        "message": message,
-        "timestamp": datetime.now().isoformat(),
-        "is_admin": False
-    })
-    
-    await save_json(SUPPORT_FILE, support)
-    
-    for admin_id in ADMIN_IDS:
-        try:
-            await bot.send_message(
-                admin_id,
-                f"📩 *Новый тикет #{ticket_id}*\n\n👤 Пользователь: {user_id}\n💬 Сообщение: {message[:100]}",
-                parse_mode="Markdown"
-            )
-        except:
-            pass
-    
-    return ticket_id
-
-async def reply_to_ticket(admin_id: int, ticket_id: int, message: str) -> bool:
-    support = await load_json(SUPPORT_FILE, {"tickets": [], "messages": {}})
-    
-    ticket = next((t for t in support["tickets"] if t["id"] == ticket_id), None)
-    if not ticket or ticket["status"] != "open":
-        return False
-    
-    if str(ticket_id) not in support["messages"]:
-        support["messages"][str(ticket_id)] = []
-    
-    support["messages"][str(ticket_id)].append({
-        "from_user": admin_id,
-        "message": message,
-        "timestamp": datetime.now().isoformat(),
-        "is_admin": True
-    })
-    
-    ticket["last_message"] = datetime.now().isoformat()
-    await save_json(SUPPORT_FILE, support)
-    
-    try:
-        await bot.send_message(
-            ticket["user_id"],
-            f"📨 *Ответ на тикет #{ticket_id}*\n\n💬 {message}",
-            parse_mode="Markdown"
-        )
-    except:
-        pass
-    
-    return True
-
-async def close_ticket(ticket_id: int) -> bool:
-    support = await load_json(SUPPORT_FILE, {"tickets": [], "messages": {}})
-    ticket = next((t for t in support["tickets"] if t["id"] == ticket_id), None)
-    if ticket:
-        ticket["status"] = "closed"
-        ticket["closed_at"] = datetime.now().isoformat()
-        await save_json(SUPPORT_FILE, support)
-        return True
-    return False
-
-async def get_user_tickets(user_id: int) -> List[dict]:
-    support = await load_json(SUPPORT_FILE, {"tickets": []})
-    return [t for t in support["tickets"] if t["user_id"] == user_id]
-
-# Лотерейная система
-async def create_lottery(admin_id: int, prize_pool: int) -> int:
-    lottery = await load_json(LOTTERY_FILE, {"active": None, "history": []})
-    
-    if lottery["active"]:
-        return 0
-    
-    lottery_id = len(lottery["history"]) + 1
-    lottery["active"] = {
-        "id": lottery_id,
-        "prize_pool": prize_pool,
-        "tickets": [],
-        "created_at": datetime.now().isoformat(),
-        "end_time": (datetime.now() + timedelta(hours=24)).isoformat(),
-        "created_by": admin_id
-    }
-    await save_json(LOTTERY_FILE, lottery)
-    await log_admin_action(admin_id, "create_lottery", None, f"Prize: {prize_pool}")
-    return lottery_id
-
-async def buy_lottery_ticket(user_id: int, ticket_count: int) -> Tuple[bool, str]:
-    lottery = await load_json(LOTTERY_FILE, {"active": None})
-    settings = await load_json(SETTINGS_FILE, {})
-    
-    if not lottery["active"]:
-        return False, "Нет активной лотереи!"
-    
-    ticket_price = settings.get("lottery_ticket_price", 50)
-    total_cost = ticket_count * ticket_price
-    
-    user = await get_user(user_id)
-    if user["stars"] < total_cost:
-        return False, f"Недостаточно звезд! Нужно {total_cost} ⭐"
-    
-    await remove_stars(user_id, total_cost, f"Покупка билетов лотереи")
-    
-    for _ in range(ticket_count):
-        lottery["active"]["tickets"].append({
-            "user_id": user_id,
-            "ticket_number": len(lottery["active"]["tickets"]) + 1,
-            "purchased_at": datetime.now().isoformat()
-        })
-    
-    await save_json(LOTTERY_FILE, lottery)
-    return True, f"✅ Куплено {ticket_count} билетов! Всего билетов: {len(lottery['active']['tickets'])}"
-
-async def end_lottery() -> Tuple[bool, str]:
-    lottery = await load_json(LOTTERY_FILE, {"active": None, "history": []})
-    
-    if not lottery["active"]:
-        return False, "Нет активной лотереи!"
-    
-    tickets = lottery["active"]["tickets"]
-    if not tickets:
-        return False, "Нет купленных билетов!"
-    
-    winner_index = random.randint(0, len(tickets) - 1)
-    winner = tickets[winner_index]
-    prize = lottery["active"]["prize_pool"]
-    
-    await add_stars(winner["user_id"], prize, f"Выигрыш в лотерее")
-    
-    lottery["active"]["winner"] = winner
-    lottery["active"]["ended_at"] = datetime.now().isoformat()
-    lottery["history"].append(lottery["active"])
-    lottery["active"] = None
-    
-    await save_json(LOTTERY_FILE, lottery)
-    
-    try:
-        await bot.send_message(
-            winner["user_id"],
-            f"🎉 *ПОЗДРАВЛЯЕМ!*\n\nВы выиграли в лотерее!\n🏆 Приз: {prize} ⭐\n🎫 Билет #{winner['ticket_number']}",
-            parse_mode="Markdown"
-        )
-    except:
-        pass
-    
-    return True, f"Победитель: {winner['user_id']}, Приз: {prize} ⭐"
-
-async def get_lottery_info() -> Tuple[bool, dict]:
-    lottery = await load_json(LOTTERY_FILE, {"active": None})
-    if lottery["active"]:
-        return True, lottery["active"]
-    return False, None
-
-# Система турниров
-async def create_tournament(admin_id: int, name: str, prize_pool: int, duration_hours: int):
-    tournaments = await load_json(TOURNAMENTS_FILE, {"active": None, "history": []})
-    
-    tournament = {
-        "id": len(tournaments["history"]) + 1,
-        "name": name,
-        "prize_pool": prize_pool,
-        "duration_hours": duration_hours,
-        "start_time": datetime.now().isoformat(),
-        "end_time": (datetime.now() + timedelta(hours=duration_hours)).isoformat(),
-        "participants": {},
+        "bet": bet,
+        "current_multiplier": 1.0,
+        "crashed_at": None,
         "active": True,
-        "created_by": admin_id
+        "started_at": datetime.now().isoformat()
     }
     
-    tournaments["active"] = tournament
-    await save_json(TOURNAMENTS_FILE, tournaments)
-    await log_admin_action(admin_id, "create_tournament", None, f"Name: {name}, Prize: {prize_pool}")
-
-async def update_tournament_points(user_id: int, points: int):
-    tournaments = await load_json(TOURNAMENTS_FILE, {"active": None, "history": []})
-    settings = await load_json(SETTINGS_FILE, {})
+    crash_games[game_id] = game
+    await save_json(CRASH_GAMES_FILE, crash_games)
     
-    if tournaments["active"] and settings.get("tournament_enabled", True):
-        user_id_str = str(user_id)
-        if user_id_str not in tournaments["active"]["participants"]:
-            tournaments["active"]["participants"][user_id_str] = 0
-        tournaments["active"]["participants"][user_id_str] += points
-        await save_json(TOURNAMENTS_FILE, tournaments)
-        
-        user = await get_user(user_id)
-        await update_user(user_id, tournament_points=user["tournament_points"] + points)
+    return game_id, bet
 
-async def end_tournament():
-    tournaments = await load_json(TOURNAMENTS_FILE, {"active": None, "history": []})
+async def update_crash_multiplier(game_id: str) -> Tuple[float, bool]:
+    crash_games = await load_json(CRASH_GAMES_FILE, {})
     
-    if tournaments["active"]:
-        participants = tournaments["active"]["participants"]
-        sorted_participants = sorted(participants.items(), key=lambda x: x[1], reverse=True)
-        
-        prize_pool = tournaments["active"]["prize_pool"]
-        winners = []
-        
-        for i, (user_id, points) in enumerate(sorted_participants[:3]):
-            if i == 0:
-                prize = int(prize_pool * 0.5)
-            elif i == 1:
-                prize = int(prize_pool * 0.3)
-            else:
-                prize = int(prize_pool * 0.2)
-            
-            await add_stars(int(user_id), prize, f"Приз турнира {tournaments['active']['name']}")
-            winners.append((user_id, prize, points))
-        
-        tournaments["active"]["winners"] = winners
-        tournaments["active"]["ended_at"] = datetime.now().isoformat()
-        tournaments["history"].append(tournaments["active"])
-        tournaments["active"] = None
-        
-        await save_json(TOURNAMENTS_FILE, tournaments)
-        
-        for user_id, prize, points in winners:
-            try:
-                await bot.send_message(
-                    int(user_id),
-                    f"🏆 *Турнир завершен!*\n\n✨ {tournaments['history'][-1]['name']}\n📊 Очки: {points}\n🎁 Приз: {prize} ⭐",
-                    parse_mode="Markdown"
-                )
-            except:
-                pass
+    if game_id not in crash_games:
+        return 0, True
+    
+    game = crash_games[game_id]
+    
+    if not game["active"]:
+        return game["current_multiplier"], True
+    
+    # Шанс краша увеличивается с ростом множителя
+    crash_chance = min(0.01 * game["current_multiplier"], 0.5)
+    
+    if random.random() < crash_chance:
+        game["active"] = False
+        game["crashed_at"] = datetime.now().isoformat()
+        await save_json(CRASH_GAMES_FILE, crash_games)
+        return game["current_multiplier"], True
+    
+    # Увеличиваем множитель
+    game["current_multiplier"] += 0.01
+    await save_json(CRASH_GAMES_FILE, crash_games)
+    
+    return game["current_multiplier"], False
 
-async def get_active_tournament() -> Optional[dict]:
-    tournaments = await load_json(TOURNAMENTS_FILE, {"active": None})
-    return tournaments["active"]
+async def cashout_crash(game_id: str) -> Tuple[bool, int]:
+    crash_games = await load_json(CRASH_GAMES_FILE, {})
+    
+    if game_id not in crash_games:
+        return False, 0
+    
+    game = crash_games[game_id]
+    
+    if not game["active"]:
+        return False, 0
+    
+    winnings = int(game["bet"] * game["current_multiplier"])
+    await add_stars(game["user_id"], winnings, f"Выигрыш в Crash (x{game['current_multiplier']:.2f})")
+    
+    game["active"] = False
+    await save_json(CRASH_GAMES_FILE, crash_games)
+    
+    return True, winnings
 
-# Игры (13 игр)
+# Игра Mines
+async def create_mines_game(user_id: int, bet: int, mines_count: int) -> Tuple[str, List[List[str]]]:
+    mines_games = await load_json(MINES_GAMES_FILE, {})
+    game_id = f"{user_id}_{datetime.now().timestamp()}"
+    
+    # Создаем поле 5x5
+    size = 5
+    total_cells = size * size
+    safe_cells = total_cells - mines_count
+    
+    # Создаем поле
+    field = [["❓" for _ in range(size)] for _ in range(size)]
+    
+    # Размещаем мины
+    mines = []
+    all_positions = [(i, j) for i in range(size) for j in range(size)]
+    mine_positions = random.sample(all_positions, mines_count)
+    
+    for pos in mine_positions:
+        mines.append(pos)
+    
+    game = {
+        "user_id": user_id,
+        "bet": bet,
+        "mines_count": mines_count,
+        "safe_cells": safe_cells,
+        "opened_cells": [],
+        "mines": mine_positions,
+        "field": field,
+        "active": True,
+        "current_multiplier": 1.0,
+        "started_at": datetime.now().isoformat()
+    }
+    
+    mines_games[game_id] = game
+    await save_json(MINES_GAMES_FILE, mines_games)
+    
+    return game_id, field
+
+async def open_mines_cell(game_id: str, row: int, col: int) -> Tuple[bool, int, float, List[List[str]]]:
+    mines_games = await load_json(MINES_GAMES_FILE, {})
+    
+    if game_id not in mines_games:
+        return False, 0, 0, []
+    
+    game = mines_games[game_id]
+    
+    if not game["active"]:
+        return False, 0, 0, game["field"]
+    
+    if (row, col) in game["opened_cells"]:
+        return False, 0, game["current_multiplier"], game["field"]
+    
+    # Проверяем, попали ли на мину
+    if (row, col) in game["mines"]:
+        game["active"] = False
+        game["field"][row][col] = "💣"
+        await save_json(MINES_GAMES_FILE, mines_games)
+        return False, 0, game["current_multiplier"], game["field"]
+    
+    # Открываем клетку
+    game["opened_cells"].append((row, col))
+    game["field"][row][col] = "✅"
+    
+    # Обновляем множитель (чем больше мин на поле, тем выше множитель)
+    opened = len(game["opened_cells"])
+    total_safe = game["safe_cells"]
+    mines_count = game["mines_count"]
+    
+    # Формула множителя: база 1 + (открытые клетки / общее безопасные) * (коэффициент от количества мин)
+    multiplier = 1 + (opened / total_safe) * (mines_count / 5)
+    game["current_multiplier"] = multiplier
+    
+    # Проверяем, все ли безопасные клетки открыты
+    if opened >= total_safe:
+        winnings = int(game["bet"] * multiplier)
+        await add_stars(game["user_id"], winnings, f"Выигрыш в Mines")
+        game["active"] = False
+        await save_json(MINES_GAMES_FILE, mines_games)
+        return True, winnings, multiplier, game["field"]
+    
+    await save_json(MINES_GAMES_FILE, mines_games)
+    return True, 0, multiplier, game["field"]
+
+async def cashout_mines(game_id: str) -> Tuple[bool, int, float]:
+    mines_games = await load_json(MINES_GAMES_FILE, {})
+    
+    if game_id not in mines_games:
+        return False, 0, 0
+    
+    game = mines_games[game_id]
+    
+    if not game["active"]:
+        return False, 0, game["current_multiplier"]
+    
+    winnings = int(game["bet"] * game["current_multiplier"])
+    await add_stars(game["user_id"], winnings, f"Выигрыш в Mines (x{game['current_multiplier']:.2f})")
+    
+    game["active"] = False
+    await save_json(MINES_GAMES_FILE, mines_games)
+    
+    return True, winnings, game["current_multiplier"]
+
+# Другие игры
 GAMES = {
-    "coinflip": {"name": "🎲 Орёл или Решка", "min_bet": 1, "max_bet": 1000, "multiplier": 1.95},
-    "dice": {"name": "🎲 Кости", "min_bet": 1, "max_bet": 500, "multiplier": 5.5},
-    "rps": {"name": "✊ Камень-Ножницы-Бумага", "min_bet": 1, "max_bet": 500, "multiplier": 2.7},
-    "roulette": {"name": "🎡 Рулетка", "min_bet": 5, "max_bet": 2000, "multiplier": 1.95},
-    "poker": {"name": "🃏 Покер", "min_bet": 10, "max_bet": 5000, "multiplier": 2.2},
-    "baccarat": {"name": "🎴 Баккара", "min_bet": 10, "max_bet": 5000, "multiplier": 1.95},
-    "blackjack": {"name": "🃏 Блэкджек", "min_bet": 5, "max_bet": 3000, "multiplier": 2.1},
-    "crash": {"name": "💥 Crash", "min_bet": 5, "max_bet": 2000, "multiplier": 1.5},
-    "mines": {"name": "💣 Mines", "min_bet": 10, "max_bet": 1000, "multiplier": 2.5},
-    "keno": {"name": "🎯 Кено", "min_bet": 10, "max_bet": 2000, "multiplier": 3.0},
-    "wheel": {"name": "🎡 Колесо Фортуны", "min_bet": 5, "max_bet": 1500, "multiplier": 2.5},
-    "hilo": {"name": "⬆️ Выше/Ниже", "min_bet": 5, "max_bet": 1000, "multiplier": 1.9}
-}
-
-# Казино игры
-CASINO_GAMES = {
-    "slots": {"name": "🎰 Слоты", "min_bet": 10, "max_bet": 5000},
-    "dice": {"name": "🎲 Кости", "min_bet": 5, "max_bet": 5000},
+    "coinflip": {"name": "🎲 Орёл или Решка", "min_bet": 1, "max_bet": 1000},
+    "dice": {"name": "🎲 Кости", "min_bet": 1, "max_bet": 500},
+    "rps": {"name": "✊ Камень-Ножницы-Бумага", "min_bet": 1, "max_bet": 500},
+    "roulette": {"name": "🎡 Рулетка", "min_bet": 5, "max_bet": 2000},
+    "poker": {"name": "🃏 Покер", "min_bet": 10, "max_bet": 5000},
+    "baccarat": {"name": "🎴 Баккара", "min_bet": 10, "max_bet": 5000},
+    "blackjack": {"name": "🃏 Блэкджек", "min_bet": 5, "max_bet": 3000},
+    "crash": {"name": "💥 Crash", "min_bet": 5, "max_bet": 2000},
+    "mines": {"name": "💣 Mines", "min_bet": 10, "max_bet": 1000},
     "keno": {"name": "🎯 Кено", "min_bet": 10, "max_bet": 2000},
     "wheel": {"name": "🎡 Колесо Фортуны", "min_bet": 5, "max_bet": 1500},
     "hilo": {"name": "⬆️ Выше/Ниже", "min_bet": 5, "max_bet": 1000}
 }
 
-# Реализация игр
+# Реализация остальных игр
 async def play_coinflip(user_id: int, bet: int, choice: str) -> Tuple[bool, int, str]:
     result = random.choice(["eagle", "tails"])
     win = (choice == result)
@@ -816,7 +574,6 @@ async def play_roulette(user_id: int, bet: int, choice: str) -> Tuple[bool, int,
             await update_tournament_points(user_id, bet)
             color = "Черное" if result != 0 else "Зеро"
             return False, bet, f"🎡 Выпало: {result} ({color})\n\n😔 Проигрыш: {bet} ⭐"
-    
     elif choice == "black":
         black_numbers = [2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35]
         win = result in black_numbers
@@ -831,7 +588,6 @@ async def play_roulette(user_id: int, bet: int, choice: str) -> Tuple[bool, int,
             await update_tournament_points(user_id, bet)
             color = "Красное" if result != 0 else "Зеро"
             return False, bet, f"🎡 Выпало: {result} ({color})\n\n😔 Проигрыш: {bet} ⭐"
-    
     elif choice == "even":
         win = result % 2 == 0 and result != 0
         if win:
@@ -845,7 +601,6 @@ async def play_roulette(user_id: int, bet: int, choice: str) -> Tuple[bool, int,
             await update_tournament_points(user_id, bet)
             parity = "Нечетное" if result != 0 else "Зеро"
             return False, bet, f"🎡 Выпало: {result} ({parity})\n\n😔 Проигрыш: {bet} ⭐"
-    
     elif choice == "odd":
         win = result % 2 == 1 and result != 0
         if win:
@@ -859,7 +614,6 @@ async def play_roulette(user_id: int, bet: int, choice: str) -> Tuple[bool, int,
             await update_tournament_points(user_id, bet)
             parity = "Четное" if result != 0 else "Зеро"
             return False, bet, f"🎡 Выпало: {result} ({parity})\n\n😔 Проигрыш: {bet} ⭐"
-    
     return False, bet, "Ошибка"
 
 async def play_poker(user_id: int, bet: int) -> Tuple[bool, int, str]:
@@ -898,7 +652,6 @@ async def play_baccarat(user_id: int, bet: int, choice: str) -> Tuple[bool, int,
         else:
             await update_tournament_points(user_id, bet)
             return False, bet, f"🎴 Игрок: {player} | Банкир: {banker}\n\n😔 Проигрыш: {bet} ⭐"
-    
     elif choice == "banker":
         win = banker > player
         if win:
@@ -911,7 +664,6 @@ async def play_baccarat(user_id: int, bet: int, choice: str) -> Tuple[bool, int,
         else:
             await update_tournament_points(user_id, bet)
             return False, bet, f"🎴 Игрок: {player} | Банкир: {banker}\n\n😔 Проигрыш: {bet} ⭐"
-    
     else:
         if player == banker:
             await add_stars(user_id, bet, f"Ничья в Баккаре")
@@ -960,38 +712,6 @@ async def play_blackjack(user_id: int, bet: int) -> Tuple[bool, int, str]:
         await update_tournament_points(user_id, bet)
         return False, bet, f"🃏 Ваши карты: {player_cards} (сумма: {player_sum})\n🃏 Карты дилера: {dealer_cards} (сумма: {dealer_sum})\n\n😔 Проигрыш: {bet} ⭐"
 
-async def play_crash(user_id: int, bet: int) -> Tuple[bool, int, str]:
-    multiplier = random.uniform(1.0, 5.0)
-    cash_out_point = random.uniform(1.1, 3.0)
-    
-    if multiplier >= cash_out_point:
-        winnings = int(bet * cash_out_point)
-        await add_stars(user_id, winnings, f"Выигрыш в Crash")
-        await update_tournament_points(user_id, winnings)
-        user = await get_user(user_id)
-        await update_user(user_id, games_won=user["games_won"] + 1)
-        return True, winnings, f"💥 Множитель достиг {multiplier:.2f}x!\n💰 Вы выиграли {winnings} ⭐!"
-    else:
-        await update_tournament_points(user_id, bet)
-        return False, bet, f"💥 Крах на {multiplier:.2f}x!\n😔 Вы проиграли {bet} ⭐"
-
-async def play_mines(user_id: int, bet: int) -> Tuple[bool, int, str]:
-    mines_count = random.randint(1, 3)
-    safe_count = 25 - mines_count
-    win = random.random() < (safe_count / 25)
-    
-    if win:
-        multiplier = (safe_count / mines_count) * 1.5
-        winnings = int(bet * multiplier)
-        await add_stars(user_id, winnings, f"Выигрыш в Mines")
-        await update_tournament_points(user_id, winnings)
-        user = await get_user(user_id)
-        await update_user(user_id, games_won=user["games_won"] + 1)
-        return True, winnings, f"💣 Вы нашли сокровище!\n💰 Выигрыш: {winnings} ⭐!"
-    else:
-        await update_tournament_points(user_id, bet)
-        return False, bet, f"💣 Вы наступили на мину!\n😔 Проигрыш: {bet} ⭐"
-
 async def play_keno(user_id: int, bet: int, numbers: List[int]) -> Tuple[bool, int, str]:
     drawn = sorted(random.sample(range(1, 81), 20))
     matches = len(set(numbers) & set(drawn))
@@ -1010,7 +730,7 @@ async def play_keno(user_id: int, bet: int, numbers: List[int]) -> Tuple[bool, i
         await update_tournament_points(user_id, bet)
         return False, bet, f"🎯 Ваши числа: {numbers}\n🎯 Выпало: {drawn[:10]}...\n🎯 Совпадений: {matches}\n\n😔 Проигрыш: {bet} ⭐"
 
-async def play_wheel(user_id: int, bet: int, choice: str) -> Tuple[bool, int, str]:
+async def play_wheel(user_id: int, bet: int) -> Tuple[bool, int, str]:
     segments = ["1x", "2x", "3x", "5x", "10x", "0x"]
     result = random.choice(segments)
     
@@ -1048,6 +768,14 @@ async def play_hilo(user_id: int, bet: int, choice: str, current_card: int) -> T
         return False, bet, f"🃏 Текущая карта: {current_card}\n🃏 Следующая карта: {next_card}\n\n😔 Проигрыш: {bet} ⭐", next_card
 
 # Казино игры
+CASINO_GAMES = {
+    "slots": {"name": "🎰 Слоты", "min_bet": 10, "max_bet": 5000},
+    "dice": {"name": "🎲 Кости", "min_bet": 5, "max_bet": 5000},
+    "keno": {"name": "🎯 Кено", "min_bet": 10, "max_bet": 2000},
+    "wheel": {"name": "🎡 Колесо Фортуны", "min_bet": 5, "max_bet": 1500},
+    "hilo": {"name": "⬆️ Выше/Ниже", "min_bet": 5, "max_bet": 1000}
+}
+
 async def casino_slots(user_id: int, bet: int) -> Tuple[bool, int, str]:
     symbols = ["🍒", "🍋", "🍊", "🔔", "💎", "7️⃣"]
     result = [random.choice(symbols) for _ in range(3)]
@@ -1153,6 +881,425 @@ async def casino_hilo(user_id: int, bet: int, choice: str, current_card: int) ->
         await update_tournament_points(user_id, bet)
         return False, bet, f"🃏 Текущая карта: {current_card}\n🃏 Следующая карта: {next_card}\n\n😔 Проигрыш: {bet} ⭐", next_card
 
+# Система турниров
+async def create_tournament(admin_id: int, name: str, prize_pool: int, duration_hours: int):
+    tournaments = await load_json(TOURNAMENTS_FILE, {"active": None, "history": []})
+    
+    tournament = {
+        "id": len(tournaments["history"]) + 1,
+        "name": name,
+        "prize_pool": prize_pool,
+        "duration_hours": duration_hours,
+        "start_time": datetime.now().isoformat(),
+        "end_time": (datetime.now() + timedelta(hours=duration_hours)).isoformat(),
+        "participants": {},
+        "active": True,
+        "created_by": admin_id
+    }
+    
+    tournaments["active"] = tournament
+    await save_json(TOURNAMENTS_FILE, tournaments)
+    await log_admin_action(admin_id, "create_tournament", None, f"Name: {name}, Prize: {prize_pool}")
+
+async def update_tournament_points(user_id: int, points: int):
+    tournaments = await load_json(TOURNAMENTS_FILE, {"active": None, "history": []})
+    settings = await load_json(SETTINGS_FILE, {})
+    
+    if tournaments["active"] and settings.get("tournament_enabled", True):
+        user_id_str = str(user_id)
+        if user_id_str not in tournaments["active"]["participants"]:
+            tournaments["active"]["participants"][user_id_str] = 0
+        tournaments["active"]["participants"][user_id_str] += points
+        await save_json(TOURNAMENTS_FILE, tournaments)
+        
+        user = await get_user(user_id)
+        await update_user(user_id, tournament_points=user["tournament_points"] + points)
+
+async def end_tournament():
+    tournaments = await load_json(TOURNAMENTS_FILE, {"active": None, "history": []})
+    
+    if tournaments["active"]:
+        participants = tournaments["active"]["participants"]
+        sorted_participants = sorted(participants.items(), key=lambda x: x[1], reverse=True)
+        
+        prize_pool = tournaments["active"]["prize_pool"]
+        winners = []
+        
+        for i, (user_id, points) in enumerate(sorted_participants[:3]):
+            if i == 0:
+                prize = int(prize_pool * 0.5)
+            elif i == 1:
+                prize = int(prize_pool * 0.3)
+            else:
+                prize = int(prize_pool * 0.2)
+            
+            await add_stars(int(user_id), prize, f"Приз турнира {tournaments['active']['name']}")
+            winners.append((user_id, prize, points))
+        
+        tournaments["active"]["winners"] = winners
+        tournaments["active"]["ended_at"] = datetime.now().isoformat()
+        tournaments["history"].append(tournaments["active"])
+        tournaments["active"] = None
+        
+        await save_json(TOURNAMENTS_FILE, tournaments)
+        
+        for user_id, prize, points in winners:
+            try:
+                await bot.send_message(
+                    int(user_id),
+                    f"🏆 *Турнир завершен!*\n\n✨ {tournaments['history'][-1]['name']}\n📊 Очки: {points}\n🎁 Приз: {prize} ⭐",
+                    parse_mode="Markdown"
+                )
+            except:
+                pass
+
+# Система заданий
+async def add_task(admin_id: int, name: str, link: str, reward: int) -> int:
+    tasks = await load_json(TASKS_FILE, {"sponsor_tasks": [], "completed_tasks": {}})
+    task_id = len(tasks["sponsor_tasks"]) + 1
+    tasks["sponsor_tasks"].append({
+        "id": task_id,
+        "name": name,
+        "link": link,
+        "reward": reward,
+        "required_bot": BOT_ID,
+        "created_at": datetime.now().isoformat(),
+        "created_by": admin_id
+    })
+    await save_json(TASKS_FILE, tasks)
+    await log_admin_action(admin_id, "add_task", None, f"Name: {name}, Reward: {reward}, Link: {link}")
+    return task_id
+
+async def check_task_completion(user_id: int, task: dict) -> Tuple[bool, str]:
+    channel = task["link"].split("/")[-1]
+    
+    try:
+        member = await bot.get_chat_member(channel, user_id)
+        if member.status not in ["member", "administrator", "creator"]:
+            return False, "❌ Вы не подписаны на канал!"
+        
+        bot_member = await bot.get_chat_member(channel, BOT_ID)
+        if bot_member.status not in ["member", "administrator", "creator"]:
+            return False, "❌ Бот не добавлен в канал администратором!"
+        
+        return True, "✅ Задание выполнено!"
+    except Exception as e:
+        return False, f"❌ Ошибка: бот не найден в канале!"
+
+async def complete_task(user_id: int, task_id: int):
+    tasks = await load_json(TASKS_FILE, {"sponsor_tasks": [], "completed_tasks": {}})
+    if str(user_id) not in tasks["completed_tasks"]:
+        tasks["completed_tasks"][str(user_id)] = []
+    tasks["completed_tasks"][str(user_id)].append(task_id)
+    await save_json(TASKS_FILE, tasks)
+
+async def is_task_completed(user_id: int, task_id: int) -> bool:
+    tasks = await load_json(TASKS_FILE, {"completed_tasks": {}})
+    return task_id in tasks["completed_tasks"].get(str(user_id), [])
+
+async def get_all_tasks() -> List[dict]:
+    tasks = await load_json(TASKS_FILE, {"sponsor_tasks": []})
+    return tasks["sponsor_tasks"]
+
+async def delete_task(task_id: int) -> bool:
+    tasks = await load_json(TASKS_FILE, {"sponsor_tasks": [], "completed_tasks": {}})
+    original_len = len(tasks["sponsor_tasks"])
+    tasks["sponsor_tasks"] = [t for t in tasks["sponsor_tasks"] if t["id"] != task_id]
+    if len(tasks["sponsor_tasks"]) < original_len:
+        await save_json(TASKS_FILE, tasks)
+        return True
+    return False
+
+# Система чеков
+async def unlock_check_system(user_id: int) -> bool:
+    settings = await load_json(SETTINGS_FILE, {})
+    price = settings.get("check_system_price", 100)
+    
+    if await remove_stars(user_id, price, "Открытие системы чеков"):
+        await update_user(user_id, check_system_unlocked=True)
+        return True
+    return False
+
+async def create_check(user_id: int, amount: int) -> Tuple[bool, str, str]:
+    settings = await load_json(SETTINGS_FILE, {})
+    min_check = 100
+    max_check = 100000
+    
+    user = await get_user(user_id)
+    if not user.get("check_system_unlocked", False):
+        return False, f"Система чеков заблокирована! Откройте за {settings.get('check_system_price', 100)} ⭐", ""
+    
+    if amount < min_check:
+        return False, f"Минимальная сумма чека: {min_check} ⭐", ""
+    if amount > max_check:
+        return False, f"Максимальная сумма чека: {max_check} ⭐", ""
+    
+    if user["stars"] < amount:
+        return False, f"Недостаточно звезд! У вас {user['stars']} ⭐", ""
+    
+    await remove_stars(user_id, amount, f"Создание чека")
+    
+    checks = await load_json(CHECKS_FILE, {"checks": [], "used_checks": []})
+    code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(12))
+    
+    check = {
+        "code": code,
+        "amount": amount,
+        "creator": user_id,
+        "created_at": datetime.now().isoformat(),
+        "used": False,
+        "used_by": None,
+        "type": "user"
+    }
+    
+    checks["checks"].append(check)
+    await save_json(CHECKS_FILE, checks)
+    
+    return True, f"Чек создан!", code
+
+async def use_check(user_id: int, code: str) -> Tuple[bool, str, int]:
+    checks = await load_json(CHECKS_FILE, {"checks": [], "used_checks": []})
+    
+    for check in checks["checks"]:
+        if check["code"] == code:
+            if check["used"]:
+                return False, "Чек уже использован!", 0
+            
+            await add_stars(user_id, check["amount"], f"Активация чека {code}")
+            check["used"] = True
+            check["used_by"] = user_id
+            check["used_at"] = datetime.now().isoformat()
+            
+            checks["used_checks"].append(check)
+            checks["checks"].remove(check)
+            
+            await save_json(CHECKS_FILE, checks)
+            return True, f"Чек активирован! Получено {check['amount']} ⭐", check["amount"]
+    
+    return False, "Чек не найден!", 0
+
+async def get_user_checks(user_id: int) -> List[dict]:
+    checks = await load_json(CHECKS_FILE, {"checks": [], "used_checks": []})
+    user_checks = []
+    for check in checks["checks"]:
+        if check.get("creator") == user_id:
+            user_checks.append(check)
+    for check in checks["used_checks"]:
+        if check.get("creator") == user_id:
+            user_checks.append(check)
+    return user_checks
+
+# Система промокодов
+async def create_promo(admin_id: int, code: str, reward: int, limit: int) -> bool:
+    promo = await load_json(PROMO_FILE, {"promo_codes": [], "used_promo": {}})
+    
+    for p in promo["promo_codes"]:
+        if p["code"] == code:
+            return False
+    
+    promo["promo_codes"].append({
+        "code": code,
+        "reward": reward,
+        "limit": limit,
+        "used": 0,
+        "created_by": admin_id,
+        "created_at": datetime.now().isoformat(),
+        "active": True
+    })
+    
+    await save_json(PROMO_FILE, promo)
+    await log_admin_action(admin_id, "create_promo", None, f"Code: {code}, Reward: {reward}, Limit: {limit}")
+    return True
+
+async def use_promo(user_id: int, code: str) -> Tuple[bool, str, int]:
+    promo = await load_json(PROMO_FILE, {"promo_codes": [], "used_promo": {}})
+    
+    for promo_code in promo["promo_codes"]:
+        if promo_code["code"] == code:
+            if not promo_code["active"]:
+                return False, "Промокод неактивен!", 0
+            
+            if promo_code["used"] >= promo_code["limit"]:
+                return False, "Промокод достиг лимита!", 0
+            
+            user_id_str = str(user_id)
+            if user_id_str in promo["used_promo"] and code in promo["used_promo"][user_id_str]:
+                return False, "Вы уже использовали этот промокод!", 0
+            
+            await add_stars(user_id, promo_code["reward"], f"Активация промокода {code}")
+            promo_code["used"] += 1
+            if user_id_str not in promo["used_promo"]:
+                promo["used_promo"][user_id_str] = []
+            promo["used_promo"][user_id_str].append(code)
+            
+            await save_json(PROMO_FILE, promo)
+            return True, f"Промокод активирован! Получено {promo_code['reward']} ⭐", promo_code["reward"]
+    
+    return False, "Промокод не найден!", 0
+
+# Система поддержки
+async def create_support_ticket(user_id: int, message: str) -> int:
+    support = await load_json(SUPPORT_FILE, {"tickets": [], "messages": {}})
+    ticket_id = len(support["tickets"]) + 1
+    
+    ticket = {
+        "id": ticket_id,
+        "user_id": user_id,
+        "status": "open",
+        "created_at": datetime.now().isoformat(),
+        "last_message": datetime.now().isoformat()
+    }
+    support["tickets"].append(ticket)
+    
+    if str(ticket_id) not in support["messages"]:
+        support["messages"][str(ticket_id)] = []
+    
+    support["messages"][str(ticket_id)].append({
+        "from_user": user_id,
+        "message": message,
+        "timestamp": datetime.now().isoformat(),
+        "is_admin": False
+    })
+    
+    await save_json(SUPPORT_FILE, support)
+    
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(
+                admin_id,
+                f"📩 *Новый тикет #{ticket_id}*\n\n👤 Пользователь: {user_id}\n💬 Сообщение: {message[:100]}",
+                parse_mode="Markdown"
+            )
+        except:
+            pass
+    
+    return ticket_id
+
+async def reply_to_ticket(admin_id: int, ticket_id: int, message: str) -> bool:
+    support = await load_json(SUPPORT_FILE, {"tickets": [], "messages": {}})
+    
+    ticket = next((t for t in support["tickets"] if t["id"] == ticket_id), None)
+    if not ticket or ticket["status"] != "open":
+        return False
+    
+    if str(ticket_id) not in support["messages"]:
+        support["messages"][str(ticket_id)] = []
+    
+    support["messages"][str(ticket_id)].append({
+        "from_user": admin_id,
+        "message": message,
+        "timestamp": datetime.now().isoformat(),
+        "is_admin": True
+    })
+    
+    ticket["last_message"] = datetime.now().isoformat()
+    await save_json(SUPPORT_FILE, support)
+    
+    try:
+        await bot.send_message(
+            ticket["user_id"],
+            f"📨 *Ответ на тикет #{ticket_id}*\n\n💬 {message}",
+            parse_mode="Markdown"
+        )
+    except:
+        pass
+    
+    return True
+
+async def close_ticket(ticket_id: int) -> bool:
+    support = await load_json(SUPPORT_FILE, {"tickets": [], "messages": {}})
+    ticket = next((t for t in support["tickets"] if t["id"] == ticket_id), None)
+    if ticket:
+        ticket["status"] = "closed"
+        ticket["closed_at"] = datetime.now().isoformat()
+        await save_json(SUPPORT_FILE, support)
+        return True
+    return False
+
+async def get_user_tickets(user_id: int) -> List[dict]:
+    support = await load_json(SUPPORT_FILE, {"tickets": []})
+    return [t for t in support["tickets"] if t["user_id"] == user_id]
+
+# Система лотереи
+async def create_lottery(admin_id: int, prize_pool: int) -> int:
+    lottery = await load_json(LOTTERY_FILE, {"active": None, "history": []})
+    
+    if lottery["active"]:
+        return 0
+    
+    lottery_id = len(lottery["history"]) + 1
+    lottery["active"] = {
+        "id": lottery_id,
+        "prize_pool": prize_pool,
+        "tickets": [],
+        "created_at": datetime.now().isoformat(),
+        "end_time": (datetime.now() + timedelta(hours=24)).isoformat(),
+        "created_by": admin_id
+    }
+    await save_json(LOTTERY_FILE, lottery)
+    await log_admin_action(admin_id, "create_lottery", None, f"Prize: {prize_pool}")
+    return lottery_id
+
+async def buy_lottery_ticket(user_id: int, ticket_count: int) -> Tuple[bool, str]:
+    lottery = await load_json(LOTTERY_FILE, {"active": None})
+    settings = await load_json(SETTINGS_FILE, {})
+    
+    if not lottery["active"]:
+        return False, "Нет активной лотереи!"
+    
+    ticket_price = settings.get("lottery_ticket_price", 50)
+    total_cost = ticket_count * ticket_price
+    
+    user = await get_user(user_id)
+    if user["stars"] < total_cost:
+        return False, f"Недостаточно звезд! Нужно {total_cost} ⭐"
+    
+    await remove_stars(user_id, total_cost, f"Покупка билетов лотереи")
+    
+    for _ in range(ticket_count):
+        lottery["active"]["tickets"].append({
+            "user_id": user_id,
+            "ticket_number": len(lottery["active"]["tickets"]) + 1,
+            "purchased_at": datetime.now().isoformat()
+        })
+    
+    await save_json(LOTTERY_FILE, lottery)
+    return True, f"✅ Куплено {ticket_count} билетов! Всего билетов: {len(lottery['active']['tickets'])}"
+
+async def end_lottery() -> Tuple[bool, str]:
+    lottery = await load_json(LOTTERY_FILE, {"active": None, "history": []})
+    
+    if not lottery["active"]:
+        return False, "Нет активной лотереи!"
+    
+    tickets = lottery["active"]["tickets"]
+    if not tickets:
+        return False, "Нет купленных билетов!"
+    
+    winner_index = random.randint(0, len(tickets) - 1)
+    winner = tickets[winner_index]
+    prize = lottery["active"]["prize_pool"]
+    
+    await add_stars(winner["user_id"], prize, f"Выигрыш в лотерее")
+    
+    lottery["active"]["winner"] = winner
+    lottery["active"]["ended_at"] = datetime.now().isoformat()
+    lottery["history"].append(lottery["active"])
+    lottery["active"] = None
+    
+    await save_json(LOTTERY_FILE, lottery)
+    
+    try:
+        await bot.send_message(
+            winner["user_id"],
+            f"🎉 *ПОЗДРАВЛЯЕМ!*\n\nВы выиграли в лотерее!\n🏆 Приз: {prize} ⭐\n🎫 Билет #{winner['ticket_number']}",
+            parse_mode="Markdown"
+        )
+    except:
+        pass
+    
+    return True, f"Победитель: {winner['user_id']}, Приз: {prize} ⭐"
+
 # Клавиатуры
 def get_main_keyboard() -> InlineKeyboardMarkup:
     buttons = [
@@ -1202,7 +1349,9 @@ async def cmd_start(message: Message, state: FSMContext):
     
     text = (f"✨ Добро пожаловать, {message.from_user.full_name}!\n\n"
             f"⭐ Баланс: {user['stars']} звезд\n\n"
-            f"🎮 13 игр | 🎰 5 игр в казино | 🏆 Турниры\n"
+            f"🎮 12 игр | 🎰 5 игр в казино | 🏆 Турниры\n"
+            f"💥 Crash - забирайте выигрыш пока не упал!\n"
+            f"💣 Mines - открывайте клетки и увеличивайте множитель!\n"
             f"📋 Задания на каналы (бот должен быть в канале)\n"
             f"👥 Рефералы (10% от покупок)\n"
             f"📦 Система чеков (доступ за {settings.get('check_system_price', 100)} ⭐)\n"
@@ -1232,13 +1381,37 @@ async def game_start(callback: CallbackQuery, state: FSMContext):
     await state.update_data(game_id=game_id)
     await state.set_state(GameStates.waiting_for_bet)
     
-    await callback.message.edit_text(
-        f"🎮 *{game['name']}*\n\n"
-        f"💰 Ставки: от {game['min_bet']} до {game['max_bet']} ⭐\n\n"
-        f"Введите сумму ставки:",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="games_menu")]])
-    )
+    if game_id == "crash":
+        settings = await load_json(SETTINGS_FILE, {})
+        await callback.message.edit_text(
+            f"💥 *{game['name']}*\n\n"
+            f"💰 Ставки: от {settings.get('crash_min_bet', 5)} до {settings.get('crash_max_bet', 5000)} ⭐\n\n"
+            f"📊 Множитель растет с каждым моментом!\n"
+            f"🎯 Заберите выигрыш до того, как игра крашнется!\n\n"
+            f"Введите сумму ставки:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="games_menu")]])
+        )
+    elif game_id == "mines":
+        settings = await load_json(SETTINGS_FILE, {})
+        await callback.message.edit_text(
+            f"💣 *{game['name']}*\n\n"
+            f"💰 Ставки: от {settings.get('mines_min_bet', 10)} до {settings.get('mines_max_bet', 2000)} ⭐\n\n"
+            f"🎲 Сначала выберите количество мин на поле (1-10)\n"
+            f"💎 Чем больше мин, тем выше множитель!\n"
+            f"⭐ Открывайте безопасные клетки и забирайте выигрыш!\n\n"
+            f"Введите сумму ставки:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="games_menu")]])
+        )
+    else:
+        await callback.message.edit_text(
+            f"🎮 *{game['name']}*\n\n"
+            f"💰 Ставки: от {game['min_bet']} до {game['max_bet']} ⭐\n\n"
+            f"Введите сумму ставки:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="games_menu")]])
+        )
     await callback.answer()
 
 @dp.message(GameStates.waiting_for_bet)
@@ -1255,9 +1428,25 @@ async def process_bet(message: Message, state: FSMContext):
     
     user = await get_user(message.from_user.id)
     
-    if bet < game["min_bet"] or bet > game["max_bet"]:
-        await message.answer(f"❌ Ставка должна быть от {game['min_bet']} до {game['max_bet']} ⭐")
-        return
+    # Проверка для Crash и Mines
+    if game_id == "crash":
+        settings = await load_json(SETTINGS_FILE, {})
+        min_bet = settings.get("crash_min_bet", 5)
+        max_bet = settings.get("crash_max_bet", 5000)
+        if bet < min_bet or bet > max_bet:
+            await message.answer(f"❌ Ставка должна быть от {min_bet} до {max_bet} ⭐")
+            return
+    elif game_id == "mines":
+        settings = await load_json(SETTINGS_FILE, {})
+        min_bet = settings.get("mines_min_bet", 10)
+        max_bet = settings.get("mines_max_bet", 2000)
+        if bet < min_bet or bet > max_bet:
+            await message.answer(f"❌ Ставка должна быть от {min_bet} до {max_bet} ⭐")
+            return
+    else:
+        if bet < game["min_bet"] or bet > game["max_bet"]:
+            await message.answer(f"❌ Ставка должна быть от {game['min_bet']} до {game['max_bet']} ⭐")
+            return
     
     if user["stars"] < bet:
         await message.answer(f"❌ Недостаточно звезд! У вас {user['stars']} ⭐")
@@ -1326,22 +1515,47 @@ async def process_bet(message: Message, state: FSMContext):
         await state.clear()
     
     elif game_id == "crash":
+        game_id_str, _ = await start_crash_game(message.from_user.id, bet)
+        await state.update_data(crash_game_id=game_id_str)
         await state.set_state(GameStates.playing_crash)
-        win, winnings, result_text = await play_crash(message.from_user.id, bet)
-        await message.answer(result_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💥 Ещё раз", callback_data="game_crash"),
-             InlineKeyboardButton(text="🔙 В меню", callback_data="games_menu")]
-        ]))
-        await state.clear()
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💰 ЗАБРАТЬ", callback_data="crash_cashout")],
+            [InlineKeyboardButton(text="🔙 В меню", callback_data="games_menu")]
+        ])
+        
+        msg = await message.answer(
+            f"💥 *Crash Game*\n\n"
+            f"💰 Ставка: {bet} ⭐\n"
+            f"📈 Текущий множитель: 1.00x\n\n"
+            f"⚠️ Заберите выигрыш до того, как игра крашнется!",
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+        
+        await state.update_data(crash_message_id=msg.message_id)
+        
+        # Запускаем обновление множителя
+        asyncio.create_task(update_crash_game(message.from_user.id, game_id_str, msg.message_id, state))
     
     elif game_id == "mines":
-        await state.set_state(GameStates.playing_mines)
-        win, winnings, result_text = await play_mines(message.from_user.id, bet)
-        await message.answer(result_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💣 Ещё раз", callback_data="game_mines"),
-             InlineKeyboardButton(text="🔙 В меню", callback_data="games_menu")]
-        ]))
-        await state.clear()
+        await state.update_data(mines_bet=bet)
+        await state.set_state(GameStates.playing_mines_select)
+        await message.answer(
+            f"💣 *Выберите количество мин*\n\n"
+            f"💰 Ставка: {bet} ⭐\n\n"
+            f"Выберите количество мин на поле (1-10):\n"
+            f"💎 Чем больше мин, тем выше множитель!",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="1", callback_data="mines_1"), InlineKeyboardButton(text="2", callback_data="mines_2"),
+                 InlineKeyboardButton(text="3", callback_data="mines_3"), InlineKeyboardButton(text="4", callback_data="mines_4")],
+                [InlineKeyboardButton(text="5", callback_data="mines_5"), InlineKeyboardButton(text="6", callback_data="mines_6"),
+                 InlineKeyboardButton(text="7", callback_data="mines_7"), InlineKeyboardButton(text="8", callback_data="mines_8")],
+                [InlineKeyboardButton(text="9", callback_data="mines_9"), InlineKeyboardButton(text="10", callback_data="mines_10")],
+                [InlineKeyboardButton(text="🔙 Отмена", callback_data="games_menu")]
+            ])
+        )
     
     elif game_id == "keno":
         await state.set_state(GameStates.playing_keno)
@@ -1349,7 +1563,7 @@ async def process_bet(message: Message, state: FSMContext):
     
     elif game_id == "wheel":
         await state.set_state(GameStates.playing_wheel)
-        win, winnings, result_text = await play_wheel(message.from_user.id, bet, "spin")
+        win, winnings, result_text = await play_wheel(message.from_user.id, bet)
         await message.answer(result_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🎡 Ещё раз", callback_data="game_wheel"),
              InlineKeyboardButton(text="🔙 В меню", callback_data="games_menu")]
@@ -1366,7 +1580,241 @@ async def process_bet(message: Message, state: FSMContext):
         ])
         await message.answer(f"🃏 Текущая карта: {current_card}\n\nВыберите 'Выше' или 'Ниже':", reply_markup=keyboard)
 
-# Обработчики игр
+async def update_crash_game(user_id: int, game_id: str, message_id: int, state: FSMContext):
+    while True:
+        await asyncio.sleep(0.5)
+        
+        multiplier, crashed = await update_crash_multiplier(game_id)
+        
+        if crashed:
+            try:
+                await bot.edit_message_text(
+                    f"💥 *Crash Game*\n\n"
+                    f"💰 Ставка: {data['bet']} ⭐\n"
+                    f"💥 Крах на множителе: {multiplier:.2f}x\n\n"
+                    f"😔 Вы проиграли {data['bet']} ⭐!",
+                    chat_id=user_id,
+                    message_id=message_id,
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="💥 Играть снова", callback_data="game_crash"),
+                         InlineKeyboardButton(text="🔙 В меню", callback_data="games_menu")]
+                    ])
+                )
+            except:
+                pass
+            await state.clear()
+            break
+        
+        try:
+            await bot.edit_message_text(
+                f"💥 *Crash Game*\n\n"
+                f"💰 Ставка: {data['bet']} ⭐\n"
+                f"📈 Текущий множитель: {multiplier:.2f}x\n\n"
+                f"💰 Потенциальный выигрыш: {int(data['bet'] * multiplier)} ⭐\n\n"
+                f"⚠️ Заберите выигрыш до того, как игра крашнется!",
+                chat_id=user_id,
+                message_id=message_id,
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="💰 ЗАБРАТЬ", callback_data="crash_cashout")],
+                    [InlineKeyboardButton(text="🔙 В меню", callback_data="games_menu")]
+                ])
+            )
+        except:
+            pass
+
+@dp.callback_query(F.data == "crash_cashout")
+async def crash_cashout(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    game_id = data.get("crash_game_id")
+    
+    if not game_id:
+        await callback.answer("❌ Игра не найдена!")
+        return
+    
+    success, winnings = await cashout_crash(game_id)
+    
+    if success:
+        await callback.message.edit_text(
+            f"💥 *Crash Game*\n\n"
+            f"💰 Ставка: {data['bet']} ⭐\n"
+            f"🎉 ВЫ ЗАБРАЛИ ВЫИГРЫШ!\n"
+            f"💰 Выигрыш: {winnings} ⭐\n\n"
+            f"✅ Поздравляем!",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💥 Играть снова", callback_data="game_crash"),
+                 InlineKeyboardButton(text="🔙 В меню", callback_data="games_menu")]
+            ])
+        )
+        await state.clear()
+    else:
+        await callback.answer("❌ Игра уже завершена!")
+
+@dp.callback_query(F.data.startswith("mines_"))
+async def mines_select_count(callback: CallbackQuery, state: FSMContext):
+    mines_count = int(callback.data.replace("mines_", ""))
+    data = await state.get_data()
+    bet = data.get("mines_bet")
+    
+    game_id, field = await create_mines_game(callback.from_user.id, bet, mines_count)
+    await state.update_data(mines_game_id=game_id, mines_field=field, mines_count=mines_count)
+    await state.set_state(GameStates.playing_mines_open)
+    
+    # Создаем клавиатуру для поля 5x5
+    buttons = []
+    for i in range(5):
+        row_buttons = []
+        for j in range(5):
+            row_buttons.append(InlineKeyboardButton(text="❓", callback_data=f"mines_open_{i}_{j}"))
+        buttons.append(row_buttons)
+    buttons.append([InlineKeyboardButton(text="💰 ЗАБРАТЬ ВЫИГРЫШ", callback_data="mines_cashout")])
+    buttons.append([InlineKeyboardButton(text="🔙 В меню", callback_data="games_menu")])
+    
+    await callback.message.edit_text(
+        f"💣 *Mines Game*\n\n"
+        f"💰 Ставка: {bet} ⭐\n"
+        f"💣 Мин на поле: {mines_count}\n"
+        f"📈 Текущий множитель: 1.00x\n\n"
+        f"🎯 Открывайте клетки и увеличивайте множитель!\n"
+        f"⚠️ Попадание на мину - проигрыш!",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("mines_open_"))
+async def mines_open_cell(callback: CallbackQuery, state: FSMContext):
+    _, row, col = callback.data.split("_")
+    row, col = int(row), int(col)
+    
+    data = await state.get_data()
+    game_id = data.get("mines_game_id")
+    
+    if not game_id:
+        await callback.answer("❌ Игра не найдена!")
+        return
+    
+    success, winnings, multiplier, field = await open_mines_cell(game_id, row, col)
+    
+    if not success and winnings == 0:
+        # Попали на мину
+        buttons = []
+        for i in range(5):
+            row_buttons = []
+            for j in range(5):
+                if field[i][j] == "💣":
+                    row_buttons.append(InlineKeyboardButton(text="💣", callback_data="noop"))
+                elif field[i][j] == "✅":
+                    row_buttons.append(InlineKeyboardButton(text="✅", callback_data="noop"))
+                else:
+                    row_buttons.append(InlineKeyboardButton(text="❓", callback_data="noop"))
+            buttons.append(row_buttons)
+        buttons.append([InlineKeyboardButton(text="💣 Играть снова", callback_data="game_mines")])
+        buttons.append([InlineKeyboardButton(text="🔙 В меню", callback_data="games_menu")])
+        
+        await callback.message.edit_text(
+            f"💣 *Mines Game*\n\n"
+            f"💰 Ставка: {data['mines_bet']} ⭐\n"
+            f"💥 ВЫ НАСТУПИЛИ НА МИНУ!\n"
+            f"😔 Вы проиграли {data['mines_bet']} ⭐",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+        await state.clear()
+        await callback.answer("💥 Вы наступили на мину!")
+        return
+    
+    if winnings > 0:
+        # Выигрыш (открыты все безопасные клетки)
+        buttons = []
+        for i in range(5):
+            row_buttons = []
+            for j in range(5):
+                if field[i][j] == "💣":
+                    row_buttons.append(InlineKeyboardButton(text="💣", callback_data="noop"))
+                else:
+                    row_buttons.append(InlineKeyboardButton(text="✅", callback_data="noop"))
+            buttons.append(row_buttons)
+        buttons.append([InlineKeyboardButton(text="🎉 Играть снова", callback_data="game_mines")])
+        buttons.append([InlineKeyboardButton(text="🔙 В меню", callback_data="games_menu")])
+        
+        await callback.message.edit_text(
+            f"💣 *Mines Game*\n\n"
+            f"💰 Ставка: {data['mines_bet']} ⭐\n"
+            f"🎉 ПОБЕДА! ВЫ ОТКРЫЛИ ВСЕ БЕЗОПАСНЫЕ КЛЕТКИ!\n"
+            f"💰 Выигрыш: {winnings} ⭐ (x{multiplier:.2f})\n\n"
+            f"✅ Поздравляем!",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+        await state.clear()
+        await callback.answer("🎉 Победа!")
+        return
+    
+    # Обновляем поле
+    buttons = []
+    for i in range(5):
+        row_buttons = []
+        for j in range(5):
+            if (i, j) in data.get("mines_opened", []):
+                row_buttons.append(InlineKeyboardButton(text="✅", callback_data=f"mines_open_{i}_{j}"))
+            elif field[i][j] == "✅":
+                row_buttons.append(InlineKeyboardButton(text="✅", callback_data=f"mines_open_{i}_{j}"))
+                await state.update_data(mines_opened=data.get("mines_opened", []) + [(i, j)])
+            else:
+                row_buttons.append(InlineKeyboardButton(text="❓", callback_data=f"mines_open_{i}_{j}"))
+        buttons.append(row_buttons)
+    buttons.append([InlineKeyboardButton(text="💰 ЗАБРАТЬ ВЫИГРЫШ", callback_data="mines_cashout")])
+    buttons.append([InlineKeyboardButton(text="🔙 В меню", callback_data="games_menu")])
+    
+    await callback.message.edit_text(
+        f"💣 *Mines Game*\n\n"
+        f"💰 Ставка: {data['mines_bet']} ⭐\n"
+        f"💣 Мин на поле: {data['mines_count']}\n"
+        f"📈 Текущий множитель: {multiplier:.2f}x\n"
+        f"💰 Потенциальный выигрыш: {int(data['mines_bet'] * multiplier)} ⭐\n\n"
+        f"🎯 Открывайте клетки и увеличивайте множитель!",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data == "mines_cashout")
+async def mines_cashout(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    game_id = data.get("mines_game_id")
+    
+    if not game_id:
+        await callback.answer("❌ Игра не найдена!")
+        return
+    
+    success, winnings, multiplier = await cashout_mines(game_id)
+    
+    if success:
+        buttons = []
+        for i in range(5):
+            row_buttons = []
+            for j in range(5):
+                row_buttons.append(InlineKeyboardButton(text="✅", callback_data="noop"))
+            buttons.append(row_buttons)
+        buttons.append([InlineKeyboardButton(text="💣 Играть снова", callback_data="game_mines")])
+        buttons.append([InlineKeyboardButton(text="🔙 В меню", callback_data="games_menu")])
+        
+        await callback.message.edit_text(
+            f"💣 *Mines Game*\n\n"
+            f"💰 Ставка: {data['mines_bet']} ⭐\n"
+            f"🎉 ВЫ ЗАБРАЛИ ВЫИГРЫШ!\n"
+            f"💰 Выигрыш: {winnings} ⭐ (x{multiplier:.2f})\n\n"
+            f"✅ Поздравляем!",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+        await state.clear()
+    else:
+        await callback.answer("❌ Игра уже завершена!")
+
 @dp.callback_query(GameStates.playing_coinflip, F.data.startswith("coinflip_"))
 async def coinflip_play(callback: CallbackQuery, state: FSMContext):
     choice = callback.data.replace("coinflip_", "")
@@ -2001,17 +2449,6 @@ async def my_checks(callback: CallbackQuery):
     ]))
     await callback.answer()
 
-async def get_user_checks(user_id: int) -> List[dict]:
-    checks = await load_json(CHECKS_FILE, {"checks": [], "used_checks": []})
-    user_checks = []
-    for check in checks["checks"]:
-        if check.get("creator") == user_id:
-            user_checks.append(check)
-    for check in checks["used_checks"]:
-        if check.get("creator") == user_id:
-            user_checks.append(check)
-    return user_checks
-
 # Промокоды
 @dp.callback_query(F.data == "use_promo")
 async def use_promo_menu(callback: CallbackQuery, state: FSMContext):
@@ -2186,7 +2623,9 @@ async def show_stats(callback: CallbackQuery):
 async def show_help(callback: CallbackQuery):
     settings = await load_json(SETTINGS_FILE, {})
     text = (f"❓ *Помощь*\n\n"
-            f"🎮 *Игры (13):* Орёл/Решка, Кости, КНБ, Рулетка, Покер, Баккара, Блэкджек, Crash, Mines, Кено, Колесо Фортуны, Выше/Ниже\n\n"
+            f"🎮 *Игры (12):* Орёл/Решка, Кости, КНБ, Рулетка, Покер, Баккара, Блэкджек, Crash, Mines, Кено, Колесо Фортуны, Выше/Ниже\n\n"
+            f"💥 *Crash:* Ставка растет пока не крашнется! Забирайте выигрыш вовремя!\n\n"
+            f"💣 *Mines:* Выберите количество мин (1-10), открывайте клетки, увеличивайте множитель!\n\n"
             f"🎰 *Казино (5):* Слоты, Кости, Кено, Колесо Фортуны, Выше/Ниже\n\n"
             f"🏆 *Турниры:* Участвуйте, получайте очки, выигрывайте призы\n\n"
             f"📋 *Задания:* Подписывайтесь на каналы (бот должен быть в канале!)\n\n"
@@ -2224,7 +2663,7 @@ async def noop(callback: CallbackQuery):
 async def copy_text(callback: CallbackQuery):
     await callback.answer("✅ Ссылка скопирована!", show_alert=True)
 
-# Админ панель (упрощенно для краткости, но полная)
+# =============== АДМИН ПАНЕЛЬ (ПОЛНАЯ РЕАЛИЗАЦИЯ) ===============
 @dp.callback_query(F.data == "admin_panel")
 async def admin_panel(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
@@ -2758,6 +3197,7 @@ async def admin_lottery_prize(message: Message, state: FSMContext):
         prize = int(message.text)
         lottery_id = await create_lottery(message.from_user.id, prize)
         if lottery_id:
+            settings = await load_json(SETTINGS_FILE, {})
             await message.answer(f"✅ Лотерея создана!\n\n💰 Призовой фонд: {prize} ⭐\n🎫 Цена билета: {settings.get('lottery_ticket_price', 50)} ⭐\n⏰ Длительность: 24 часа")
         else:
             await message.answer("❌ Лотерея уже активна!")
@@ -2976,6 +3416,10 @@ async def admin_settings_menu(callback: CallbackQuery):
             f"💱 Курс обмена: {settings.get('exchange_rate', 1)}:1\n"
             f"📦 Цена чек системы: {settings.get('check_system_price', 100)} ⭐\n"
             f"🎲 Цена билета лотереи: {settings.get('lottery_ticket_price', 50)} ⭐\n"
+            f"💥 Мин. ставка Crash: {settings.get('crash_min_bet', 5)} ⭐\n"
+            f"💥 Макс. ставка Crash: {settings.get('crash_max_bet', 5000)} ⭐\n"
+            f"💣 Мин. ставка Mines: {settings.get('mines_min_bet', 10)} ⭐\n"
+            f"💣 Макс. ставка Mines: {settings.get('mines_max_bet', 2000)} ⭐\n"
             f"🎰 Казино: {'✅ Вкл' if settings.get('casino_enabled', True) else '❌ Выкл'}\n"
             f"🏆 Турниры: {'✅ Вкл' if settings.get('tournament_enabled', True) else '❌ Выкл'}\n\n"
             f"Выберите параметр для изменения:")
@@ -2988,6 +3432,10 @@ async def admin_settings_menu(callback: CallbackQuery):
         [InlineKeyboardButton(text="💱 Курс обмена", callback_data="set_exchange_rate"),
          InlineKeyboardButton(text="📦 Цена чек системы", callback_data="set_check_system_price")],
         [InlineKeyboardButton(text="🎲 Цена билета лотереи", callback_data="set_lottery_ticket_price"),
+         InlineKeyboardButton(text="💥 Мин. ставка Crash", callback_data="set_crash_min_bet")],
+        [InlineKeyboardButton(text="💥 Макс. ставка Crash", callback_data="set_crash_max_bet"),
+         InlineKeyboardButton(text="💣 Мин. ставка Mines", callback_data="set_mines_min_bet")],
+        [InlineKeyboardButton(text="💣 Макс. ставка Mines", callback_data="set_mines_max_bet"),
          InlineKeyboardButton(text="🎰 Казино", callback_data="set_casino")],
         [InlineKeyboardButton(text="🏆 Турниры", callback_data="set_tournaments"),
          InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
@@ -3017,7 +3465,9 @@ async def admin_setting_change(callback: CallbackQuery, state: FSMContext):
         "start_balance": "стартовый баланс", "min_withdraw": "мин. вывод",
         "referral_reward": "реф. награду", "referral_percent": "реф. процент",
         "exchange_rate": "курс обмена", "check_system_price": "цену чек системы",
-        "lottery_ticket_price": "цену билета лотереи"
+        "lottery_ticket_price": "цену билета лотереи",
+        "crash_min_bet": "мин. ставку Crash", "crash_max_bet": "макс. ставку Crash",
+        "mines_min_bet": "мин. ставку Mines", "mines_max_bet": "макс. ставку Mines"
     }
     await callback.message.edit_text(f"📝 Введите {names.get(setting, setting)}:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_settings")]

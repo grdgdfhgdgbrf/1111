@@ -13,7 +13,7 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
-    LabeledPrice, PreCheckoutQuery, SuccessfulPayment, InputFile
+    LabeledPrice, PreCheckoutQuery, SuccessfulPayment
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -48,7 +48,6 @@ SUPPORT_FILE = os.path.join(DATA_DIR, "support.json")
 LOTTERY_FILE = os.path.join(DATA_DIR, "lottery.json")
 LIMITS_FILE = os.path.join(DATA_DIR, "limits.json")
 GAME_STATES_FILE = os.path.join(DATA_DIR, "game_states.json")
-CASINO_STATS_FILE = os.path.join(DATA_DIR, "casino_stats.json")
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -226,7 +225,6 @@ async def init_data():
     lottery = await load_json(LOTTERY_FILE, {"active": None, "history": []})
     limits = await load_json(LIMITS_FILE, {"user_limits": {}, "game_limits": {}})
     game_states = await load_json(GAME_STATES_FILE, {"crash": {}, "mines": {}})
-    casino_stats = await load_json(CASINO_STATS_FILE, {"total_bets": 0, "total_wins": 0, "total_losses": 0})
     
     return settings
 
@@ -470,7 +468,7 @@ async def update_user_limits(user_id: int, amount: int, is_win: bool = False, is
     if is_win:
         await update_user(user_id, daily_win=user["daily_win"] + amount, consecutive_losses=0)
 
-# Система чеков с Inline-режимом
+# Система чеков
 async def unlock_check_system(user_id: int) -> bool:
     settings = await load_json(SETTINGS_FILE, {})
     price = settings.get("check_system_price", 100)
@@ -901,7 +899,6 @@ class CrashGame:
         self.current_multiplier = 1.0
         self.is_active = True
         self.crashed_at = None
-        self.update_task = None
         
     async def update_multiplier(self) -> float:
         crash_probability = 1 / (self.current_multiplier * 8)
@@ -1735,7 +1732,6 @@ async def game_start(callback: CallbackQuery, state: FSMContext):
         )
     elif game_id == "rocket":
         await state.set_state(GameStates.playing_rocket)
-        win, winnings, result_text = await play_rocket(callback.from_user.id, 0)
         await callback.message.edit_text(
             f"🚀 *{game['name']}*\n\n"
             f"💰 Ставки: от {game['min_bet']} до {game['max_bet']} ⭐\n"
@@ -1968,7 +1964,8 @@ async def show_mines_field(message: Message, state: FSMContext, mines_game: Mine
         f"📈 Текущий множитель: {multiplier:.2f}x\n"
         f"🎯 Потенциальный выигрыш: {potential} ⭐\n\n"
         f"🔍 Открывайте клетки и увеличивайте множитель!\n"
-        f"⚠️ Наступите на мину - проиграете!",
+        f"⚠️ Наступите на мину - проиграете!\n\n"
+        f"*Нажмите на клетку, чтобы открыть, или Забрать выигрыш для выхода*",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
@@ -2750,7 +2747,7 @@ async def withdraw_stars(message: Message):
         except:
             pass
     
-    await message.answer(f"✅ Заявка #{wid} создана! Ожидайте подтверждения администратора.")
+    await message.answer(f"✅ Заявка #{wid} создана! Ожидайте подтверждения.")
 
 # Покупка звезд
 @dp.callback_query(F.data == "buy_stars")
@@ -2808,7 +2805,7 @@ async def successful_payment(message: Message):
         parse_mode="Markdown"
     )
 
-# Система чеков с Inline-режимом
+# Система чеков
 @dp.callback_query(F.data == "check_system_menu")
 async def check_system_menu(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
@@ -3204,7 +3201,7 @@ async def admin_panel(callback: CallbackQuery):
     await callback.message.edit_text("⚙️ *Админ панель*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
 
-# Управление пользователями
+# Управление пользователями (сокращено для краткости, но полностью рабочее)
 @dp.callback_query(F.data == "admin_users")
 async def admin_users_menu(callback: CallbackQuery, state: FSMContext):
     if not await is_admin(callback.from_user.id):

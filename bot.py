@@ -48,6 +48,7 @@ SUPPORT_FILE = os.path.join(DATA_DIR, "support.json")
 LOTTERY_FILE = os.path.join(DATA_DIR, "lottery.json")
 LIMITS_FILE = os.path.join(DATA_DIR, "limits.json")
 GAME_STATES_FILE = os.path.join(DATA_DIR, "game_states.json")
+CASINO_STATS_FILE = os.path.join(DATA_DIR, "casino_stats.json")
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -73,7 +74,6 @@ class GameStates(StatesGroup):
     playing_rocket = State()
     playing_coin_toss = State()
     playing_lucky_number = State()
-    waiting_for_cashout = State()
 
 class CasinoStates(StatesGroup):
     waiting_for_bet = State()
@@ -225,6 +225,7 @@ async def init_data():
     lottery = await load_json(LOTTERY_FILE, {"active": None, "history": []})
     limits = await load_json(LIMITS_FILE, {"user_limits": {}, "game_limits": {}})
     game_states = await load_json(GAME_STATES_FILE, {"crash": {}, "mines": {}})
+    casino_stats = await load_json(CASINO_STATS_FILE, {"total_bets": 0, "total_wins": 0, "total_losses": 0})
     
     return settings
 
@@ -375,59 +376,7 @@ async def check_achievements(user_id: int):
             except:
                 pass
 
-# Система ограничений на вывод
-async def check_withdraw_limits(user_id: int, amount: int) -> Tuple[bool, str]:
-    user = await get_user(user_id)
-    settings = await load_json(SETTINGS_FILE, {})
-    
-    if user.get("is_withdraw_banned", False):
-        ban_until = user.get("withdraw_ban_until")
-        if ban_until:
-            ban_until_date = datetime.fromisoformat(ban_until)
-            if datetime.now() < ban_until_date:
-                return False, f"⛔ Вы забанены на вывод до {ban_until_date.strftime('%d.%m.%Y %H:%M')}\nПричина: {user.get('withdraw_ban_reason', 'Не указана')}"
-            else:
-                await update_user(user_id, is_withdraw_banned=False, withdraw_ban_reason=None, withdraw_ban_until=None)
-    
-    if amount < settings.get("min_withdraw", 500):
-        return False, f"❌ Минимальная сумма вывода: {settings.get('min_withdraw', 500)} ⭐"
-    
-    if user["stars"] < amount:
-        return False, f"❌ Недостаточно звезд! У вас {user['stars']} ⭐"
-    
-    cooldown_hours = settings.get("withdraw_cooldown_hours", 24)
-    if user.get("last_withdraw_time"):
-        last_time = datetime.fromisoformat(user["last_withdraw_time"])
-        next_time = last_time + timedelta(hours=cooldown_hours)
-        if datetime.now() < next_time:
-            hours_left = (next_time - datetime.now()).seconds // 3600
-            minutes_left = ((next_time - datetime.now()).seconds % 3600) // 60
-            return False, f"❌ Следующий вывод будет доступен через {hours_left}ч {minutes_left}м"
-    
-    max_per_day = settings.get("max_withdraw_per_day", 3)
-    if user.get("withdraw_count_today", 0) >= max_per_day:
-        return False, f"❌ Дневной лимит выводов: {max_per_day} раз. Сегодня вы уже вывели {user['withdraw_count_today']} раз"
-    
-    return True, "OK"
-
-async def update_withdraw_stats(user_id: int):
-    user = await get_user(user_id)
-    await update_user(user_id, 
-                      last_withdraw_time=datetime.now().isoformat(),
-                      withdraw_count_today=user.get("withdraw_count_today", 0) + 1)
-
-async def ban_user_withdraw(user_id: int, hours: int, reason: str):
-    ban_until = datetime.now() + timedelta(hours=hours)
-    await update_user(user_id, 
-                      is_withdraw_banned=True, 
-                      withdraw_ban_reason=reason, 
-                      withdraw_ban_until=ban_until.isoformat())
-    await log_admin_action(0, "ban_withdraw", str(user_id), f"Hours: {hours}, Reason: {reason}")
-
-async def unban_user_withdraw(user_id: int):
-    await update_user(user_id, is_withdraw_banned=False, withdraw_ban_reason=None, withdraw_ban_until=None)
-
-# Система ограничений на игры
+# Система ограничений
 async def check_user_limits(user_id: int, bet: int, game: str) -> Tuple[bool, str]:
     user = await get_user(user_id)
     settings = await load_json(SETTINGS_FILE, {})
@@ -1730,16 +1679,6 @@ async def game_start(callback: CallbackQuery, state: FSMContext):
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="games_menu")]])
         )
-    elif game_id == "rocket":
-        await state.set_state(GameStates.playing_rocket)
-        await callback.message.edit_text(
-            f"🚀 *{game['name']}*\n\n"
-            f"💰 Ставки: от {game['min_bet']} до {game['max_bet']} ⭐\n"
-            f"📈 Запусти ракету и забери выигрыш!\n\n"
-            f"Введите сумму ставки:",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="games_menu")]])
-        )
     else:
         await state.set_state(GameStates.waiting_for_bet)
         await callback.message.edit_text(
@@ -1964,8 +1903,7 @@ async def show_mines_field(message: Message, state: FSMContext, mines_game: Mine
         f"📈 Текущий множитель: {multiplier:.2f}x\n"
         f"🎯 Потенциальный выигрыш: {potential} ⭐\n\n"
         f"🔍 Открывайте клетки и увеличивайте множитель!\n"
-        f"⚠️ Наступите на мину - проиграете!\n\n"
-        f"*Нажмите на клетку, чтобы открыть, или Забрать выигрыш для выхода*",
+        f"⚠️ Наступите на мину - проиграете!",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
@@ -2747,7 +2685,7 @@ async def withdraw_stars(message: Message):
         except:
             pass
     
-    await message.answer(f"✅ Заявка #{wid} создана! Ожидайте подтверждения.")
+    await message.answer(f"✅ Заявка #{wid} создана! Ожидайте подтверждения администратора.")
 
 # Покупка звезд
 @dp.callback_query(F.data == "buy_stars")
@@ -3201,7 +3139,7 @@ async def admin_panel(callback: CallbackQuery):
     await callback.message.edit_text("⚙️ *Админ панель*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
 
-# Управление пользователями (сокращено для краткости, но полностью рабочее)
+# Управление пользователями
 @dp.callback_query(F.data == "admin_users")
 async def admin_users_menu(callback: CallbackQuery, state: FSMContext):
     if not await is_admin(callback.from_user.id):

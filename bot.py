@@ -1406,8 +1406,8 @@ def get_main_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🎮 Игры", callback_data="games_menu"),
          InlineKeyboardButton(text="⭐ Баланс", callback_data="stars_info")],
         [InlineKeyboardButton(text="🏆 Турниры", callback_data="tournaments_menu"),
-         InlineKeyboardButton(text="👥 Рефералы", callback_data="referrals_menu")],
-        [InlineKeyboardButton(text="📋 Задания", callback_data="tasks_menu"),
+         InlineKeyboardButton(text="📋 Задания", callback_data="tasks_menu")],
+        [InlineKeyboardButton(text="👥 Рефералы", callback_data="referrals_menu"),
          InlineKeyboardButton(text="💰 Вывод", callback_data="withdraw_menu")],
         [InlineKeyboardButton(text="🛒 Купить", callback_data="buy_stars"),
          InlineKeyboardButton(text="🎫 Промокод", callback_data="use_promo")],
@@ -3707,7 +3707,8 @@ async def admin_setting_change(callback: CallbackQuery, state: FSMContext):
     
     if setting in ["tournaments"]:
         settings = await load_json(SETTINGS_FILE, {})
-        settings["tournament_enabled"] = not settings.get("tournament_enabled", True)
+        if setting == "tournaments":
+            settings["tournament_enabled"] = not settings.get("tournament_enabled", True)
         await save_json(SETTINGS_FILE, settings)
         await callback.answer("✅ Настройка обновлена!")
         await admin_settings_menu(callback)

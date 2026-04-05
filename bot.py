@@ -1508,6 +1508,16 @@ async def game_start(callback: CallbackQuery, state: FSMContext):
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="games_menu")]])
         )
+    elif game_id == "rocket":
+        await state.set_state(GameStates.playing_rocket)
+        await callback.message.edit_text(
+            f"🚀 *{game['name']}*\n\n"
+            f"💰 Ставки: от {game['min_bet']} до {game['max_bet']} ⭐\n"
+            f"📈 Запусти ракету и забери выигрыш!\n\n"
+            f"Введите сумму ставки:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="games_menu")]])
+        )
     else:
         await state.set_state(GameStates.waiting_for_bet)
         await callback.message.edit_text(
@@ -3695,7 +3705,7 @@ async def admin_settings_menu(callback: CallbackQuery):
 async def admin_setting_change(callback: CallbackQuery, state: FSMContext):
     setting = callback.data.replace("set_", "")
     
-    if setting == "tournaments":
+    if setting in ["tournaments"]:
         settings = await load_json(SETTINGS_FILE, {})
         settings["tournament_enabled"] = not settings.get("tournament_enabled", True)
         await save_json(SETTINGS_FILE, settings)

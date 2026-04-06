@@ -341,7 +341,9 @@ async def check_achievements(user_id: int):
         "lucky": {"name": "🍀 Счастливчик", "description": "Выиграть 100 игр",
                  "condition": user["games_won"] >= 100, "reward": 25000},
         "referral_master": {"name": "👥 Мастер рефералов", "description": "Пригласить 100 друзей",
-                           "condition": user["referral_count"] >= 100, "reward": 50000}
+                           "condition": user["referral_count"] >= 100, "reward": 50000},
+        "tournament_winner": {"name": "🏆 Победитель турнира", "description": "Выиграть турнир",
+                             "condition": user["tournament_points"] >= 1000, "reward": 25000}
     }
     
     for ach_id, ach in achievements.items():
@@ -359,7 +361,47 @@ async def check_achievements(user_id: int):
             except:
                 pass
 
-# Система ограничений на вывод
+# Система ограничений
+async def check_user_limits(user_id: int, bet: int, game: str) -> Tuple[bool, str]:
+    user = await get_user(user_id)
+    settings = await load_json(SETTINGS_FILE, {})
+    limits = await load_json(LIMITS_FILE, {"user_limits": {}, "game_limits": {}})
+    
+    if user["stars"] < settings.get("min_balance_for_bet", 10):
+        return False, f"Минимальный баланс для игры: {settings.get('min_balance_for_bet', 10)} ⭐"
+    
+    daily_loss_limit = limits.get("user_limits", {}).get(str(user_id), {}).get("daily_loss_limit", settings.get("max_daily_loss", 50000))
+    if user["daily_loss"] + bet > daily_loss_limit:
+        return False, f"Дневной лимит потерь: {daily_loss_limit} ⭐. Сегодня вы уже проиграли {user['daily_loss']} ⭐"
+    
+    daily_win_limit = limits.get("user_limits", {}).get(str(user_id), {}).get("daily_win_limit", settings.get("max_daily_win", 100000))
+    if user["daily_win"] >= daily_win_limit:
+        return False, f"Дневной лимит выигрыша: {daily_win_limit} ⭐. Вы уже достигли лимита!"
+    
+    max_losses = limits.get("user_limits", {}).get(str(user_id), {}).get("max_consecutive_losses", settings.get("max_consecutive_losses", 10))
+    if user["consecutive_losses"] >= max_losses:
+        return False, f"Вы проиграли {user['consecutive_losses']} раз подряд! Сделайте паузу."
+    
+    game_limits = limits.get("game_limits", {}).get(game, {})
+    if game_limits:
+        if bet > game_limits.get("max_bet", settings.get("max_bet", 10000)):
+            return False, f"Максимальная ставка для {game}: {game_limits['max_bet']} ⭐"
+        if bet < game_limits.get("min_bet", settings.get("min_bet", 1)):
+            return False, f"Минимальная ставка для {game}: {game_limits['min_bet']} ⭐"
+    
+    return True, "OK"
+
+async def update_user_limits(user_id: int, amount: int, is_win: bool = False, is_loss: bool = False):
+    user = await get_user(user_id)
+    
+    if is_loss:
+        await update_user(user_id, daily_loss=user["daily_loss"] + amount, consecutive_losses=user["consecutive_losses"] + 1)
+    else:
+        await update_user(user_id, daily_win=user["daily_win"] + amount, consecutive_losses=0)
+    
+    if is_win:
+        await update_user(user_id, daily_win=user["daily_win"] + amount, consecutive_losses=0)
+
 async def check_withdraw_limits(user_id: int, amount: int) -> Tuple[bool, str]:
     user = await get_user(user_id)
     settings = await load_json(SETTINGS_FILE, {})
@@ -410,47 +452,6 @@ async def ban_user_withdraw(user_id: int, hours: int, reason: str):
 
 async def unban_user_withdraw(user_id: int):
     await update_user(user_id, is_withdraw_banned=False, withdraw_ban_reason=None, withdraw_ban_until=None)
-
-# Система ограничений на игры
-async def check_user_limits(user_id: int, bet: int, game: str) -> Tuple[bool, str]:
-    user = await get_user(user_id)
-    settings = await load_json(SETTINGS_FILE, {})
-    limits = await load_json(LIMITS_FILE, {"user_limits": {}, "game_limits": {}})
-    
-    if user["stars"] < settings.get("min_balance_for_bet", 10):
-        return False, f"Минимальный баланс для игры: {settings.get('min_balance_for_bet', 10)} ⭐"
-    
-    daily_loss_limit = limits.get("user_limits", {}).get(str(user_id), {}).get("daily_loss_limit", settings.get("max_daily_loss", 50000))
-    if user["daily_loss"] + bet > daily_loss_limit:
-        return False, f"Дневной лимит потерь: {daily_loss_limit} ⭐. Сегодня вы уже проиграли {user['daily_loss']} ⭐"
-    
-    daily_win_limit = limits.get("user_limits", {}).get(str(user_id), {}).get("daily_win_limit", settings.get("max_daily_win", 100000))
-    if user["daily_win"] >= daily_win_limit:
-        return False, f"Дневной лимит выигрыша: {daily_win_limit} ⭐. Вы уже достигли лимита!"
-    
-    max_losses = limits.get("user_limits", {}).get(str(user_id), {}).get("max_consecutive_losses", settings.get("max_consecutive_losses", 10))
-    if user["consecutive_losses"] >= max_losses:
-        return False, f"Вы проиграли {user['consecutive_losses']} раз подряд! Сделайте паузу."
-    
-    game_limits = limits.get("game_limits", {}).get(game, {})
-    if game_limits:
-        if bet > game_limits.get("max_bet", settings.get("max_bet", 10000)):
-            return False, f"Максимальная ставка для {game}: {game_limits['max_bet']} ⭐"
-        if bet < game_limits.get("min_bet", settings.get("min_bet", 1)):
-            return False, f"Минимальная ставка для {game}: {game_limits['min_bet']} ⭐"
-    
-    return True, "OK"
-
-async def update_user_limits(user_id: int, amount: int, is_win: bool = False, is_loss: bool = False):
-    user = await get_user(user_id)
-    
-    if is_loss:
-        await update_user(user_id, daily_loss=user["daily_loss"] + amount, consecutive_losses=user["consecutive_losses"] + 1)
-    else:
-        await update_user(user_id, daily_win=user["daily_win"] + amount, consecutive_losses=0)
-    
-    if is_win:
-        await update_user(user_id, daily_win=user["daily_win"] + amount, consecutive_losses=0)
 
 # Система чеков
 async def unlock_check_system(user_id: int) -> bool:
@@ -1406,8 +1407,8 @@ def get_main_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🎮 Игры", callback_data="games_menu"),
          InlineKeyboardButton(text="⭐ Баланс", callback_data="stars_info")],
         [InlineKeyboardButton(text="🏆 Турниры", callback_data="tournaments_menu"),
-         InlineKeyboardButton(text="📋 Задания", callback_data="tasks_menu")],
-        [InlineKeyboardButton(text="👥 Рефералы", callback_data="referrals_menu"),
+         InlineKeyboardButton(text="👥 Рефералы", callback_data="referrals_menu")],
+        [InlineKeyboardButton(text="📋 Задания", callback_data="tasks_menu"),
          InlineKeyboardButton(text="💰 Вывод", callback_data="withdraw_menu")],
         [InlineKeyboardButton(text="🛒 Купить", callback_data="buy_stars"),
          InlineKeyboardButton(text="🎫 Промокод", callback_data="use_promo")],
@@ -1448,7 +1449,7 @@ async def cmd_start(message: Message, state: FSMContext):
     
     text = (f"✨ Добро пожаловать, {message.from_user.full_name}!\n\n"
             f"⭐ Баланс: {user['stars']} звезд\n\n"
-            f"🎮 19 игр | 🏆 Турниры\n"
+            f"🎮 19 увлекательных игр | 🏆 Турниры\n"
             f"💥 Crash - забирай выигрыш пока не упал!\n"
             f"💣 Mines - открывай клетки и увеличивай множитель!\n"
             f"🚀 Rocket - запусти ракету и забери выигрыш!\n"
@@ -1510,6 +1511,7 @@ async def game_start(callback: CallbackQuery, state: FSMContext):
         )
     elif game_id == "rocket":
         await state.set_state(GameStates.playing_rocket)
+        win, winnings, result_text = await play_rocket(callback.from_user.id, 0)
         await callback.message.edit_text(
             f"🚀 *{game['name']}*\n\n"
             f"💰 Ставки: от {game['min_bet']} до {game['max_bet']} ⭐\n"
@@ -1730,7 +1732,7 @@ async def show_mines_field(message: Message, state: FSMContext, mines_game: Mine
         buttons.append(row)
     
     buttons.append([InlineKeyboardButton(text="💰 Забрать выигрыш", callback_data="mines_cashout")])
-    buttons.append([InlineKeyboardButton(text="🔙 Выход в меню", callback_data="games_menu")])
+    buttons.append([InlineKeyboardButton(text="🔙 Выход в меню", callback_data="back_to_main")])
     
     multiplier = mines_game.current_multiplier
     potential = int(mines_game.bet * multiplier)
@@ -1742,8 +1744,7 @@ async def show_mines_field(message: Message, state: FSMContext, mines_game: Mine
         f"📈 Текущий множитель: {multiplier:.2f}x\n"
         f"🎯 Потенциальный выигрыш: {potential} ⭐\n\n"
         f"🔍 Открывайте клетки и увеличивайте множитель!\n"
-        f"⚠️ Наступите на мину - проиграете!\n\n"
-        f"*Нажмите на клетку, чтобы открыть, или Забрать выигрыш для выхода*",
+        f"⚠️ Наступите на мину - проиграете!",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
@@ -1815,7 +1816,7 @@ async def mines_cashout(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.answer()
 
-# Обработчики других игр (сокращены для краткости, но полные)
+# Обработчики других игр
 @dp.message(GameStates.waiting_for_bet)
 async def process_bet(message: Message, state: FSMContext):
     try:
@@ -2321,7 +2322,7 @@ async def withdraw_stars(message: Message):
         except:
             pass
     
-    await message.answer(f"✅ Заявка #{wid} создана! Ожидайте подтверждения.")
+    await message.answer(f"✅ Заявка #{wid} создана! Ожидайте подтверждения администратора.")
 
 # Покупка звезд
 @dp.callback_query(F.data == "buy_stars")
@@ -2389,8 +2390,8 @@ async def check_system_menu(callback: CallbackQuery):
         text = (f"📦 *Система чеков*\n\n"
                 f"✅ Система разблокирована!\n\n"
                 f"💰 Создание чека:\n"
-                f"└ Минимум: 100 ⭐\n"
-                f"└ Максимум: 100000 ⭐\n\n"
+                f"└ Минимальная сумма: 100 ⭐\n"
+                f"└ Максимальная сумма: 100000 ⭐\n\n"
                 f"📋 Ваши чеки: /my_checks\n"
                 f"🎫 Активировать чек: /use_check <код>")
         
@@ -2701,7 +2702,10 @@ async def show_stats(callback: CallbackQuery):
 async def show_help(callback: CallbackQuery):
     settings = await load_json(SETTINGS_FILE, {})
     text = (f"❓ *Помощь*\n\n"
-            f"🎮 *Игры (19):* Орёл/Решка, Кости, КНБ, Рулетка, Покер, Баккара, Блэкджек, Crash, Mines, Кено, Колесо Фортуны, Выше/Ниже, Хай-Ло, Plinko, Дуэль костей, Джекпот, Ракета, Монета, Счастливое число\n\n"
+            f"🎮 *Игры (19):*\n"
+            f"└ Орёл/Решка, Кости, КНБ, Рулетка, Покер, Баккара, Блэкджек\n"
+            f"└ Crash, Mines, Кено, Колесо Фортуны, Выше/Ниже, Хай-Ло\n"
+            f"└ Plinko, Дуэль костей, Джекпот, Ракета, Монета, Счастливое число\n\n"
             f"💥 *Crash:* Ставка растет, пока не случится краш. Забери выигрыш в любой момент!\n\n"
             f"💣 *Mines:* Открывай клетки на поле 5x5. Чем больше клеток открыто, тем выше множитель!\n\n"
             f"🚀 *Rocket:* Запусти ракету и забери выигрыш до падения!\n\n"
@@ -2709,18 +2713,18 @@ async def show_help(callback: CallbackQuery):
             f"📋 *Задания:* Подписывайтесь на каналы (бот должен быть в канале!)\n\n"
             f"👥 *Рефералы:* {settings.get('referral_reward', 10)} ⭐ за друга + {settings.get('referral_percent', 10)}% от его покупок\n\n"
             f"📦 *Чеки:*\n"
-            f"• Разблокировка: {settings.get('check_system_price', 100)} ⭐\n"
-            f"• Создание чека: от 100 до 100000 ⭐\n"
-            f"• Активация чека: по кнопке или /use_check <код>\n\n"
+            f"└ Разблокировка: {settings.get('check_system_price', 100)} ⭐\n"
+            f"└ Создание чека: от 100 до 100000 ⭐\n"
+            f"└ Активация чека: по кнопке или /use_check <код>\n\n"
             f"🎲 *Лотерея:* Покупайте билеты ({settings.get('lottery_ticket_price', 50)} ⭐), выигрывайте весь призовой фонд\n\n"
             f"💰 *Вывод:* /withdraw <сумма>, мин. {settings.get('min_withdraw', 500)} ⭐\n"
-            f"⏰ КД между выводами: {settings.get('withdraw_cooldown_hours', 24)} часов\n"
-            f"📊 Лимит выводов в день: {settings.get('max_withdraw_per_day', 3)}\n\n"
+            f"└ КД между выводами: {settings.get('withdraw_cooldown_hours', 24)} часов\n"
+            f"└ Лимит выводов в день: {settings.get('max_withdraw_per_day', 3)}\n\n"
             f"🛒 *Покупка:* Введите сумму в меню покупки, оплата Telegram Stars\n\n"
             f"⚠️ *Лимиты:*\n"
-            f"• Дневной лимит потерь: {settings.get('max_daily_loss', 50000)} ⭐\n"
-            f"• Дневной лимит выигрыша: {settings.get('max_daily_win', 100000)} ⭐\n"
-            f"• Макс. проигрышей подряд: {settings.get('max_consecutive_losses', 10)}\n\n"
+            f"└ Дневной лимит потерь: {settings.get('max_daily_loss', 50000)} ⭐\n"
+            f"└ Дневной лимит выигрыша: {settings.get('max_daily_win', 100000)} ⭐\n"
+            f"└ Макс. проигрышей подряд: {settings.get('max_consecutive_losses', 10)}\n\n"
             f"💬 *Поддержка:* Создайте тикет в меню поддержки\n\n"
             f"По вопросам: @admin")
     
@@ -2774,7 +2778,7 @@ async def admin_panel(callback: CallbackQuery):
     await callback.message.edit_text("⚙️ *Админ панель*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
 
-# Управление пользователями (сокращено для краткости, но полностью рабочее)
+# Управление пользователями
 @dp.callback_query(F.data == "admin_users")
 async def admin_users_menu(callback: CallbackQuery, state: FSMContext):
     if not await is_admin(callback.from_user.id):

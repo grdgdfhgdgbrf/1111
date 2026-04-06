@@ -122,6 +122,9 @@ class BuyStates(StatesGroup):
 class LotteryStates(StatesGroup):
     waiting_for_ticket_count = State()
 
+class BonusStates(StatesGroup):
+    waiting_for_claim = State()
+
 # Функции работы с JSON
 async def load_json(filename: str, default: dict) -> dict:
     if os.path.exists(filename):
@@ -164,6 +167,9 @@ async def init_data():
             "min_balance_for_bet": 10,
             "withdraw_cooldown_hours": 24,
             "max_withdraw_per_day": 3,
+            "daily_bonus_enabled": True,
+            "daily_bonus_min": 5,
+            "daily_bonus_max": 50,
             "bot_id": BOT_ID
         }
         await save_json(SETTINGS_FILE, settings)
@@ -193,6 +199,8 @@ async def init_data():
             "is_withdraw_banned": False,
             "withdraw_ban_reason": None,
             "withdraw_ban_until": None,
+            "last_daily_bonus": None,
+            "daily_bonus_streak": 0,
             "created_at": datetime.now().isoformat()
         }
         updated = False
@@ -246,6 +254,8 @@ async def get_user(user_id: int) -> dict:
             "is_withdraw_banned": False,
             "withdraw_ban_reason": None,
             "withdraw_ban_until": None,
+            "last_daily_bonus": None,
+            "daily_bonus_streak": 0,
             "created_at": datetime.now().isoformat()
         }
         await save_json(USERS_FILE, users)
@@ -343,7 +353,11 @@ async def check_achievements(user_id: int):
         "referral_master": {"name": "👥 Мастер рефералов", "description": "Пригласить 100 друзей",
                            "condition": user["referral_count"] >= 100, "reward": 50000},
         "tournament_winner": {"name": "🏆 Победитель турнира", "description": "Выиграть турнир",
-                             "condition": user["tournament_points"] >= 1000, "reward": 25000}
+                             "condition": user["tournament_points"] >= 1000, "reward": 25000},
+        "streak_7": {"name": "📅 7 дней подряд", "description": "Получить ежедневный бонус 7 дней",
+                    "condition": user["daily_bonus_streak"] >= 7, "reward": 5000},
+        "streak_30": {"name": "🏆 30 дней подряд", "description": "Получить ежедневный бонус 30 дней",
+                     "condition": user["daily_bonus_streak"] >= 30, "reward": 25000}
     }
     
     for ach_id, ach in achievements.items():
@@ -360,6 +374,41 @@ async def check_achievements(user_id: int):
                 )
             except:
                 pass
+
+# Ежедневный бонус
+async def claim_daily_bonus(user_id: int) -> Tuple[bool, int, str]:
+    user = await get_user(user_id)
+    settings = await load_json(SETTINGS_FILE, {})
+    
+    if not settings.get("daily_bonus_enabled", True):
+        return False, 0, "❌ Ежедневный бонус отключен администратором!"
+    
+    last_bonus = user.get("last_daily_bonus")
+    today = datetime.now().date()
+    
+    if last_bonus:
+        last_date = datetime.fromisoformat(last_bonus).date()
+        if last_date == today:
+            return False, 0, f"❌ Вы уже получили бонус сегодня!\n🔥 Текущий стрик: {user.get('daily_bonus_streak', 0)} дней"
+        
+        if last_date == today - timedelta(days=1):
+            streak = user.get("daily_bonus_streak", 0) + 1
+        else:
+            streak = 1
+    else:
+        streak = 1
+    
+    min_bonus = settings.get("daily_bonus_min", 5)
+    max_bonus = settings.get("daily_bonus_max", 50)
+    bonus = min_bonus + min(streak, 30) * 2
+    bonus = min(bonus, max_bonus)
+    
+    await add_stars(user_id, bonus, f"Ежедневный бонус (день {streak})")
+    await update_user(user_id, last_daily_bonus=datetime.now().isoformat(), daily_bonus_streak=streak)
+    
+    await check_achievements(user_id)
+    
+    return True, bonus, f"🔥 Стрик: {streak} дней!\n⭐ Получено: {bonus} звезд"
 
 # Система ограничений
 async def check_user_limits(user_id: int, bet: int, game: str) -> Tuple[bool, str]:
@@ -1406,17 +1455,18 @@ def get_main_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(text="🎮 Игры", callback_data="games_menu"),
          InlineKeyboardButton(text="⭐ Баланс", callback_data="stars_info")],
-        [InlineKeyboardButton(text="🏆 Турниры", callback_data="tournaments_menu"),
-         InlineKeyboardButton(text="👥 Рефералы", callback_data="referrals_menu")],
-        [InlineKeyboardButton(text="📋 Задания", callback_data="tasks_menu"),
-         InlineKeyboardButton(text="💰 Вывод", callback_data="withdraw_menu")],
-        [InlineKeyboardButton(text="🛒 Купить", callback_data="buy_stars"),
-         InlineKeyboardButton(text="🎫 Промокод", callback_data="use_promo")],
-        [InlineKeyboardButton(text="🎲 Лотерея", callback_data="lottery_menu"),
-         InlineKeyboardButton(text="📦 Чек система", callback_data="check_system_menu")],
-        [InlineKeyboardButton(text="💬 Поддержка", callback_data="support_menu"),
-         InlineKeyboardButton(text="📊 Статистика", callback_data="stats")],
-        [InlineKeyboardButton(text="❓ Помощь", callback_data="help")]
+        [InlineKeyboardButton(text="🎁 Ежедневный бонус", callback_data="daily_bonus"),
+         InlineKeyboardButton(text="🏆 Турниры", callback_data="tournaments_menu")],
+        [InlineKeyboardButton(text="👥 Рефералы", callback_data="referrals_menu"),
+         InlineKeyboardButton(text="📋 Задания", callback_data="tasks_menu")],
+        [InlineKeyboardButton(text="💰 Вывод", callback_data="withdraw_menu"),
+         InlineKeyboardButton(text="🛒 Купить", callback_data="buy_stars")],
+        [InlineKeyboardButton(text="🎫 Промокод", callback_data="use_promo"),
+         InlineKeyboardButton(text="🎲 Лотерея", callback_data="lottery_menu")],
+        [InlineKeyboardButton(text="📦 Чек система", callback_data="check_system_menu"),
+         InlineKeyboardButton(text="💬 Поддержка", callback_data="support_menu")],
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="stats"),
+         InlineKeyboardButton(text="❓ Помощь", callback_data="help")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -1453,6 +1503,7 @@ async def cmd_start(message: Message, state: FSMContext):
             f"💥 Crash - забирай выигрыш пока не упал!\n"
             f"💣 Mines - открывай клетки и увеличивай множитель!\n"
             f"🚀 Rocket - запусти ракету и забери выигрыш!\n"
+            f"🎁 Ежедневный бонус - получай звезды каждый день!\n"
             f"📋 Задания на каналы (бот должен быть в канале)\n"
             f"👥 Рефералы (10% от покупок)\n"
             f"📦 Система чеков (доступ за {settings.get('check_system_price', 100)} ⭐)\n"
@@ -1467,6 +1518,29 @@ async def cmd_start(message: Message, state: FSMContext):
             f"Приятной игры! 🎉")
     
     await message.answer(text, parse_mode="Markdown", reply_markup=keyboard)
+
+# Ежедневный бонус
+@dp.callback_query(F.data == "daily_bonus")
+async def daily_bonus(callback: CallbackQuery):
+    success, amount, msg = await claim_daily_bonus(callback.from_user.id)
+    
+    if success:
+        text = (f"🎁 *Ежедневный бонус получен!*\n\n"
+                f"{msg}\n\n"
+                f"💰 Баланс: {callback.from_user.id} обновлен")
+        await callback.answer(f"✅ Получено {amount} ⭐!", show_alert=True)
+    else:
+        text = (f"🎁 *Ежедневный бонус*\n\n"
+                f"{msg}\n\n"
+                f"💰 Зайдите завтра за новым бонусом!")
+        await callback.answer(f"❌ {msg}", show_alert=True)
+    
+    user = await get_user(callback.from_user.id)
+    await callback.message.edit_text(
+        f"✨ Главное меню\n\n⭐ У вас {user['stars']} звезд",
+        reply_markup=get_main_keyboard()
+    )
+    await callback.answer()
 
 # Игры меню
 @dp.callback_query(F.data == "games_menu")
@@ -1506,17 +1580,6 @@ async def game_start(callback: CallbackQuery, state: FSMContext):
             f"💣 Выбери количество мин на поле (1-10)\n"
             f"🎯 Чем больше мин, тем выше множитель!\n\n"
             f"Введите количество мин (1-10):",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="games_menu")]])
-        )
-    elif game_id == "rocket":
-        await state.set_state(GameStates.playing_rocket)
-        win, winnings, result_text = await play_rocket(callback.from_user.id, 0)
-        await callback.message.edit_text(
-            f"🚀 *{game['name']}*\n\n"
-            f"💰 Ставки: от {game['min_bet']} до {game['max_bet']} ⭐\n"
-            f"📈 Запусти ракету и забери выигрыш!\n\n"
-            f"Введите сумму ставки:",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="games_menu")]])
         )
@@ -2687,6 +2750,7 @@ async def show_stats(callback: CallbackQuery):
             f"👥 Рефералов: {user['referral_count']}\n🎮 Игр: {user['games_played']}\n"
             f"🏆 Побед: {user['games_won']}\n🏆 Очки турнира: {user['tournament_points']}\n"
             f"✨ Достижений: {len(user['achievements'])}\n"
+            f"🔥 Стрик бонусов: {user.get('daily_bonus_streak', 0)} дней\n"
             f"📅 Дневные потери: {user['daily_loss']} ⭐\n"
             f"📈 Дневные выигрыши: {user['daily_win']} ⭐\n"
             f"📊 Проигрышей подряд: {user['consecutive_losses']}\n"
@@ -2709,6 +2773,7 @@ async def show_help(callback: CallbackQuery):
             f"💥 *Crash:* Ставка растет, пока не случится краш. Забери выигрыш в любой момент!\n\n"
             f"💣 *Mines:* Открывай клетки на поле 5x5. Чем больше клеток открыто, тем выше множитель!\n\n"
             f"🚀 *Rocket:* Запусти ракету и забери выигрыш до падения!\n\n"
+            f"🎁 *Ежедневный бонус:* Получай звезды каждый день! Чем больше стрик, тем больше бонус!\n\n"
             f"🏆 *Турниры:* Участвуйте, получайте очки, выигрывайте призы\n\n"
             f"📋 *Задания:* Подписывайтесь на каналы (бот должен быть в канале!)\n\n"
             f"👥 *Рефералы:* {settings.get('referral_reward', 10)} ⭐ за друга + {settings.get('referral_percent', 10)}% от его покупок\n\n"
@@ -2819,6 +2884,7 @@ async def admin_show_user(message: Message, state: FSMContext):
                 f"💸 Потрачено: {user['total_spent']}\n👥 Рефералов: {user['referral_count']}\n"
                 f"🎮 Игр: {user['games_played']}\n🏆 Побед: {user['games_won']}\n"
                 f"🏆 Очки турнира: {user['tournament_points']}\n"
+                f"🔥 Стрик бонусов: {user.get('daily_bonus_streak', 0)}\n"
                 f"📅 Дневные потери: {user['daily_loss']} ⭐\n"
                 f"📈 Дневные выигрыши: {user['daily_win']} ⭐\n"
                 f"📊 Проигрышей подряд: {user['consecutive_losses']}\n"
@@ -3426,6 +3492,8 @@ async def admin_limits_menu(callback: CallbackQuery, state: FSMContext):
             f"📈 Дневной лимит выигрыша: {settings.get('max_daily_win', 100000)} ⭐\n"
             f"📉 Макс. проигрышей подряд: {settings.get('max_consecutive_losses', 10)}\n"
             f"💰 Мин. баланс для игры: {settings.get('min_balance_for_bet', 10)} ⭐\n"
+            f"🎁 Мин. ежедневный бонус: {settings.get('daily_bonus_min', 5)} ⭐\n"
+            f"🎁 Макс. ежедневный бонус: {settings.get('daily_bonus_max', 50)} ⭐\n"
             f"⏰ КД между выводами: {settings.get('withdraw_cooldown_hours', 24)} часов\n"
             f"📊 Лимит выводов в день: {settings.get('max_withdraw_per_day', 3)}\n\n"
             f"Выберите параметр для изменения:")
@@ -3435,6 +3503,8 @@ async def admin_limits_menu(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="📈 Дневной лимит выигрыша", callback_data="limit_daily_win")],
         [InlineKeyboardButton(text="📉 Макс. проигрышей подряд", callback_data="limit_consecutive_losses")],
         [InlineKeyboardButton(text="💰 Мин. баланс для игры", callback_data="limit_min_balance")],
+        [InlineKeyboardButton(text="🎁 Мин. ежедневный бонус", callback_data="limit_daily_bonus_min")],
+        [InlineKeyboardButton(text="🎁 Макс. ежедневный бонус", callback_data="limit_daily_bonus_max")],
         [InlineKeyboardButton(text="⏰ КД между выводами", callback_data="limit_withdraw_cooldown")],
         [InlineKeyboardButton(text="📊 Лимит выводов в день", callback_data="limit_max_withdraw_per_day")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
@@ -3457,6 +3527,8 @@ async def admin_limit_change(callback: CallbackQuery, state: FSMContext):
         "daily_win": "дневной лимит выигрыша",
         "consecutive_losses": "максимальное количество проигрышей подряд",
         "min_balance": "минимальный баланс для игры",
+        "daily_bonus_min": "минимальный ежедневный бонус",
+        "daily_bonus_max": "максимальный ежедневный бонус",
         "withdraw_cooldown": "кулдаун между выводами (часы)",
         "max_withdraw_per_day": "максимальное количество выводов в день"
     }
@@ -3488,6 +3560,10 @@ async def admin_save_limit(message: Message, state: FSMContext):
             settings["max_consecutive_losses"] = value
         elif limit_type == "min_balance":
             settings["min_balance_for_bet"] = value
+        elif limit_type == "daily_bonus_min":
+            settings["daily_bonus_min"] = value
+        elif limit_type == "daily_bonus_max":
+            settings["daily_bonus_max"] = value
         elif limit_type == "withdraw_cooldown":
             settings["withdraw_cooldown_hours"] = value
         elif limit_type == "max_withdraw_per_day":
@@ -3688,6 +3764,7 @@ async def admin_settings_menu(callback: CallbackQuery):
             f"💱 Курс обмена: {settings.get('exchange_rate', 1)}:1\n"
             f"📦 Цена чек системы: {settings.get('check_system_price', 100)} ⭐\n"
             f"🎲 Цена билета лотереи: {settings.get('lottery_ticket_price', 50)} ⭐\n"
+            f"🎁 Ежедневный бонус: {'✅ Вкл' if settings.get('daily_bonus_enabled', True) else '❌ Выкл'}\n"
             f"🏆 Турниры: {'✅ Вкл' if settings.get('tournament_enabled', True) else '❌ Выкл'}\n\n"
             f"Выберите параметр для изменения:")
     
@@ -3699,8 +3776,9 @@ async def admin_settings_menu(callback: CallbackQuery):
         [InlineKeyboardButton(text="💱 Курс обмена", callback_data="set_exchange_rate"),
          InlineKeyboardButton(text="📦 Цена чек системы", callback_data="set_check_system_price")],
         [InlineKeyboardButton(text="🎲 Цена билета лотереи", callback_data="set_lottery_ticket_price"),
-         InlineKeyboardButton(text="🏆 Турниры", callback_data="set_tournaments")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
+         InlineKeyboardButton(text="🎁 Ежедневный бонус", callback_data="set_daily_bonus")],
+        [InlineKeyboardButton(text="🏆 Турниры", callback_data="set_tournaments"),
+         InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
     ]
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
@@ -3709,9 +3787,11 @@ async def admin_settings_menu(callback: CallbackQuery):
 async def admin_setting_change(callback: CallbackQuery, state: FSMContext):
     setting = callback.data.replace("set_", "")
     
-    if setting in ["tournaments"]:
+    if setting in ["daily_bonus", "tournaments"]:
         settings = await load_json(SETTINGS_FILE, {})
-        if setting == "tournaments":
+        if setting == "daily_bonus":
+            settings["daily_bonus_enabled"] = not settings.get("daily_bonus_enabled", True)
+        elif setting == "tournaments":
             settings["tournament_enabled"] = not settings.get("tournament_enabled", True)
         await save_json(SETTINGS_FILE, settings)
         await callback.answer("✅ Настройка обновлена!")
@@ -3768,12 +3848,14 @@ async def admin_stats(callback: CallbackQuery):
     pending_withdrawals = len([w for w in withdrawals.values() if w.get("status") == "pending"])
     open_tickets = len([t for t in support["tickets"] if t["status"] == "open"])
     banned_withdraw = len([u for u in users.values() if u.get("is_withdraw_banned", False)])
+    total_streak = sum(u.get("daily_bonus_streak", 0) for u in users.values())
     
     text = (f"📊 *Общая статистика*\n\n"
             f"👥 Всего пользователей: {total_users}\n"
             f"⭐ Всего звезд: {total_stars}\n"
             f"📦 Чек система: {unlocked_checks}/{total_users}\n"
             f"⛔ Забанены на вывод: {banned_withdraw}\n"
+            f"🔥 Общий стрик бонусов: {total_streak}\n"
             f"📈 Средний баланс: {total_stars // total_users if total_users else 0}\n\n"
             f"📋 Заданий: {len(tasks)}\n"
             f"🎫 Промокодов: {len(promo['promo_codes'])}\n"

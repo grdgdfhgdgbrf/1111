@@ -52,12 +52,9 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 # FSM States
 class CrashStates(StatesGroup):
-    waiting_for_bet = State()
     playing = State()
 
 class MinesStates(StatesGroup):
-    waiting_for_mines_count = State()
-    waiting_for_bet = State()
     playing = State()
 
 class ContestStates(StatesGroup):
@@ -80,6 +77,7 @@ class AdminStates(StatesGroup):
     waiting_for_setting = State()
     waiting_for_setting_value = State()
     waiting_for_withdrawal_action = State()
+    waiting_for_check_code = State()
     waiting_for_limit_value = State()
     waiting_for_limit_type = State()
 
@@ -412,7 +410,7 @@ async def ban_user_withdraw(user_id: int, hours: int, reason: str):
 async def unban_user_withdraw(user_id: int):
     await update_user(user_id, is_withdraw_banned=False, withdraw_ban_reason=None, withdraw_ban_until=None)
 
-# Система чеков со ссылкой
+# Система чеков
 async def unlock_check_system(user_id: int) -> bool:
     settings = await load_json(SETTINGS_FILE, {})
     price = settings.get("check_system_price", 100)
@@ -422,22 +420,22 @@ async def unlock_check_system(user_id: int) -> bool:
         return True
     return False
 
-async def create_check(user_id: int, amount: int) -> Tuple[bool, str, str, str]:
+async def create_check(user_id: int, amount: int) -> Tuple[bool, str, str]:
     settings = await load_json(SETTINGS_FILE, {})
     min_check = 100
     max_check = 100000
     
     user = await get_user(user_id)
     if not user.get("check_system_unlocked", False):
-        return False, f"Система чеков заблокирована! Откройте за {settings.get('check_system_price', 100)} ⭐", "", ""
+        return False, f"Система чеков заблокирована! Откройте за {settings.get('check_system_price', 100)} ⭐", ""
     
     if amount < min_check:
-        return False, f"Минимальная сумма чека: {min_check} ⭐", "", ""
+        return False, f"Минимальная сумма чека: {min_check} ⭐", ""
     if amount > max_check:
-        return False, f"Максимальная сумма чека: {max_check} ⭐", "", ""
+        return False, f"Максимальная сумма чека: {max_check} ⭐", ""
     
     if user["stars"] < amount:
-        return False, f"Недостаточно звезд! У вас {user['stars']} ⭐", "", ""
+        return False, f"Недостаточно звезд! У вас {user['stars']} ⭐", ""
     
     await remove_stars(user_id, amount, f"Создание чека")
     
@@ -457,10 +455,7 @@ async def create_check(user_id: int, amount: int) -> Tuple[bool, str, str, str]:
     checks["checks"].append(check)
     await save_json(CHECKS_FILE, checks)
     
-    bot_username = (await bot.get_me()).username
-    check_link = f"https://t.me/{bot_username}?start=check_{code}"
-    
-    return True, f"Чек создан!", code, check_link
+    return True, f"Чек создан!", code
 
 async def use_check_by_code(user_id: int, code: str) -> Tuple[bool, str, int]:
     checks = await load_json(CHECKS_FILE, {"checks": [], "used_checks": []})
@@ -567,7 +562,7 @@ async def create_contest(admin_id: int, name: str, description: str, prize: int,
     await log_admin_action(admin_id, "create_contest", None, f"Name: {name}, Prize: {prize}")
     return contest["id"]
 
-async def join_contest(user_id: int, message_id: int, channel_post: bool = False) -> Tuple[bool, str]:
+async def join_contest(user_id: int) -> Tuple[bool, str]:
     contest_data = await load_json(CONTEST_FILE, {"active": None, "participants": {}})
     
     if not contest_data["active"]:
@@ -577,9 +572,7 @@ async def join_contest(user_id: int, message_id: int, channel_post: bool = False
         return False, "Вы уже участвуете в конкурсе!"
     
     contest_data["active"]["participants"][str(user_id)] = {
-        "joined_at": datetime.now().isoformat(),
-        "message_id": message_id,
-        "channel_post": channel_post
+        "joined_at": datetime.now().isoformat()
     }
     
     contest_data["participants"][str(user_id)] = contest_data["active"]["participants"][str(user_id)]
@@ -850,24 +843,6 @@ class MinesGame:
             return winnings
         return 0
 
-# ============== КЛАВИАТУРЫ ==============
-def get_main_keyboard() -> InlineKeyboardMarkup:
-    buttons = [
-        [InlineKeyboardButton(text="🎮 Игры", callback_data="games_menu"),
-         InlineKeyboardButton(text="⭐ Баланс", callback_data="stars_info")],
-        [InlineKeyboardButton(text="🎁 Конкурсы", callback_data="contests_menu"),
-         InlineKeyboardButton(text="👥 Рефералы", callback_data="referrals_menu")],
-        [InlineKeyboardButton(text="📋 Задания", callback_data="tasks_menu"),
-         InlineKeyboardButton(text="💰 Вывод", callback_data="withdraw_menu")],
-        [InlineKeyboardButton(text="🛒 Купить", callback_data="buy_stars"),
-         InlineKeyboardButton(text="🎫 Промокод", callback_data="use_promo")],
-        [InlineKeyboardButton(text="📦 Чек система", callback_data="check_system_menu"),
-         InlineKeyboardButton(text="💬 Поддержка", callback_data="support_menu")],
-        [InlineKeyboardButton(text="📊 Статистика", callback_data="stats"),
-         InlineKeyboardButton(text="❓ Помощь", callback_data="help")]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
 # ============== ОБРАБОТЧИКИ КОМАНД ==============
 
 # Команда /start
@@ -877,7 +852,7 @@ async def cmd_start(message: Message, state: FSMContext):
     
     args = message.text.split()
     
-    # Обработка реферальной ссылки и чеков
+    # Обработка реферальной ссылки
     if len(args) > 1:
         if args[1].startswith("check_"):
             code = args[1].replace("check_", "")
@@ -909,7 +884,7 @@ async def cmd_start(message: Message, state: FSMContext):
             f"⭐ Баланс: {user['stars']} звезд\n\n"
             f"🎮 *Доступные игры:*\n"
             f"└ 🪙 `/coin [ставка] [орел/решка]` - Орёл или Решка (x1.95)\n"
-            f"└ 🎱 `/roulette [ставка] [цвет/четность]` - Рулетка (x1.95)\n"
+            f"└ 🎱 `/roulette [ставка] [красное/черное/четное/нечетное]` - Рулетка (x1.95)\n"
             f"└ 🎲 `/cubes [ставка] [1-6]` - Кости (x5.5)\n"
             f"└ 📈 `/crash [ставка] [1.01-50]` - Crash (выбери множитель)\n"
             f"└ 💣 `/mines [ставка] [1-6]` - Mines (открывай клетки)\n"
@@ -922,10 +897,28 @@ async def cmd_start(message: Message, state: FSMContext):
             f"└ 🎰 `/wheel [ставка]` - Колесо Фортуны (x0-x10)\n\n"
             f"👥 Рефералы (10% от покупок)\n"
             f"📋 Задания | 🎁 Конкурсы | 📦 Чеки\n"
-            f"💰 Вывод: `/withdraw [сумма]`\n\n"
+            f"💰 Вывод: /withdraw [сумма]\n\n"
             f"Приятной игры! 🎉")
     
     await message.answer(text, parse_mode="Markdown", reply_markup=keyboard)
+
+# Клавиатура главного меню
+def get_main_keyboard() -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text="🎮 Игры", callback_data="games_menu"),
+         InlineKeyboardButton(text="⭐ Баланс", callback_data="stars_info")],
+        [InlineKeyboardButton(text="🎁 Конкурсы", callback_data="contests_menu"),
+         InlineKeyboardButton(text="👥 Рефералы", callback_data="referrals_menu")],
+        [InlineKeyboardButton(text="📋 Задания", callback_data="tasks_menu"),
+         InlineKeyboardButton(text="💰 Вывод", callback_data="withdraw_menu")],
+        [InlineKeyboardButton(text="🛒 Купить", callback_data="buy_stars"),
+         InlineKeyboardButton(text="🎫 Промокод", callback_data="use_promo")],
+        [InlineKeyboardButton(text="📦 Чек система", callback_data="check_system_menu"),
+         InlineKeyboardButton(text="💬 Поддержка", callback_data="support_menu")],
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="stats"),
+         InlineKeyboardButton(text="❓ Помощь", callback_data="help")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # Меню игр
 @dp.callback_query(F.data == "games_menu")
@@ -1171,7 +1164,7 @@ async def cmd_crash(message: Message, state: FSMContext):
     
     crash_game = CrashGame(message.from_user.id, bet, target_multiplier)
     await state.update_data(crash_game=crash_game, target_multiplier=target_multiplier)
-    await state.set_state(CrashStates.waiting_for_bet)
+    await state.set_state(CrashStates.playing)
     
     msg = await message.answer(
         f"📈 *Crash Game*\n\n"
@@ -1183,7 +1176,6 @@ async def cmd_crash(message: Message, state: FSMContext):
     )
     
     await state.update_data(message_id=msg.message_id)
-    await state.set_state(CrashStates.playing)
     asyncio.create_task(update_crash_game(message.from_user.id, state, msg.message_id))
 
 async def update_crash_game(user_id: int, state: FSMContext, message_id: int):
@@ -1295,7 +1287,7 @@ async def cmd_mines(message: Message, state: FSMContext):
     await update_user(message.from_user.id, games_played=user["games_played"] + 1)
     
     mines_game = MinesGame(message.from_user.id, bet, mines_count)
-    await state.update_data(mines_game=mines_game, mines_count=mines_count)
+    await state.update_data(mines_game=mines_game)
     await state.set_state(MinesStates.playing)
     
     await show_mines_field(message, state, mines_game)
@@ -1833,11 +1825,11 @@ async def contests_menu(callback: CallbackQuery):
                 f"🔗 Ссылка: {contest['link']}\n\n"
                 f"📌 *Как участвовать:*\n"
                 f"1. Перейдите по ссылке\n"
-                f"2. Сделайте репост или подпишитесь\n"
-                f"3. Нажмите кнопку 'Проверить участие'")
+                f"2. Выполните условия\n"
+                f"3. Нажмите кнопку 'Участвовать'")
         
         buttons = [
-            [InlineKeyboardButton(text="✅ Проверить участие", callback_data="check_contest")],
+            [InlineKeyboardButton(text="✅ Участвовать", callback_data="join_contest")],
             [InlineKeyboardButton(text="📜 История конкурсов", callback_data="contest_history")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
         ]
@@ -1851,17 +1843,10 @@ async def contests_menu(callback: CallbackQuery):
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
 
-@dp.callback_query(F.data == "check_contest")
-async def check_contest(callback: CallbackQuery):
-    contest = await get_active_contest()
-    
-    if not contest:
-        await callback.answer("Нет активного конкурса!")
-        return
-    
-    success, msg = await join_contest(callback.from_user.id, callback.message.message_id, False)
+@dp.callback_query(F.data == "join_contest")
+async def join_contest_callback(callback: CallbackQuery):
+    success, msg = await join_contest(callback.from_user.id)
     await callback.answer(msg, show_alert=True)
-    
     await contests_menu(callback)
 
 @dp.callback_query(F.data == "contest_history")
@@ -2141,15 +2126,18 @@ async def create_check_amount(message: Message, state: FSMContext):
         await message.answer("❌ Введите число!")
         return
     
-    success, msg, code, link = await create_check(message.from_user.id, amount)
+    success, msg, code = await create_check(message.from_user.id, amount)
     
     if success:
+        bot_username = (await bot.get_me()).username
+        check_link = f"https://t.me/{bot_username}?start=check_{code}"
+        
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📋 Копировать ссылку", callback_data=f"copy_{link}")]
+            [InlineKeyboardButton(text="📋 Копировать ссылку", callback_data=f"copy_{check_link}")]
         ])
         await message.answer(
             f"✅ {msg}\n\n"
-            f"📦 Ссылка для активации: {link}\n"
+            f"📦 Ссылка для активации: {check_link}\n"
             f"💰 Сумма: {amount} ⭐\n\n"
             f"Отправьте эту ссылку другу для активации чека!",
             parse_mode="Markdown",
@@ -2307,7 +2295,7 @@ async def show_help(callback: CallbackQuery):
             f"└ 🃏 `/poker [ставка]` - Покер (x0-x100)\n"
             f"└ 🎯 `/keno [ставка] [5 чисел]` - Кено (x0-x200)\n"
             f"└ 🎰 `/wheel [ставка]` - Колесо Фортуны (x0-x10)\n\n"
-            f"🎁 *Конкурсы:* Участвуйте, делайте репосты, выигрывайте призы\n\n"
+            f"🎁 *Конкурсы:* Участвуйте, выигрывайте призы\n\n"
             f"📋 *Задания:* Подписывайтесь на каналы (бот должен быть в канале!)\n\n"
             f"👥 *Рефералы:* {settings.get('referral_reward', 10)} ⭐ за друга + {settings.get('referral_percent', 10)}% от его покупок\n\n"
             f"📦 *Чеки:*\n"
@@ -2560,6 +2548,26 @@ async def admin_mass_add(callback: CallbackQuery, state: FSMContext):
     ]))
     await callback.answer()
 
+@dp.message(AdminStates.waiting_for_stars_amount)
+async def admin_mass_add_stars(message: Message, state: FSMContext):
+    try:
+        amount = int(message.text)
+    except ValueError:
+        await message.answer("❌ Введите число!")
+        return
+    
+    data = await state.get_data()
+    if data.get("action") == "mass_add":
+        users = await load_json(USERS_FILE, {})
+        count = 0
+        for user_id in users:
+            await add_stars(int(user_id), amount, f"Массовая выдача от админа {message.from_user.id}")
+            count += 1
+        await message.answer(f"✅ {count} пользователям добавлено по {amount} ⭐")
+        await log_admin_action(message.from_user.id, "mass_add_stars", None, f"Amount: {amount}, Users: {count}")
+    
+    await state.clear()
+
 # Управление баном выводов
 @dp.callback_query(F.data == "admin_withdraw_bans")
 async def admin_withdraw_bans_menu(callback: CallbackQuery, state: FSMContext):
@@ -2807,13 +2815,13 @@ async def admin_create_check_amount(message: Message, state: FSMContext):
         await save_json(CHECKS_FILE, checks)
         
         bot_username = (await bot.get_me()).username
-        link = f"https://t.me/{bot_username}?start=check_{code}"
+        check_link = f"https://t.me/{bot_username}?start=check_{code}"
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📋 Копировать ссылку", callback_data=f"copy_{link}")]
+            [InlineKeyboardButton(text="📋 Копировать ссылку", callback_data=f"copy_{check_link}")]
         ])
         
-        await message.answer(f"✅ Чек создан!\n\n📦 Ссылка для активации: {link}\n💰 Сумма: {amount} ⭐", parse_mode="Markdown", reply_markup=keyboard)
+        await message.answer(f"✅ Чек создан!\n\n📦 Ссылка для активации: {check_link}\n💰 Сумма: {amount} ⭐", parse_mode="Markdown", reply_markup=keyboard)
         await log_admin_action(message.from_user.id, "create_check", None, f"Amount: {amount}")
         await state.clear()
     except ValueError:

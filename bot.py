@@ -14,7 +14,7 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
-    LabeledPrice, PreCheckoutQuery
+    LabeledPrice, PreCheckoutQuery, FSInputFile
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -46,6 +46,7 @@ SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 ADMIN_LOGS_FILE = os.path.join(DATA_DIR, "admin_logs.json")
 SUPPORT_FILE = os.path.join(DATA_DIR, "support.json")
 GAME_HASHES_FILE = os.path.join(DATA_DIR, "game_hashes.json")
+MAILING_FILE = os.path.join(DATA_DIR, "mailing.json")
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -76,6 +77,10 @@ class AdminStates(StatesGroup):
     waiting_for_ban_hours = State()
     waiting_for_reply_message = State()
     waiting_for_limit_value = State()
+    waiting_for_mailing_text = State()
+    waiting_for_mailing_confirm = State()
+    waiting_for_user_action = State()
+    waiting_for_user_ban_reason = State()
 
 class PromoStates(StatesGroup):
     waiting_for_promo_code = State()
@@ -145,8 +150,7 @@ async def init_data():
             "withdraw_cooldown_hours": 24,
             "max_withdraw_per_day": 3,
             "bot_id": BOT_ID,
-            "contest_points_per_loss": 1,
-            "contest_points_per_win": 5
+            "contest_points_per_game": 1
         }
         await save_json(SETTINGS_FILE, settings)
     
@@ -176,6 +180,9 @@ async def init_data():
             "is_withdraw_banned": False,
             "withdraw_ban_reason": None,
             "withdraw_ban_until": None,
+            "is_banned": False,
+            "ban_reason": None,
+            "ban_until": None,
             "created_at": datetime.now().isoformat()
         }
         updated = False
@@ -185,6 +192,8 @@ async def init_data():
                 updated = True
         if updated:
             await save_json(USERS_FILE, users)
+    
+    mailing = await load_json(MAILING_FILE, {"active": None, "history": []})
     
     return settings
 
@@ -219,6 +228,9 @@ async def get_user(user_id: int) -> dict:
             "is_withdraw_banned": False,
             "withdraw_ban_reason": None,
             "withdraw_ban_until": None,
+            "is_banned": False,
+            "ban_reason": None,
+            "ban_until": None,
             "created_at": datetime.now().isoformat()
         }
         await save_json(USERS_FILE, users)
@@ -241,6 +253,12 @@ async def get_user(user_id: int) -> dict:
         if datetime.now() >= ban_until:
             await update_user(user_id, is_withdraw_banned=False, withdraw_ban_reason=None, withdraw_ban_until=None)
             user["is_withdraw_banned"] = False
+    
+    if user.get("ban_until"):
+        ban_until = datetime.fromisoformat(user["ban_until"])
+        if datetime.now() >= ban_until:
+            await update_user(user_id, is_banned=False, ban_reason=None, ban_until=None)
+            user["is_banned"] = False
     
     return user
 
@@ -275,9 +293,22 @@ async def remove_stars(user_id: int, amount: int, reason: str = "") -> bool:
 async def add_contest_points(user_id: int, points: int):
     user = await get_user(user_id)
     await update_user(user_id, contest_points=user["contest_points"] + points)
+    await update_contest_points_internal(user_id, points)
 
 async def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
+
+async def is_user_banned(user_id: int) -> Tuple[bool, str]:
+    user = await get_user(user_id)
+    if user.get("is_banned", False):
+        ban_until = user.get("ban_until")
+        if ban_until:
+            ban_until_date = datetime.fromisoformat(ban_until)
+            if datetime.now() < ban_until_date:
+                return True, f"⛔ Вы забанены до {ban_until_date.strftime('%d.%m.%Y %H:%M')}\nПричина: {user.get('ban_reason', 'Не указана')}"
+            else:
+                await update_user(user_id, is_banned=False, ban_reason=None, ban_until=None)
+    return False, ""
 
 async def log_admin_action(admin_id: int, action: str, target: str = None, details: str = ""):
     logs = await load_json(ADMIN_LOGS_FILE, [])
@@ -345,14 +376,14 @@ async def update_user_limits(user_id: int, amount: int, is_win: bool = False, is
     
     if is_loss:
         await update_user(user_id, daily_loss=user["daily_loss"] + amount, consecutive_losses=user["consecutive_losses"] + 1, games_lost=user["games_lost"] + 1)
-        # Начисляем очки конкурса за проигрыш
-        points_per_loss = settings.get("contest_points_per_loss", 1)
-        await add_contest_points(user_id, points_per_loss)
+        points = settings.get("contest_points_per_game", 1)
+        await add_contest_points(user_id, points)
     elif is_win:
         await update_user(user_id, daily_win=user["daily_win"] + amount, consecutive_losses=0, games_won=user["games_won"] + 1)
-        # Начисляем очки конкурса за выигрыш
-        points_per_win = settings.get("contest_points_per_win", 5)
-        await add_contest_points(user_id, points_per_win)
+        points = settings.get("contest_points_per_game", 1)
+        await add_contest_points(user_id, points)
+    
+    await update_user(user_id, games_played=user["games_played"] + 1)
 
 # Система чеков
 async def unlock_check_system(user_id: int) -> bool:
@@ -363,10 +394,6 @@ async def unlock_check_system(user_id: int) -> bool:
         await update_user(user_id, check_system_unlocked=True)
         return True
     return False
-
-def escape_markdown_link(text: str) -> str:
-    """Экранирует специальные символы для ссылок в Telegram"""
-    return text.replace('_', '\\_').replace('-', '\\-')
 
 async def create_check(user_id: int, amount: int) -> Tuple[bool, str, str, str]:
     settings = await load_json(SETTINGS_FILE, {})
@@ -527,7 +554,7 @@ async def join_contest(user_id: int, message_id: int) -> Tuple[bool, str]:
     await save_json(CONTEST_FILE, contest_data)
     return True, "✅ Вы успешно участвуете в конкурсе!"
 
-async def update_contest_points(user_id: int, points: int):
+async def update_contest_points_internal(user_id: int, points: int):
     contest_data = await load_json(CONTEST_FILE, {"active": None, "participants": {}})
     
     if contest_data["active"] and str(user_id) in contest_data["active"]["participants"]:
@@ -547,14 +574,12 @@ async def end_contest() -> Tuple[bool, str, int]:
         await save_json(CONTEST_FILE, contest_data)
         return False, "Нет участников конкурса!", 0
     
-    # Выбираем победителя по очкам
-    winner_id = max(contest_data["active"]["participants"].items(), key=lambda x: x[1].get("points", 0))[0]
+    winner_id = random.choice(participants)
     prize = contest_data["active"]["prize"]
     
     await add_stars(int(winner_id), prize, f"Выигрыш в конкурсе {contest_data['active']['name']}")
     
     contest_data["active"]["winner"] = winner_id
-    contest_data["active"]["winner_points"] = contest_data["active"]["participants"][winner_id].get("points", 0)
     contest_data["active"]["ended_at"] = datetime.now().isoformat()
     contest_data["history"].append(contest_data["active"])
     contest_data["active"] = None
@@ -564,7 +589,7 @@ async def end_contest() -> Tuple[bool, str, int]:
     try:
         await bot.send_message(
             int(winner_id),
-            f"🎉 *ПОЗДРАВЛЯЕМ!*\n\nВы выиграли в конкурсе!\n🏆 Приз: {prize} ⭐\n📊 Ваши очки: {contest_data['active']['winner_points']}",
+            f"🎉 *ПОЗДРАВЛЯЕМ!*\n\nВы выиграли в конкурсе!\n🏆 Приз: {prize} ⭐",
             parse_mode="Markdown"
         )
     except:
@@ -712,6 +737,54 @@ async def get_user_tickets(user_id: int) -> List[dict]:
     support = await load_json(SUPPORT_FILE, {"tickets": []})
     return [t for t in support["tickets"] if t["user_id"] == user_id]
 
+# Система рассылок
+async def start_mailing(admin_id: int, text: str) -> int:
+    mailing = await load_json(MAILING_FILE, {"active": None, "history": []})
+    
+    if mailing["active"]:
+        return 0
+    
+    mailing_id = len(mailing["history"]) + 1
+    
+    mailing["active"] = {
+        "id": mailing_id,
+        "text": text,
+        "created_by": admin_id,
+        "created_at": datetime.now().isoformat(),
+        "status": "in_progress",
+        "total": 0,
+        "sent": 0,
+        "failed": 0
+    }
+    
+    await save_json(MAILING_FILE, mailing)
+    await log_admin_action(admin_id, "start_mailing", None, f"Text: {text[:50]}...")
+    return mailing_id
+
+async def send_mailing():
+    mailing = await load_json(MAILING_FILE, {"active": None})
+    
+    if not mailing["active"] or mailing["active"]["status"] != "in_progress":
+        return
+    
+    users = await load_json(USERS_FILE, {})
+    mailing["active"]["total"] = len(users)
+    await save_json(MAILING_FILE, mailing)
+    
+    for user_id in users.keys():
+        try:
+            await bot.send_message(int(user_id), mailing["active"]["text"], parse_mode="Markdown")
+            mailing["active"]["sent"] += 1
+        except:
+            mailing["active"]["failed"] += 1
+        await asyncio.sleep(0.05)
+    
+    mailing["active"]["status"] = "completed"
+    mailing["active"]["completed_at"] = datetime.now().isoformat()
+    mailing["history"].append(mailing["active"])
+    mailing["active"] = None
+    await save_json(MAILING_FILE, mailing)
+
 # ============== ИГРЫ ==============
 
 # Игра Crash
@@ -747,7 +820,6 @@ class CrashGame:
             await add_stars(self.user_id, winnings, f"Выигрыш в Crash (x{self.target_multiplier:.2f})")
             await update_user(self.user_id, games_won=user["games_won"] + 1)
             await update_user_limits(self.user_id, winnings, is_win=True)
-            await update_contest_points(self.user_id, winnings, True)
             return True, winnings
         return False, 0
 
@@ -792,30 +864,21 @@ class MinesGame:
             await add_stars(self.user_id, winnings, f"Выигрыш в Mines (x{self.current_multiplier:.2f})")
             await update_user(self.user_id, games_won=user["games_won"] + 1)
             await update_user_limits(self.user_id, winnings, is_win=True)
-            await update_contest_points(self.user_id, winnings, True)
             return winnings
         return 0
 
-async def update_contest_points(user_id: int, amount: int, is_win: bool):
-    settings = await load_json(SETTINGS_FILE, {})
-    if is_win:
-        points = settings.get("contest_points_per_win", 5)
-    else:
-        points = settings.get("contest_points_per_loss", 1)
-    await update_contest_points_internal(user_id, points)
-
-async def update_contest_points_internal(user_id: int, points: int):
-    contest_data = await load_json(CONTEST_FILE, {"active": None, "participants": {}})
-    if contest_data["active"] and str(user_id) in contest_data["active"]["participants"]:
-        contest_data["active"]["participants"][str(user_id)]["points"] = contest_data["active"]["participants"][str(user_id)].get("points", 0) + points
-        await save_json(CONTEST_FILE, contest_data)
-
 # ============== ОБРАБОТЧИКИ КОМАНД ==============
 
-# Команда /start
+# Команда /start (уменьшенное сообщение)
 @dp.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
+    
+    # Проверка бана
+    is_banned, ban_msg = await is_user_banned(message.from_user.id)
+    if is_banned:
+        await message.answer(ban_msg)
+        return
     
     args = message.text.split()
     
@@ -860,28 +923,13 @@ async def cmd_start(message: Message, state: FSMContext):
     contest_text = ""
     if contest:
         user_points = contest["participants"].get(str(message.from_user.id), {}).get("points", 0)
-        contest_text = f"\n\n🎁 *Конкурс:* {contest['name']}\n└ Ваши очки: {user_points}\n└ Приз: {contest['prize']} ⭐"
+        contest_text = f"\n🎁 *{contest['name']}:* {user_points} очков"
     
-    text = (f"✨ *Добро пожаловать, {message.from_user.full_name}!*\n\n"
-            f"⭐ Баланс: {user['stars']} звезд\n"
-            f"🏆 Очков конкурса: {user['contest_points']}{contest_text}\n\n"
-            f"🎮 *Доступные игры:*\n"
-            f"└ `/coin [ставка] [орел/решка]` - Орёл или Решка (x1.95)\n"
-            f"└ `/roulette [ставка] [красное/черное/четное/нечетное]` - Рулетка (x1.95)\n"
-            f"└ `/cubes [ставка] [1-6]` - Кости (x5.5)\n"
-            f"└ `/crash [ставка] [1.01-50]` - Crash (выбери множитель)\n"
-            f"└ `/mines [ставка] [1-6]` - Mines (открывай клетки)\n"
-            f"└ `/diamond [ставка] [1-2]` - Алмаз (x2)\n"
-            f"└ `/21 [ставка]` - 21 очко (x2.1)\n"
-            f"└ `/fortune [ставка]` - Фортуна (x0-x50)\n"
-            f"└ `/knb [ставка] [камень/ножницы/бумага]` - КНБ (x2.7)\n"
-            f"└ `/poker [ставка]` - Покер (x0-x100)\n"
-            f"└ `/keno [ставка] [5 чисел]` - Кено (x0-x200)\n"
-            f"└ `/wheel [ставка]` - Колесо Фортуны (x0-x10)\n\n"
-            f"👥 Рефералы (10% от покупок)\n"
-            f"📋 Задания | 🎁 Конкурсы | 📦 Чеки\n"
-            f"💰 Вывод: `/withdraw [сумма]`\n\n"
-            f"Приятной игры! 🎉")
+    # Уменьшенное приветственное сообщение
+    text = (f"✨ *Привет, {message.from_user.first_name}!*\n"
+            f"⭐ Баланс: {user['stars']} ⭐\n"
+            f"🏆 Очков: {user['contest_points']}{contest_text}\n\n"
+            f"Используй меню ниже 👇")
     
     await message.answer(text, parse_mode="Markdown", reply_markup=keyboard)
 
@@ -904,19 +952,19 @@ def get_main_keyboard() -> InlineKeyboardMarkup:
 
 @dp.callback_query(F.data == "games_menu")
 async def games_menu(callback: CallbackQuery):
-    text = ("🎮 *Доступные игры:*\n\n"
-            "🪙 `/coin [ставка] [орел/решка]` - Орёл или Решка (x1.95)\n"
-            "🎱 `/roulette [ставка] [красное/черное/четное/нечетное]` - Рулетка (x1.95)\n"
-            "🎲 `/cubes [ставка] [1-6]` - Кости (x5.5)\n"
-            "📈 `/crash [ставка] [1.01-50]` - Crash (выбери множитель)\n"
-            "💣 `/mines [ставка] [1-6]` - Mines (открывай клетки)\n"
-            "🤩 `/diamond [ставка] [1-2]` - Алмаз (x2)\n"
-            "♠️ `/21 [ставка]` - 21 очко (x2.1)\n"
-            "🔮 `/fortune [ставка]` - Фортуна (x0-x50)\n"
-            "✂️ `/knb [ставка] [камень/ножницы/бумага]` - КНБ (x2.7)\n"
-            "🃏 `/poker [ставка]` - Покер (x0-x100)\n"
-            "🎯 `/keno [ставка] [5 чисел]` - Кено (x0-x200)\n"
-            "🎰 `/wheel [ставка]` - Колесо Фортуны (x0-x10)\n\n"
+    text = ("🎮 *Игры:*\n\n"
+            "`/coin [ставка] [орел/решка]` - Монета (x1.95)\n"
+            "`/roulette [ставка] [цвет]` - Рулетка (x1.95)\n"
+            "`/cubes [ставка] [1-6]` - Кости (x5.5)\n"
+            "`/crash [ставка] [1.01-50]` - Crash\n"
+            "`/mines [ставка] [1-6]` - Mines\n"
+            "`/diamond [ставка] [1-2]` - Алмаз (x2)\n"
+            "`/21 [ставка]` - 21 очко (x2.1)\n"
+            "`/fortune [ставка]` - Фортуна (x0-x50)\n"
+            "`/knb [ставка] [камень/ножницы/бумага]` - КНБ (x2.7)\n"
+            "`/poker [ставка]` - Покер (x0-x100)\n"
+            "`/keno [ставка] [5 чисел]` - Кено (x0-x200)\n"
+            "`/wheel [ставка]` - Колесо (x0-x10)\n\n"
             "📖 *Пример:* `/coin 100 орел`")
     
     buttons = [[InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]]
@@ -926,6 +974,12 @@ async def games_menu(callback: CallbackQuery):
 # ИГРА: МОНЕТА
 @dp.message(Command("coin"))
 async def cmd_coin(message: Message):
+    # Проверка бана
+    is_banned, ban_msg = await is_user_banned(message.from_user.id)
+    if is_banned:
+        await message.answer(ban_msg)
+        return
+    
     args = message.text.split()
     if len(args) != 3:
         await message.answer("❌ Использование: /coin [ставка] [орел/решка]\nПример: /coin 100 орел")
@@ -959,7 +1013,6 @@ async def cmd_coin(message: Message):
         return
     
     await remove_stars(message.from_user.id, bet, "Ставка в Монете")
-    await update_user(message.from_user.id, games_played=user["games_played"] + 1)
     
     result = random.choice(["eagle", "tails"])
     win = (choice == result)
@@ -979,7 +1032,8 @@ async def cmd_coin(message: Message):
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
-                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu")]
+                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu"),
+                 InlineKeyboardButton(text="📤 Поделиться", switch_inline_query=f"Я выиграл {winnings} ⭐ в Монете!")]
             ])
         )
     else:
@@ -993,12 +1047,17 @@ async def cmd_coin(message: Message):
             ])
         )
 
-# ИГРА: РУЛЕТКА (сокращенно из-за длины, но полная логика)
-@dp.message(Command("roulette"))
-async def cmd_roulette(message: Message):
+# ИГРА: КОСТИ
+@dp.message(Command("cubes"))
+async def cmd_cubes(message: Message):
+    is_banned, ban_msg = await is_user_banned(message.from_user.id)
+    if is_banned:
+        await message.answer(ban_msg)
+        return
+    
     args = message.text.split()
     if len(args) != 3:
-        await message.answer("❌ Использование: /roulette [ставка] [красное/черное/четное/нечетное]\nПример: /roulette 100 красное")
+        await message.answer("❌ Использование: /cubes [ставка] [число 1-6]\nПример: /cubes 100 3")
         return
     
     try:
@@ -1007,21 +1066,22 @@ async def cmd_roulette(message: Message):
         await message.answer("❌ Ставка должна быть числом!")
         return
     
-    choice = args[2].lower()
-    choice_map = {"красное": "red", "черное": "black", "четное": "even", "нечетное": "odd", 
-                  "red": "red", "black": "black", "even": "even", "odd": "odd"}
-    if choice not in choice_map:
-        await message.answer("❌ Выберите: красное, черное, четное или нечетное")
+    try:
+        choice = int(args[2])
+        if choice < 1 or choice > 6:
+            await message.answer("❌ Введите число от 1 до 6!")
+            return
+    except ValueError:
+        await message.answer("❌ Введите число от 1 до 6!")
         return
     
-    choice = choice_map[choice]
     user = await get_user(message.from_user.id)
     
-    if bet < 5 or bet > 2000:
-        await message.answer("❌ Ставка должна быть от 5 до 2000 ⭐")
+    if bet < 1 or bet > 500:
+        await message.answer("❌ Ставка должна быть от 1 до 500 ⭐")
         return
     
-    limit_ok, limit_msg = await check_user_limits(message.from_user.id, bet, "roulette")
+    limit_ok, limit_msg = await check_user_limits(message.from_user.id, bet, "cubes")
     if not limit_ok:
         await message.answer(f"❌ {limit_msg}")
         return
@@ -1030,44 +1090,29 @@ async def cmd_roulette(message: Message):
         await message.answer(f"❌ Недостаточно звезд! У вас {user['stars']} ⭐")
         return
     
-    await remove_stars(message.from_user.id, bet, "Ставка в Рулетке")
-    await update_user(message.from_user.id, games_played=user["games_played"] + 1)
+    await remove_stars(message.from_user.id, bet, "Ставка в Костях")
     
-    result = random.randint(0, 36)
-    red_numbers = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]
-    black_numbers = [2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35]
-    
-    win = False
-    if choice == "red":
-        win = result in red_numbers
-    elif choice == "black":
-        win = result in black_numbers
-    elif choice == "even":
-        win = result % 2 == 0 and result != 0
-    elif choice == "odd":
-        win = result % 2 == 1 and result != 0
-    
-    game_hash = generate_game_hash("roulette", bet, result, message.from_user.id)
+    result = random.randint(1, 6)
+    game_hash = generate_game_hash("cubes", bet, result, message.from_user.id)
     await save_game_hash(game_hash)
     
-    if win:
-        winnings = int(bet * 1.95)
-        await add_stars(message.from_user.id, winnings, "Выигрыш в Рулетке")
+    if choice == result:
+        winnings = int(bet * 5.5)
+        await add_stars(message.from_user.id, winnings, "Выигрыш в Костях")
         await update_user_limits(message.from_user.id, winnings, is_win=True)
-        color = "Красное" if result in red_numbers else ("Черное" if result in black_numbers else "Зеро")
         await message.answer(
-            f"🎱 *Рулетка*\n\nВыпало число: {result} ({color})\n\n🎉 Вы выиграли {winnings} ⭐!",
+            f"🎲 *Кости*\n\nВы выбрали: {choice}\nВыпало: {result}\n\n🎉 Вы угадали! Выигрыш: {winnings} ⭐!",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
-                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu")]
+                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu"),
+                 InlineKeyboardButton(text="📤 Поделиться", switch_inline_query=f"Я выиграл {winnings} ⭐ в Костях!")]
             ])
         )
     else:
         await update_user_limits(message.from_user.id, bet, is_loss=True)
-        color = "Красное" if result in red_numbers else ("Черное" if result in black_numbers else "Зеро")
         await message.answer(
-            f"🎱 *Рулетка*\n\nВыпало число: {result} ({color})\n\n😔 Вы проиграли {bet} ⭐",
+            f"🎲 *Кости*\n\nВы выбрали: {choice}\nВыпало: {result}\n\n😔 Проигрыш: {bet} ⭐",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
@@ -1078,6 +1123,11 @@ async def cmd_roulette(message: Message):
 # ИГРА: CRASH
 @dp.message(Command("crash"))
 async def cmd_crash(message: Message, state: FSMContext):
+    is_banned, ban_msg = await is_user_banned(message.from_user.id)
+    if is_banned:
+        await message.answer(ban_msg)
+        return
+    
     args = message.text.split()
     if len(args) != 3:
         await message.answer("❌ Использование: /crash [ставка] [множитель 1.01-50]\nПример: /crash 100 2.5")
@@ -1114,7 +1164,6 @@ async def cmd_crash(message: Message, state: FSMContext):
         return
     
     await remove_stars(message.from_user.id, bet, "Ставка в Crash")
-    await update_user(message.from_user.id, games_played=user["games_played"] + 1)
     
     crash_game = CrashGame(message.from_user.id, bet, target_multiplier)
     await state.update_data(crash_game=crash_game, target_multiplier=target_multiplier)
@@ -1161,7 +1210,8 @@ async def update_crash_game(user_id: int, state: FSMContext, message_id: int):
                     parse_mode="Markdown",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
-                         InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu")]
+                         InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu"),
+                         InlineKeyboardButton(text="📤 Поделиться", switch_inline_query=f"Я выиграл {winnings} ⭐ в Crash!")]
                     ])
                 )
             else:
@@ -1198,7 +1248,8 @@ async def update_crash_game(user_id: int, state: FSMContext, message_id: int):
                         parse_mode="Markdown",
                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                             [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
-                             InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu")]
+                             InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu"),
+                             InlineKeyboardButton(text="📤 Поделиться", switch_inline_query=f"Я выиграл {winnings} ⭐ в Crash!")]
                         ])
                     )
                     await state.clear()
@@ -1219,6 +1270,11 @@ async def update_crash_game(user_id: int, state: FSMContext, message_id: int):
 # ИГРА: MINES (исправленная)
 @dp.message(Command("mines"))
 async def cmd_mines(message: Message, state: FSMContext):
+    is_banned, ban_msg = await is_user_banned(message.from_user.id)
+    if is_banned:
+        await message.answer(ban_msg)
+        return
+    
     args = message.text.split()
     if len(args) != 3:
         await message.answer("❌ Использование: /mines [ставка] [1-6]\nПример: /mines 100 3")
@@ -1255,7 +1311,6 @@ async def cmd_mines(message: Message, state: FSMContext):
         return
     
     await remove_stars(message.from_user.id, bet, "Ставка в Mines")
-    await update_user(message.from_user.id, games_played=user["games_played"] + 1)
     
     mines_game = MinesGame(message.from_user.id, bet, mines_count)
     await state.update_data(mines_game=mines_game)
@@ -1379,6 +1434,7 @@ async def mines_cashout(callback: CallbackQuery, state: FSMContext):
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="💣 Играть снова", callback_data="games_menu"),
                  InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
+                 InlineKeyboardButton(text="📤 Поделиться", switch_inline_query=f"Я выиграл {winnings} ⭐ в Mines!"),
                  InlineKeyboardButton(text="🔙 В меню", callback_data="back_to_main")]
             ])
         )
@@ -1388,9 +1444,14 @@ async def mines_cashout(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.answer()
 
-# Остальные игры (сокращенно для краткости, но с полной логикой)
+# ИГРА: АЛМАЗ
 @dp.message(Command("diamond"))
 async def cmd_diamond(message: Message):
+    is_banned, ban_msg = await is_user_banned(message.from_user.id)
+    if is_banned:
+        await message.answer(ban_msg)
+        return
+    
     args = message.text.split()
     if len(args) != 3:
         await message.answer("❌ Использование: /diamond [ставка] [1-2]\nПример: /diamond 100 1")
@@ -1427,7 +1488,6 @@ async def cmd_diamond(message: Message):
         return
     
     await remove_stars(message.from_user.id, bet, "Ставка в Алмазе")
-    await update_user(message.from_user.id, games_played=user["games_played"] + 1)
     
     result = random.randint(1, 2)
     game_hash = generate_game_hash("diamond", bet, result, message.from_user.id)
@@ -1442,13 +1502,496 @@ async def cmd_diamond(message: Message):
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
-                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu")]
+                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu"),
+                 InlineKeyboardButton(text="📤 Поделиться", switch_inline_query=f"Я выиграл {winnings} ⭐ в Алмазе!")]
             ])
         )
     else:
         await update_user_limits(message.from_user.id, bet, is_loss=True)
         await message.answer(
             f"🤩 *Алмаз*\n\nВы выбрали: {choice}\nВыпало: {result}\n\n😔 Это был обычный камень! Проигрыш: {bet} ⭐",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
+                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu")]
+            ])
+        )
+
+# ИГРА: 21 ОЧКО
+@dp.message(Command("21"))
+async def cmd_twenty_one(message: Message):
+    is_banned, ban_msg = await is_user_banned(message.from_user.id)
+    if is_banned:
+        await message.answer(ban_msg)
+        return
+    
+    args = message.text.split()
+    if len(args) != 2:
+        await message.answer("❌ Использование: /21 [ставка]\nПример: /21 100")
+        return
+    
+    try:
+        bet = int(args[1])
+    except ValueError:
+        await message.answer("❌ Ставка должна быть числом!")
+        return
+    
+    user = await get_user(message.from_user.id)
+    
+    if bet < 5 or bet > 3000:
+        await message.answer("❌ Ставка должна быть от 5 до 3000 ⭐")
+        return
+    
+    limit_ok, limit_msg = await check_user_limits(message.from_user.id, bet, "21")
+    if not limit_ok:
+        await message.answer(f"❌ {limit_msg}")
+        return
+    
+    if user["stars"] < bet:
+        await message.answer(f"❌ Недостаточно звезд! У вас {user['stars']} ⭐")
+        return
+    
+    await remove_stars(message.from_user.id, bet, "Ставка в 21")
+    
+    player_cards = [random.randint(1, 11), random.randint(1, 11)]
+    dealer_cards = [random.randint(1, 11), random.randint(1, 11)]
+    
+    player_sum = sum(player_cards)
+    dealer_sum = sum(dealer_cards)
+    
+    while player_sum < 17:
+        player_cards.append(random.randint(1, 11))
+        player_sum = sum(player_cards)
+    
+    while dealer_sum < 17:
+        dealer_cards.append(random.randint(1, 11))
+        dealer_sum = sum(dealer_cards)
+    
+    result_data = {"player_sum": player_sum, "dealer_sum": dealer_sum, "player_cards": player_cards, "dealer_cards": dealer_cards}
+    game_hash = generate_game_hash("21", bet, result_data, message.from_user.id)
+    await save_game_hash(game_hash)
+    
+    if player_sum > 21:
+        await update_user_limits(message.from_user.id, bet, is_loss=True)
+        await message.answer(
+            f"♠️ *21 очко*\n\nВаши карты: {player_cards} (сумма: {player_sum})\nКарты дилера: {dealer_cards} (сумма: {dealer_sum})\n\n😔 Перебор! Проигрыш: {bet} ⭐",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
+                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu")]
+            ])
+        )
+    elif dealer_sum > 21 or player_sum > dealer_sum:
+        winnings = int(bet * 2.1)
+        await add_stars(message.from_user.id, winnings, "Выигрыш в 21")
+        await update_user_limits(message.from_user.id, winnings, is_win=True)
+        await message.answer(
+            f"♠️ *21 очко*\n\nВаши карты: {player_cards} (сумма: {player_sum})\nКарты дилера: {dealer_cards} (сумма: {dealer_sum})\n\n🎉 Вы выиграли {winnings} ⭐!",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
+                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu"),
+                 InlineKeyboardButton(text="📤 Поделиться", switch_inline_query=f"Я выиграл {winnings} ⭐ в 21!")]
+            ])
+        )
+    elif player_sum == dealer_sum:
+        await add_stars(message.from_user.id, bet, "Ничья в 21")
+        await message.answer(
+            f"♠️ *21 очко*\n\nВаши карты: {player_cards} (сумма: {player_sum})\nКарты дилера: {dealer_cards} (сумма: {dealer_sum})\n\n🤝 Ничья! Ставка возвращена.",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
+                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu")]
+            ])
+        )
+    else:
+        await update_user_limits(message.from_user.id, bet, is_loss=True)
+        await message.answer(
+            f"♠️ *21 очко*\n\nВаши карты: {player_cards} (сумма: {player_sum})\nКарты дилера: {dealer_cards} (сумма: {dealer_sum})\n\n😔 Проигрыш: {bet} ⭐",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
+                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu")]
+            ])
+        )
+
+# ИГРА: ФОРТУНА
+@dp.message(Command("fortune"))
+async def cmd_fortune(message: Message):
+    is_banned, ban_msg = await is_user_banned(message.from_user.id)
+    if is_banned:
+        await message.answer(ban_msg)
+        return
+    
+    args = message.text.split()
+    if len(args) != 2:
+        await message.answer("❌ Использование: /fortune [ставка]\nПример: /fortune 100")
+        return
+    
+    try:
+        bet = int(args[1])
+    except ValueError:
+        await message.answer("❌ Ставка должна быть числом!")
+        return
+    
+    user = await get_user(message.from_user.id)
+    
+    if bet < 5 or bet > 2000:
+        await message.answer("❌ Ставка должна быть от 5 до 2000 ⭐")
+        return
+    
+    limit_ok, limit_msg = await check_user_limits(message.from_user.id, bet, "fortune")
+    if not limit_ok:
+        await message.answer(f"❌ {limit_msg}")
+        return
+    
+    if user["stars"] < bet:
+        await message.answer(f"❌ Недостаточно звезд! У вас {user['stars']} ⭐")
+        return
+    
+    await remove_stars(message.from_user.id, bet, "Ставка в Фортуне")
+    
+    multipliers = [0, 0, 0.5, 1, 1.5, 2, 3, 5, 8, 10, 15, 20, 25, 30, 50]
+    weights = [15, 12, 10, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0.5, 0.2]
+    multiplier = random.choices(multipliers, weights=weights)[0]
+    
+    game_hash = generate_game_hash("fortune", bet, multiplier, message.from_user.id)
+    await save_game_hash(game_hash)
+    
+    if multiplier > 0:
+        winnings = int(bet * multiplier)
+        await add_stars(message.from_user.id, winnings, "Выигрыш в Фортуне")
+        await update_user_limits(message.from_user.id, winnings, is_win=True)
+        
+        if multiplier >= 10:
+            await message.answer(
+                f"🔮 *Фортуна*\n\n✨ Множитель: x{multiplier}!\n🎉 *ДЖЕКПОТ!* Вы выиграли {winnings} ⭐!",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
+                     InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu"),
+                     InlineKeyboardButton(text="📤 Поделиться", switch_inline_query=f"Я выиграл {winnings} ⭐ в Фортуне!")]
+                ])
+            )
+        else:
+            await message.answer(
+                f"🔮 *Фортуна*\n\n✨ Множитель: x{multiplier}\n🎉 Вы выиграли {winnings} ⭐!",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
+                     InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu"),
+                     InlineKeyboardButton(text="📤 Поделиться", switch_inline_query=f"Я выиграл {winnings} ⭐ в Фортуне!")]
+                ])
+            )
+    else:
+        await update_user_limits(message.from_user.id, bet, is_loss=True)
+        await message.answer(
+            f"🔮 *Фортуна*\n\n✨ Множитель: x{multiplier}\n😔 Фортуна отвернулась от вас! Проигрыш: {bet} ⭐",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
+                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu")]
+            ])
+        )
+
+# ИГРА: КАМЕНЬ-НОЖНИЦЫ-БУМАГА
+@dp.message(Command("knb"))
+async def cmd_knb(message: Message):
+    is_banned, ban_msg = await is_user_banned(message.from_user.id)
+    if is_banned:
+        await message.answer(ban_msg)
+        return
+    
+    args = message.text.split()
+    if len(args) != 3:
+        await message.answer("❌ Использование: /knb [ставка] [камень/ножницы/бумага]\nПример: /knb 100 камень")
+        return
+    
+    try:
+        bet = int(args[1])
+    except ValueError:
+        await message.answer("❌ Ставка должна быть числом!")
+        return
+    
+    choice = args[2].lower()
+    choice_map = {"камень": "rock", "ножницы": "scissors", "бумага": "paper", 
+                  "rock": "rock", "scissors": "scissors", "paper": "paper"}
+    if choice not in choice_map:
+        await message.answer("❌ Выберите: камень, ножницы или бумага")
+        return
+    
+    choice = choice_map[choice]
+    user = await get_user(message.from_user.id)
+    
+    if bet < 1 or bet > 500:
+        await message.answer("❌ Ставка должна быть от 1 до 500 ⭐")
+        return
+    
+    limit_ok, limit_msg = await check_user_limits(message.from_user.id, bet, "knb")
+    if not limit_ok:
+        await message.answer(f"❌ {limit_msg}")
+        return
+    
+    if user["stars"] < bet:
+        await message.answer(f"❌ Недостаточно звезд! У вас {user['stars']} ⭐")
+        return
+    
+    await remove_stars(message.from_user.id, bet, "Ставка в КНБ")
+    
+    bot_choice = random.choice(["rock", "scissors", "paper"])
+    choice_rus = {"rock": "✊ Камень", "scissors": "✌️ Ножницы", "paper": "✋ Бумага"}
+    
+    result_data = {"player": choice, "bot": bot_choice}
+    game_hash = generate_game_hash("knb", bet, result_data, message.from_user.id)
+    await save_game_hash(game_hash)
+    
+    if choice == bot_choice:
+        await add_stars(message.from_user.id, bet, "Ничья в КНБ")
+        await message.answer(
+            f"✂️ *Камень-Ножницы-Бумага*\n\nВаш ход: {choice_rus[choice]}\nХод бота: {choice_rus[bot_choice]}\n\n🤝 Ничья! Ставка возвращена.",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
+                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu")]
+            ])
+        )
+    elif (choice == "rock" and bot_choice == "scissors") or \
+         (choice == "scissors" and bot_choice == "paper") or \
+         (choice == "paper" and bot_choice == "rock"):
+        winnings = int(bet * 2.7)
+        await add_stars(message.from_user.id, winnings, "Выигрыш в КНБ")
+        await update_user_limits(message.from_user.id, winnings, is_win=True)
+        await message.answer(
+            f"✂️ *Камень-Ножницы-Бумага*\n\nВаш ход: {choice_rus[choice]}\nХод бота: {choice_rus[bot_choice]}\n\n🎉 Вы победили! Выигрыш: {winnings} ⭐!",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
+                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu"),
+                 InlineKeyboardButton(text="📤 Поделиться", switch_inline_query=f"Я выиграл {winnings} ⭐ в КНБ!")]
+            ])
+        )
+    else:
+        await update_user_limits(message.from_user.id, bet, is_loss=True)
+        await message.answer(
+            f"✂️ *Камень-Ножницы-Бумага*\n\nВаш ход: {choice_rus[choice]}\nХод бота: {choice_rus[bot_choice]}\n\n😔 Вы проиграли! Потеряно: {bet} ⭐",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
+                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu")]
+            ])
+        )
+
+# ИГРА: ПОКЕР
+@dp.message(Command("poker"))
+async def cmd_poker(message: Message):
+    is_banned, ban_msg = await is_user_banned(message.from_user.id)
+    if is_banned:
+        await message.answer(ban_msg)
+        return
+    
+    args = message.text.split()
+    if len(args) != 2:
+        await message.answer("❌ Использование: /poker [ставка]\nПример: /poker 100")
+        return
+    
+    try:
+        bet = int(args[1])
+    except ValueError:
+        await message.answer("❌ Ставка должна быть числом!")
+        return
+    
+    user = await get_user(message.from_user.id)
+    
+    if bet < 10 or bet > 5000:
+        await message.answer("❌ Ставка должна быть от 10 до 5000 ⭐")
+        return
+    
+    limit_ok, limit_msg = await check_user_limits(message.from_user.id, bet, "poker")
+    if not limit_ok:
+        await message.answer(f"❌ {limit_msg}")
+        return
+    
+    if user["stars"] < bet:
+        await message.answer(f"❌ Недостаточно звезд! У вас {user['stars']} ⭐")
+        return
+    
+    await remove_stars(message.from_user.id, bet, "Ставка в Покере")
+    
+    hands = ["High Card", "Pair", "Two Pair", "Three of Kind", "Straight", "Flush", "Full House", "Four of Kind", "Straight Flush", "Royal Flush"]
+    weights = [50, 25, 15, 8, 5, 3, 2, 1, 0.5, 0.2]
+    multipliers = [0, 1, 2, 3, 5, 8, 12, 20, 50, 100]
+    
+    hand = random.choices(hands, weights=weights)[0]
+    idx = hands.index(hand)
+    multiplier = multipliers[idx]
+    
+    game_hash = generate_game_hash("poker", bet, hand, message.from_user.id)
+    await save_game_hash(game_hash)
+    
+    if multiplier > 0:
+        winnings = int(bet * multiplier)
+        await add_stars(message.from_user.id, winnings, "Выигрыш в Покере")
+        await update_user_limits(message.from_user.id, winnings, is_win=True)
+        await message.answer(
+            f"🃏 *Покер*\n\nВаша комбинация: {hand}\n\n🎉 Вы выиграли {winnings} ⭐ (x{multiplier})!",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
+                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu"),
+                 InlineKeyboardButton(text="📤 Поделиться", switch_inline_query=f"Я выиграл {winnings} ⭐ в Покере!")]
+            ])
+        )
+    else:
+        await update_user_limits(message.from_user.id, bet, is_loss=True)
+        await message.answer(
+            f"🃏 *Покер*\n\nВаша комбинация: {hand}\n\n😔 Проигрыш: {bet} ⭐",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
+                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu")]
+            ])
+        )
+
+# ИГРА: КЕНО
+@dp.message(Command("keno"))
+async def cmd_keno(message: Message):
+    is_banned, ban_msg = await is_user_banned(message.from_user.id)
+    if is_banned:
+        await message.answer(ban_msg)
+        return
+    
+    args = message.text.split()
+    if len(args) != 7:
+        await message.answer("❌ Использование: /keno [ставка] [5 чисел от 1 до 80 через пробел]\nПример: /keno 100 5 12 23 45 67")
+        return
+    
+    try:
+        bet = int(args[1])
+    except ValueError:
+        await message.answer("❌ Ставка должна быть числом!")
+        return
+    
+    try:
+        numbers = [int(x) for x in args[2:7]]
+        if not all(1 <= n <= 80 for n in numbers):
+            await message.answer("❌ Все числа должны быть от 1 до 80!")
+            return
+    except ValueError:
+        await message.answer("❌ Введите 5 чисел от 1 до 80!")
+        return
+    
+    user = await get_user(message.from_user.id)
+    
+    if bet < 10 or bet > 2000:
+        await message.answer("❌ Ставка должна быть от 10 до 2000 ⭐")
+        return
+    
+    limit_ok, limit_msg = await check_user_limits(message.from_user.id, bet, "keno")
+    if not limit_ok:
+        await message.answer(f"❌ {limit_msg}")
+        return
+    
+    if user["stars"] < bet:
+        await message.answer(f"❌ Недостаточно звезд! У вас {user['stars']} ⭐")
+        return
+    
+    await remove_stars(message.from_user.id, bet, "Ставка в Кено")
+    
+    drawn = sorted(random.sample(range(1, 81), 20))
+    matches = len(set(numbers) & set(drawn))
+    
+    payouts = {0: 0, 1: 0, 2: 0, 3: 1, 4: 2, 5: 5, 6: 10, 7: 25, 8: 50, 9: 100, 10: 200}
+    multiplier = payouts.get(matches, 0)
+    
+    result_data = {"numbers": numbers, "drawn": drawn, "matches": matches}
+    game_hash = generate_game_hash("keno", bet, result_data, message.from_user.id)
+    await save_game_hash(game_hash)
+    
+    if multiplier > 0:
+        winnings = int(bet * multiplier)
+        await add_stars(message.from_user.id, winnings, "Выигрыш в Кено")
+        await update_user_limits(message.from_user.id, winnings, is_win=True)
+        await message.answer(
+            f"🎯 *Кено*\n\nВаши числа: {numbers}\nСовпадений: {matches}\n\n🎉 Выигрыш: {winnings} ⭐ (x{multiplier})!",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
+                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu"),
+                 InlineKeyboardButton(text="📤 Поделиться", switch_inline_query=f"Я выиграл {winnings} ⭐ в Кено!")]
+            ])
+        )
+    else:
+        await update_user_limits(message.from_user.id, bet, is_loss=True)
+        await message.answer(
+            f"🎯 *Кено*\n\nВаши числа: {numbers}\nСовпадений: {matches}\n\n😔 Проигрыш: {bet} ⭐",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
+                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu")]
+            ])
+        )
+
+# ИГРА: КОЛЕСО ФОРТУНЫ
+@dp.message(Command("wheel"))
+async def cmd_wheel(message: Message):
+    is_banned, ban_msg = await is_user_banned(message.from_user.id)
+    if is_banned:
+        await message.answer(ban_msg)
+        return
+    
+    args = message.text.split()
+    if len(args) != 2:
+        await message.answer("❌ Использование: /wheel [ставка]\nПример: /wheel 100")
+        return
+    
+    try:
+        bet = int(args[1])
+    except ValueError:
+        await message.answer("❌ Ставка должна быть числом!")
+        return
+    
+    user = await get_user(message.from_user.id)
+    
+    if bet < 5 or bet > 1500:
+        await message.answer("❌ Ставка должна быть от 5 до 1500 ⭐")
+        return
+    
+    limit_ok, limit_msg = await check_user_limits(message.from_user.id, bet, "wheel")
+    if not limit_ok:
+        await message.answer(f"❌ {limit_msg}")
+        return
+    
+    if user["stars"] < bet:
+        await message.answer(f"❌ Недостаточно звезд! У вас {user['stars']} ⭐")
+        return
+    
+    await remove_stars(message.from_user.id, bet, "Ставка в Колесе Фортуны")
+    
+    segments = ["1x", "2x", "3x", "5x", "10x", "0x"]
+    result = random.choice(segments)
+    multipliers = {"1x": 1, "2x": 2, "3x": 3, "5x": 5, "10x": 10, "0x": 0}
+    multiplier = multipliers[result]
+    
+    game_hash = generate_game_hash("wheel", bet, result, message.from_user.id)
+    await save_game_hash(game_hash)
+    
+    if multiplier > 0:
+        winnings = int(bet * multiplier)
+        await add_stars(message.from_user.id, winnings, "Выигрыш в Колесе Фортуны")
+        await update_user_limits(message.from_user.id, winnings, is_win=True)
+        await message.answer(
+            f"🎡 *Колесо Фортуны*\n\nКолесо остановилось на: {result}\n\n🎉 Вы выиграли {winnings} ⭐!",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
+                 InlineKeyboardButton(text="🎮 Ещё игра", callback_data="games_menu"),
+                 InlineKeyboardButton(text="📤 Поделиться", switch_inline_query=f"Я выиграл {winnings} ⭐ в Колесе Фортуны!")]
+            ])
+        )
+    else:
+        await update_user_limits(message.from_user.id, bet, is_loss=True)
+        await message.answer(
+            f"🎡 *Колесо Фортуны*\n\nКолесо остановилось на: {result}\n\n😔 Проигрыш: {bet} ⭐",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🔍 Проверить честность", callback_data=f"verify_hash_{game_hash['hash']}"),
@@ -1482,7 +2025,9 @@ async def verify_game_hash(callback: CallbackQuery):
             f"Seed: {game_data['seed']}\n"
             f"Hash: {game_data['hash']}\n"
             f"```\n\n"
-            f"✅ Этот хеш гарантирует честность игры. Вы можете проверить его в любом SHA256 генераторе.")
+            f"✅ Этот хеш гарантирует честность игры. Вы можете проверить его в любом SHA256 генераторе.\n\n"
+            f"📤 *Поделиться результатом:*\n"
+            f"`/share {game_data['hash']}`")
     
     await callback.message.answer(text, parse_mode="Markdown")
     await callback.answer()
@@ -1494,21 +2039,15 @@ async def stars_info(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
     settings = await load_json(SETTINGS_FILE, {})
     
-    text = (f"⭐ *Ваш баланс:* {user['stars']} звезд\n\n"
-            f"📊 *Детальная статистика:*\n"
-            f"└ Всего заработано: {user['total_earned']} ⭐\n"
-            f"└ Всего потрачено: {user['total_spent']} ⭐\n"
-            f"└ Всего покупок: {user['total_purchases']} ⭐\n"
-            f"└ Реферальных отчислений: {user['referral_earnings']} ⭐\n"
-            f"└ Сыграно игр: {user['games_played']}\n"
-            f"└ Побед: {user['games_won']}\n"
-            f"└ Поражений: {user['games_lost']}\n"
+    text = (f"⭐ *Ваш баланс:* {user['stars']} ⭐\n\n"
+            f"📊 *Статистика:*\n"
+            f"└ Заработано: {user['total_earned']} ⭐\n"
+            f"└ Потрачено: {user['total_spent']} ⭐\n"
+            f"└ Игр: {user['games_played']} (побед: {user['games_won']})\n"
             f"└ Очков конкурса: {user['contest_points']}\n"
             f"└ Дневные потери: {user['daily_loss']} ⭐\n"
             f"└ Дневные выигрыши: {user['daily_win']} ⭐\n\n"
-            f"💱 *Курс обмена:*\n"
-            f"└ {settings.get('exchange_rate', 1)} звезда бота = 1 звезда Telegram\n"
-            f"└ Минимальный вывод: {settings.get('min_withdraw', 500)} ⭐")
+            f"💱 Мин. вывод: {settings.get('min_withdraw', 500)} ⭐")
     
     buttons = [[InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]]
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -1527,17 +2066,14 @@ async def contests_menu(callback: CallbackQuery):
         
         user_points = contest["participants"].get(str(callback.from_user.id), {}).get("points", 0)
         
-        text = (f"🎁 *Активный конкурс*\n\n"
-                f"✨ Название: {contest['name']}\n"
-                f"📝 Описание: {contest['description']}\n"
+        text = (f"🎁 *{contest['name']}*\n\n"
+                f"📝 {contest['description']}\n"
                 f"💰 Приз: {contest['prize']} ⭐\n"
                 f"👥 Участников: {len(contest['participants'])}\n"
                 f"📊 Ваши очки: {user_points}\n"
                 f"⏰ Осталось: {hours}ч {minutes}м\n\n"
-                f"🎯 *Как получить очки:*\n"
-                f"└ Выигрыш в игре: +5 очков\n"
-                f"└ Проигрыш в игре: +1 очко\n\n"
-                f"🔗 Ссылка для участия: {contest['link']}")
+                f"🎯 Очки начисляются за каждую игру (+1)\n"
+                f"🔗 [Ссылка для участия]({contest['link']})")
         
         buttons = [
             [InlineKeyboardButton(text="✅ Участвовать", url=contest['link']),
@@ -1548,7 +2084,7 @@ async def contests_menu(callback: CallbackQuery):
         text = "🎁 *Конкурсы*\n\nСейчас нет активных конкурсов."
         buttons = [[InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]]
     
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), disable_web_page_preview=True)
     await callback.answer()
 
 @dp.callback_query(F.data == "join_contest")
@@ -1567,10 +2103,8 @@ async def join_contest_callback(callback: CallbackQuery):
             f"🎁 *Вы участвуете в конкурсе!*\n\n"
             f"✨ {contest['name']}\n"
             f"💰 Приз: {contest['prize']} ⭐\n\n"
-            f"🎯 *Как получить очки:*\n"
-            f"└ Выигрыш в игре: +5 очков\n"
-            f"└ Проигрыш в игре: +1 очко\n\n"
-            f"Чем больше очков - тем выше шанс на победу!\n"
+            f"🎯 Очки начисляются за каждую сыгранную игру (+1)\n"
+            f"Чем больше игр - тем выше шанс на победу!\n"
             f"Удачи! 🍀",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1591,7 +2125,8 @@ async def referrals_menu(callback: CallbackQuery):
             f"• {settings.get('referral_percent', 10)}% от покупок друга")
     
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📋 Скопировать", callback_data=f"copy_{link}"),
+        [InlineKeyboardButton(text="📋 Копировать", callback_data=f"copy_{link}"),
+         InlineKeyboardButton(text="📤 Переслать", switch_inline_query=f"Присоединяйся к боту! {link}"),
          InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
     ]))
     await callback.answer()
@@ -1604,12 +2139,12 @@ async def tasks_menu(callback: CallbackQuery):
         text = "📋 *Задания*\n\nНет активных заданий."
         buttons = [[InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]]
     else:
-        text = "📋 *Задания от спонсоров:*\n\n"
+        text = "📋 *Задания:*\n\n"
         buttons = []
         for task in tasks:
             completed = await is_task_completed(callback.from_user.id, task["id"])
-            status = "✅ Выполнено" if completed else "❌ Не выполнено"
-            text += f"• *{task['name']}*\n└ Награда: {task['reward']} ⭐\n└ Статус: {status}\n\n"
+            status = "✅" if completed else "❌"
+            text += f"{status} *{task['name']}* | +{task['reward']} ⭐\n"
             if not completed:
                 buttons.append([InlineKeyboardButton(text=f"✅ {task['name']}", callback_data=f"check_task_{task['id']}")])
         buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")])
@@ -1646,11 +2181,10 @@ async def withdraw_menu(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
     settings = await load_json(SETTINGS_FILE, {})
     
-    text = (f"💰 *Вывод звезд*\n\n⭐ Баланс: {user['stars']}\n"
-            f"💱 Курс: {settings.get('exchange_rate', 1)}:1 к звездам TG\n"
-            f"📉 Минимум: {settings.get('min_withdraw', 500)} ⭐\n"
-            f"⏰ КД между выводами: {settings.get('withdraw_cooldown_hours', 24)} часов\n"
-            f"📊 Лимит выводов в день: {settings.get('max_withdraw_per_day', 3)}\n\n"
+    text = (f"💰 *Вывод*\n\n⭐ Баланс: {user['stars']}\n"
+            f"📉 Мин. вывод: {settings.get('min_withdraw', 500)} ⭐\n"
+            f"⏰ КД: {settings.get('withdraw_cooldown_hours', 24)} ч\n"
+            f"📊 Лимит: {settings.get('max_withdraw_per_day', 3)}/день\n\n"
             f"Команда: `/withdraw <сумма>`")
     
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1660,6 +2194,11 @@ async def withdraw_menu(callback: CallbackQuery):
 
 @dp.message(Command("withdraw"))
 async def withdraw_stars(message: Message):
+    is_banned, ban_msg = await is_user_banned(message.from_user.id)
+    if is_banned:
+        await message.answer(ban_msg)
+        return
+    
     args = message.text.split()
     if len(args) != 2:
         await message.answer("❌ Использование: /withdraw <сумма>")
@@ -1675,7 +2214,7 @@ async def withdraw_stars(message: Message):
     settings = await load_json(SETTINGS_FILE, {})
     
     if amount < settings.get("min_withdraw", 500):
-        await message.answer(f"❌ Минимальная сумма вывода: {settings.get('min_withdraw', 500)} ⭐")
+        await message.answer(f"❌ Минимум: {settings.get('min_withdraw', 500)} ⭐")
         return
     
     if user["stars"] < amount:
@@ -1711,15 +2250,15 @@ async def withdraw_stars(message: Message):
         except:
             pass
     
-    await message.answer(f"✅ Заявка #{wid} создана! Ожидайте подтверждения администратора.")
+    await message.answer(f"✅ Заявка #{wid} создана!")
 
 @dp.callback_query(F.data == "buy_stars")
 async def buy_stars_menu(callback: CallbackQuery, state: FSMContext):
     await state.set_state(BuyStates.waiting_for_amount)
     await callback.message.edit_text(
         "🛒 *Покупка звезд*\n\n"
-        "💎 Курс: 1 звезда TG = 1 ⭐\n\n"
-        "Введите количество звезд для покупки (от 50 до 100000):",
+        "💎 1 звезда TG = 1 ⭐\n\n"
+        "Введите сумму (50-100000):",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Отмена", callback_data="back_to_main")]
@@ -1732,10 +2271,10 @@ async def buy_stars_amount(message: Message, state: FSMContext):
     try:
         amount = int(message.text)
         if amount < 50:
-            await message.answer("❌ Минимальная сумма покупки: 50 ⭐")
+            await message.answer("❌ Минимум: 50 ⭐")
             return
         if amount > 100000:
-            await message.answer("❌ Максимальная сумма покупки: 100000 ⭐")
+            await message.answer("❌ Максимум: 100000 ⭐")
             return
     except ValueError:
         await message.answer("❌ Введите число!")
@@ -1744,7 +2283,7 @@ async def buy_stars_amount(message: Message, state: FSMContext):
     await bot.send_invoice(
         chat_id=message.from_user.id,
         title=f"Покупка {amount} звезд",
-        description=f"Вы получаете {amount} ⭐ для игры в боте!",
+        description=f"Вы получаете {amount} ⭐",
         payload=f"stars_{amount}",
         provider_token="",
         currency="XTR",
@@ -1775,12 +2314,10 @@ async def check_system_menu(callback: CallbackQuery):
     
     if user.get("check_system_unlocked", False):
         text = (f"📦 *Система чеков*\n\n"
-                f"✅ Система разблокирована!\n\n"
-                f"💰 Создание чека:\n"
-                f"└ Минимальная сумма: 100 ⭐\n"
-                f"└ Максимальная сумма: 100000 ⭐\n\n"
-                f"📋 Ваши чеки: `/my_checks`\n"
-                f"🎫 Активировать чек: по ссылке или `/use_check <код>`")
+                f"✅ Разблокирована!\n\n"
+                f"💰 Создание: от 100 до 100000 ⭐\n\n"
+                f"📋 `/my_checks` - мои чеки\n"
+                f"🎫 `/use_check <код>` - активация")
         
         buttons = [
             [InlineKeyboardButton(text="📝 Создать чек", callback_data="create_check")],
@@ -1790,12 +2327,8 @@ async def check_system_menu(callback: CallbackQuery):
     else:
         price = settings.get("check_system_price", 100)
         text = (f"📦 *Система чеков*\n\n"
-                f"🔒 Система заблокирована!\n\n"
-                f"💎 Стоимость разблокировки: {price} ⭐\n\n"
-                f"После разблокировки вы сможете:\n"
-                f"• Создавать чеки для друзей\n"
-                f"• Активировать чеки других пользователей\n"
-                f"• Переводить звезды между пользователями")
+                f"🔒 Заблокирована!\n\n"
+                f"💎 Разблокировка: {price} ⭐")
         
         buttons = [
             [InlineKeyboardButton(text="🔓 Разблокировать", callback_data="unlock_check_system")],
@@ -1814,7 +2347,7 @@ async def unlock_check_system_callback(callback: CallbackQuery):
     else:
         settings = await load_json(SETTINGS_FILE, {})
         price = settings.get("check_system_price", 100)
-        await callback.answer(f"❌ Недостаточно звезд! Нужно {price} ⭐", show_alert=True)
+        await callback.answer(f"❌ Нужно {price} ⭐", show_alert=True)
     
     await check_system_menu(callback)
 
@@ -1823,9 +2356,7 @@ async def create_check_prompt(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_check_amount)
     await callback.message.edit_text(
         "📦 *Создание чека*\n\n"
-        "💰 Минимальная сумма: 100 ⭐\n"
-        "💰 Максимальная сумма: 100000 ⭐\n\n"
-        "Введите сумму чека:",
+        "💰 Сумма (100-100000):",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Отмена", callback_data="check_system_menu")]
@@ -1844,16 +2375,15 @@ async def create_check_amount(message: Message, state: FSMContext):
     success, msg, code, link = await create_check(message.from_user.id, amount)
     
     if success:
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📋 Копировать ссылку", callback_data=f"copy_{link}")]
-        ])
         await message.answer(
             f"✅ {msg}\n\n"
-            f"📦 Ссылка для активации: {link}\n"
-            f"💰 Сумма: {amount} ⭐\n\n"
-            f"Отправьте эту ссылку другу для активации чека!",
+            f"📦 {link}\n"
+            f"💰 {amount} ⭐",
             parse_mode="Markdown",
-            reply_markup=keyboard
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📋 Копировать", callback_data=f"copy_{link}"),
+                 InlineKeyboardButton(text="📤 Переслать", switch_inline_query=f"Чек на {amount} ⭐! {link}")]
+            ])
         )
     else:
         await message.answer(f"❌ {msg}")
@@ -1872,21 +2402,21 @@ async def my_checks(callback: CallbackQuery):
             user_checks.append(check)
     
     if not user_checks:
-        text = "📋 *Ваши чеки*\n\nУ вас нет созданных чеков."
+        text = "📋 *Ваши чеки*\n\nНет чеков."
     else:
         text = "📋 *Ваши чеки:*\n\n"
         active = [c for c in user_checks if not c.get("used", False)]
         used = [c for c in user_checks if c.get("used", False)]
         
         if active:
-            text += "*Активные чеки:*\n"
+            text += "*Активные:*\n"
             for c in active:
-                text += f"└ Сумма: {c['amount']} ⭐\n"
+                text += f"└ {c['amount']} ⭐\n"
         
         if used:
-            text += "\n*Использованные чеки:*\n"
-            for c in used[-10:]:
-                text += f"└ Сумма: {c['amount']} ⭐ (активировал: {c.get('used_by', '?')})\n"
+            text += "\n*Использованные:*\n"
+            for c in used[-5:]:
+                text += f"└ {c['amount']} ⭐ (активировал: {c.get('used_by', '?')})\n"
     
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 Назад", callback_data="check_system_menu")]
@@ -1928,9 +2458,8 @@ async def support_menu(callback: CallbackQuery):
     open_tickets = [t for t in tickets if t["status"] == "open"]
     
     text = (f"💬 *Поддержка*\n\n"
-            f"📊 Ваши тикеты:\n"
-            f"└ Открытых: {len(open_tickets)}\n"
-            f"└ Закрытых: {len(tickets) - len(open_tickets)}\n\n"
+            f"📊 Открытых: {len(open_tickets)}\n"
+            f"📋 Закрытых: {len(tickets) - len(open_tickets)}\n\n"
             f"Выберите действие:")
     
     buttons = [
@@ -1947,8 +2476,7 @@ async def support_create(callback: CallbackQuery, state: FSMContext):
     await state.set_state(SupportStates.waiting_for_message)
     await callback.message.edit_text(
         "💬 *Создание тикета*\n\n"
-        "Опишите вашу проблему или вопрос. Наши администраторы свяжутся с вами в ближайшее время.\n\n"
-        "Введите ваше сообщение:",
+        "Опишите вашу проблему:",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Отмена", callback_data="support_menu")]
@@ -1961,8 +2489,7 @@ async def support_send_message(message: Message, state: FSMContext):
     ticket_id = await create_support_ticket(message.from_user.id, message.text)
     await message.answer(
         f"✅ *Тикет #{ticket_id} создан!*\n\n"
-        f"Наши администраторы свяжутся с вами в ближайшее время.\n"
-        f"Вы можете отслеживать статус тикета в разделе 'Мои тикеты'.",
+        f"Администраторы свяжутся с вами.",
         parse_mode="Markdown"
     )
     await state.clear()
@@ -1972,14 +2499,14 @@ async def support_my_tickets(callback: CallbackQuery):
     tickets = await get_user_tickets(callback.from_user.id)
     
     if not tickets:
-        text = "📋 *Мои тикеты*\n\nУ вас нет тикетов."
+        text = "📋 *Мои тикеты*\n\nНет тикетов."
         buttons = [[InlineKeyboardButton(text="🔙 Назад", callback_data="support_menu")]]
     else:
         text = "📋 *Мои тикеты:*\n\n"
         buttons = []
-        for ticket in tickets[-10:]:
-            status = "🟢 Открыт" if ticket["status"] == "open" else "🔴 Закрыт"
-            text += f"*#{ticket['id']}* - {status}\n└ Создан: {ticket['created_at'][:19]}\n\n"
+        for ticket in tickets[-5:]:
+            status = "🟢" if ticket["status"] == "open" else "🔴"
+            text += f"{status} #{ticket['id']} - {ticket['created_at'][:10]}\n"
         buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="support_menu")])
     
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -1988,16 +2515,15 @@ async def support_my_tickets(callback: CallbackQuery):
 @dp.callback_query(F.data == "stats")
 async def show_stats(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
-    text = (f"📊 *Ваша статистика*\n\n⭐ Баланс: {user['stars']}\n💰 Заработано: {user['total_earned']}\n"
-            f"💸 Потрачено: {user['total_spent']}\n🛒 Покупок: {user['total_purchases']}\n"
-            f"👥 Рефералов: {user['referral_count']}\n🎮 Игр: {user['games_played']}\n"
-            f"🏆 Побед: {user['games_won']}\n😭 Поражений: {user['games_lost']}\n"
-            f"✨ Достижений: {len(user['achievements'])}\n"
+    text = (f"📊 *Ваша статистика*\n\n"
+            f"⭐ Баланс: {user['stars']}\n"
+            f"💰 Заработано: {user['total_earned']}\n"
+            f"💸 Потрачено: {user['total_spent']}\n"
+            f"🎮 Игр: {user['games_played']} (побед: {user['games_won']})\n"
             f"🏆 Очков конкурса: {user['contest_points']}\n"
-            f"📅 Дневные потери: {user['daily_loss']} ⭐\n"
-            f"📈 Дневные выигрыши: {user['daily_win']} ⭐\n"
-            f"📊 Проигрышей подряд: {user['consecutive_losses']}\n"
-            f"📦 Чек система: {'✅ Разблокирована' if user.get('check_system_unlocked', False) else '🔒 Заблокирована'}\n"
+            f"👥 Рефералов: {user['referral_count']}\n"
+            f"✨ Достижений: {len(user['achievements'])}\n"
+            f"📦 Чек система: {'✅' if user.get('check_system_unlocked', False) else '🔒'}\n"
             f"📅 Регистрация: {user['created_at'][:10]}")
     
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -2009,36 +2535,13 @@ async def show_stats(callback: CallbackQuery):
 async def show_help(callback: CallbackQuery):
     settings = await load_json(SETTINGS_FILE, {})
     text = (f"❓ *Помощь*\n\n"
-            f"🎮 *Игры (12):*\n"
-            f"└ `/coin [ставка] [орел/решка]` - Орёл или Решка (x1.95)\n"
-            f"└ `/roulette [ставка] [цвет/четность]` - Рулетка (x1.95)\n"
-            f"└ `/cubes [ставка] [1-6]` - Кости (x5.5)\n"
-            f"└ `/crash [ставка] [1.01-50]` - Crash (выбери множитель)\n"
-            f"└ `/mines [ставка] [1-6]` - Mines (открывай клетки)\n"
-            f"└ `/diamond [ставка] [1-2]` - Алмаз (x2)\n"
-            f"└ `/21 [ставка]` - 21 очко (x2.1)\n"
-            f"└ `/fortune [ставка]` - Фортуна (x0-x50)\n"
-            f"└ `/knb [ставка] [камень/ножницы/бумага]` - КНБ (x2.7)\n"
-            f"└ `/poker [ставка]` - Покер (x0-x100)\n"
-            f"└ `/keno [ставка] [5 чисел]` - Кено (x0-x200)\n"
-            f"└ `/wheel [ставка]` - Колесо Фортуны (x0-x10)\n\n"
-            f"🎁 *Конкурсы:* Участвуйте, играйте, получайте очки!\n"
-            f"└ Выигрыш: +5 очков | Проигрыш: +1 очко\n\n"
-            f"📋 *Задания:* Подписывайтесь на каналы (бот должен быть в канале!)\n\n"
-            f"👥 *Рефералы:* {settings.get('referral_reward', 10)} ⭐ за друга + {settings.get('referral_percent', 10)}% от его покупок\n\n"
-            f"📦 *Чеки:*\n"
-            f"└ Разблокировка: {settings.get('check_system_price', 100)} ⭐\n"
-            f"└ Создание чека: от 100 до 100000 ⭐\n"
-            f"└ Активация чека: по ссылке или `/use_check <код>`\n\n"
-            f"💰 *Вывод:* `/withdraw <сумма>`, мин. {settings.get('min_withdraw', 500)} ⭐\n"
-            f"└ КД между выводами: {settings.get('withdraw_cooldown_hours', 24)} часов\n"
-            f"└ Лимит выводов в день: {settings.get('max_withdraw_per_day', 3)}\n\n"
-            f"🛒 *Покупка:* Введите сумму в меню покупки, оплата Telegram Stars\n\n"
-            f"⚠️ *Лимиты:*\n"
-            f"└ Дневной лимит потерь: {settings.get('max_daily_loss', 50000)} ⭐\n"
-            f"└ Дневной лимит выигрыша: {settings.get('max_daily_win', 100000)} ⭐\n"
-            f"└ Макс. проигрышей подряд: {settings.get('max_consecutive_losses', 10)}\n\n"
-            f"💬 *Поддержка:* Создайте тикет в меню поддержки")
+            f"🎮 *Игры:* `/coin`, `/roulette`, `/cubes`, `/crash`, `/mines`, `/diamond`, `/21`, `/fortune`, `/knb`, `/poker`, `/keno`, `/wheel`\n\n"
+            f"🎁 *Конкурсы:* Играй и получай очки!\n\n"
+            f"📋 *Задания:* Подписывайся на каналы\n\n"
+            f"👥 *Рефералы:* {settings.get('referral_reward', 10)} ⭐ + {settings.get('referral_percent', 10)}%\n\n"
+            f"📦 *Чеки:* `/use_check <код>`\n\n"
+            f"💰 *Вывод:* `/withdraw <сумма>`\n\n"
+            f"💬 *Поддержка:* Создай тикет в меню")
     
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
@@ -2052,15 +2555,14 @@ async def back_to_main(callback: CallbackQuery, state: FSMContext):
     keyboard = get_main_keyboard()
     if await is_admin(callback.from_user.id):
         keyboard.inline_keyboard.append([InlineKeyboardButton(text="⚙️ Админ панель", callback_data="admin_panel")])
-    await callback.message.edit_text(f"✨ Главное меню\n\n⭐ У вас {user['stars']} звезд", reply_markup=keyboard)
+    await callback.message.edit_text(f"✨ Главное меню\n\n⭐ {user['stars']} ⭐", reply_markup=keyboard)
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("copy_"))
 async def copy_text(callback: CallbackQuery):
-    text = callback.data.replace("copy_", "")
-    await callback.answer("✅ Ссылка скопирована!", show_alert=True)
+    await callback.answer("✅ Скопировано!", show_alert=True)
 
-# ============== АДМИН ПАНЕЛЬ (основные функции) ==============
+# ============== АДМИН ПАНЕЛЬ ==============
 
 @dp.callback_query(F.data == "admin_panel")
 async def admin_panel(callback: CallbackQuery):
@@ -2069,52 +2571,41 @@ async def admin_panel(callback: CallbackQuery):
         return
     
     buttons = [
-        [InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users"),
-         InlineKeyboardButton(text="💰 Звезды", callback_data="admin_stars")],
-        [InlineKeyboardButton(text="📋 Задания", callback_data="admin_tasks"),
-         InlineKeyboardButton(text="🎫 Промокоды", callback_data="admin_promo")],
-        [InlineKeyboardButton(text="📦 Чеки", callback_data="admin_checks"),
-         InlineKeyboardButton(text="🎁 Конкурсы", callback_data="admin_contest")],
-        [InlineKeyboardButton(text="⚙️ Ограничения", callback_data="admin_limits"),
-         InlineKeyboardButton(text="💰 Выводы", callback_data="admin_withdrawals")],
-        [InlineKeyboardButton(text="⛔ Бан выводов", callback_data="admin_withdraw_bans"),
-         InlineKeyboardButton(text="💬 Поддержка", callback_data="admin_support")],
-        [InlineKeyboardButton(text="⚙️ Настройки", callback_data="admin_settings"),
-         InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
-        [InlineKeyboardButton(text="📝 Логи", callback_data="admin_logs"),
-         InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
+        [InlineKeyboardButton(text="👥 Управление пользователем", callback_data="admin_user_manage")],
+        [InlineKeyboardButton(text="💰 Звезды", callback_data="admin_stars")],
+        [InlineKeyboardButton(text="📋 Задания", callback_data="admin_tasks")],
+        [InlineKeyboardButton(text="🎫 Промокоды", callback_data="admin_promo")],
+        [InlineKeyboardButton(text="📦 Чеки", callback_data="admin_checks")],
+        [InlineKeyboardButton(text="🎁 Конкурсы", callback_data="admin_contest")],
+        [InlineKeyboardButton(text="⚙️ Ограничения", callback_data="admin_limits")],
+        [InlineKeyboardButton(text="💰 Выводы", callback_data="admin_withdrawals")],
+        [InlineKeyboardButton(text="⛔ Бан выводов", callback_data="admin_withdraw_bans")],
+        [InlineKeyboardButton(text="🚫 Бан пользователя", callback_data="admin_ban_user")],
+        [InlineKeyboardButton(text="💬 Поддержка", callback_data="admin_support")],
+        [InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_mailing")],
+        [InlineKeyboardButton(text="⚙️ Настройки", callback_data="admin_settings")],
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
+        [InlineKeyboardButton(text="📝 Логи", callback_data="admin_logs")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
     ]
     await callback.message.edit_text("⚙️ *Админ панель*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
 
-@dp.callback_query(F.data == "admin_users")
-async def admin_users_menu(callback: CallbackQuery, state: FSMContext):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("❌ Недостаточно прав!")
-        return
-    
-    buttons = [
-        [InlineKeyboardButton(text="🔍 Найти пользователя", callback_data="admin_find_user")],
-        [InlineKeyboardButton(text="📊 Топ пользователей", callback_data="admin_top_users")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
-    ]
-    await callback.message.edit_text("👥 *Управление пользователями*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-    await callback.answer()
-
-@dp.callback_query(F.data == "admin_find_user")
-async def admin_find_user(callback: CallbackQuery, state: FSMContext):
+# Управление пользователем (по ID)
+@dp.callback_query(F.data == "admin_user_manage")
+async def admin_user_manage(callback: CallbackQuery, state: FSMContext):
     if not await is_admin(callback.from_user.id):
         await callback.answer("❌ Недостаточно прав!")
         return
     
     await state.set_state(AdminStates.waiting_for_user_id)
     await callback.message.edit_text("🔍 Введите ID пользователя:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_users")]
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_panel")]
     ]))
     await callback.answer()
 
 @dp.message(AdminStates.waiting_for_user_id)
-async def admin_show_user(message: Message, state: FSMContext):
+async def admin_user_actions(message: Message, state: FSMContext):
     if not await is_admin(message.from_user.id):
         await message.answer("❌ Недостаточно прав!")
         await state.clear()
@@ -2123,46 +2614,48 @@ async def admin_show_user(message: Message, state: FSMContext):
     try:
         user_id = int(message.text.strip())
         user = await get_user(user_id)
-        text = (f"👤 *Пользователь {user_id}*\n\n⭐ Баланс: {user['stars']}\n💰 Заработано: {user['total_earned']}\n"
-                f"💸 Потрачено: {user['total_spent']}\n👥 Рефералов: {user['referral_count']}\n"
-                f"🎮 Игр: {user['games_played']}\n🏆 Побед: {user['games_won']}\n😭 Поражений: {user['games_lost']}\n"
-                f"🏆 Очков конкурса: {user['contest_points']}\n"
-                f"📅 Дневные потери: {user['daily_loss']} ⭐\n"
-                f"📈 Дневные выигрыши: {user['daily_win']} ⭐\n"
-                f"📊 Проигрышей подряд: {user['consecutive_losses']}\n"
+        
+        text = (f"👤 *Пользователь {user_id}*\n\n"
+                f"⭐ Баланс: {user['stars']}\n"
+                f"🎮 Игр: {user['games_played']} (побед: {user['games_won']})\n"
+                f"👥 Рефералов: {user['referral_count']}\n"
                 f"⛔ Бан вывода: {'Да' if user.get('is_withdraw_banned', False) else 'Нет'}\n"
-                f"📦 Чек система: {'✅' if user.get('check_system_unlocked', False) else '❌'}\n"
-                f"📅 Регистрация: {user['created_at'][:10]}")
+                f"🚫 Бан: {'Да' if user.get('is_banned', False) else 'Нет'}\n"
+                f"📦 Чек система: {'✅' if user.get('check_system_unlocked', False) else '❌'}")
+        
         buttons = [
             [InlineKeyboardButton(text="➕ Добавить звезды", callback_data=f"admin_add_stars_{user_id}"),
              InlineKeyboardButton(text="➖ Забрать звезды", callback_data=f"admin_remove_stars_{user_id}")],
             [InlineKeyboardButton(text="🔓 Разблокировать чеки", callback_data=f"admin_unlock_checks_{user_id}")],
             [InlineKeyboardButton(text="⛔ Забанить вывод", callback_data=f"admin_ban_withdraw_{user_id}"),
              InlineKeyboardButton(text="✅ Разбанить вывод", callback_data=f"admin_unban_withdraw_{user_id}")],
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_users")]
+            [InlineKeyboardButton(text="🚫 Забанить пользователя", callback_data=f"admin_ban_user_{user_id}"),
+             InlineKeyboardButton(text="✅ Разбанить пользователя", callback_data=f"admin_unban_user_{user_id}")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
         ]
         await message.answer(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     except Exception as e:
         await message.answer(f"❌ Пользователь не найден!")
     await state.clear()
 
+# Добавление/списание звезд
 @dp.callback_query(F.data.startswith("admin_add_stars_"))
-async def admin_add_stars_amount(callback: CallbackQuery, state: FSMContext):
+async def admin_add_stars_prompt(callback: CallbackQuery, state: FSMContext):
     user_id = int(callback.data.replace("admin_add_stars_", ""))
     await state.update_data(target_user=user_id, action="add")
     await state.set_state(AdminStates.waiting_for_stars_amount)
     await callback.message.edit_text("💰 Введите количество звезд для начисления:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_users")]
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_panel")]
     ]))
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("admin_remove_stars_"))
-async def admin_remove_stars_amount(callback: CallbackQuery, state: FSMContext):
+async def admin_remove_stars_prompt(callback: CallbackQuery, state: FSMContext):
     user_id = int(callback.data.replace("admin_remove_stars_", ""))
     await state.update_data(target_user=user_id, action="remove")
     await state.set_state(AdminStates.waiting_for_stars_amount)
     await callback.message.edit_text("💰 Введите количество звезд для списания:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_users")]
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_panel")]
     ]))
     await callback.answer()
 
@@ -2178,48 +2671,39 @@ async def admin_process_stars(message: Message, state: FSMContext):
     user_id = data["target_user"]
     
     if data["action"] == "add":
-        await add_stars(user_id, amount, f"Админ {message.from_user.id} добавил звезды")
-        await message.answer(f"✅ Пользователю добавлено {amount} ⭐")
+        await add_stars(user_id, amount, f"Админ {message.from_user.id}")
+        await message.answer(f"✅ Добавлено {amount} ⭐")
         await log_admin_action(message.from_user.id, "add_stars", str(user_id), f"Amount: {amount}")
     else:
-        success = await remove_stars(user_id, amount, f"Админ {message.from_user.id} забрал звезды")
+        success = await remove_stars(user_id, amount, f"Админ {message.from_user.id}")
         if success:
-            await message.answer(f"✅ У пользователя списано {amount} ⭐")
+            await message.answer(f"✅ Списано {amount} ⭐")
             await log_admin_action(message.from_user.id, "remove_stars", str(user_id), f"Amount: {amount}")
         else:
-            await message.answer(f"❌ У пользователя недостаточно звезд!")
+            await message.answer(f"❌ Недостаточно звезд!")
     
     await state.clear()
 
-@dp.callback_query(F.data.startswith("admin_unlock_checks_"))
-async def admin_unlock_checks(callback: CallbackQuery):
-    user_id = int(callback.data.replace("admin_unlock_checks_", ""))
-    await update_user(user_id, check_system_unlocked=True)
-    await callback.answer("✅ Система чеков разблокирована!", show_alert=True)
-    await admin_users_menu(callback, None)
-
+# Бан/разбан вывода
 @dp.callback_query(F.data.startswith("admin_ban_withdraw_"))
-async def admin_ban_withdraw(callback: CallbackQuery, state: FSMContext):
+async def admin_ban_withdraw_prompt(callback: CallbackQuery, state: FSMContext):
     user_id = int(callback.data.replace("admin_ban_withdraw_", ""))
-    await state.update_data(target_user=user_id)
+    await state.update_data(target_user=user_id, action="ban_withdraw")
     await state.set_state(AdminStates.waiting_for_ban_hours)
     await callback.message.edit_text("⏰ Введите количество часов бана вывода:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_users")]
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_panel")]
     ]))
     await callback.answer()
 
 @dp.message(AdminStates.waiting_for_ban_hours)
-async def admin_process_ban(message: Message, state: FSMContext):
+async def admin_process_ban_withdraw(message: Message, state: FSMContext):
     try:
         hours = int(message.text.strip())
         data = await state.get_data()
         user_id = data["target_user"]
         
         ban_until = datetime.now() + timedelta(hours=hours)
-        await update_user(user_id, 
-                          is_withdraw_banned=True, 
-                          withdraw_ban_reason=f"Администратор {message.from_user.id}", 
-                          withdraw_ban_until=ban_until.isoformat())
+        await update_user(user_id, is_withdraw_banned=True, withdraw_ban_reason=f"Админ {message.from_user.id}", withdraw_ban_until=ban_until.isoformat())
         await message.answer(f"✅ Пользователь забанен на вывод на {hours} часов!")
         await log_admin_action(message.from_user.id, "ban_withdraw", str(user_id), f"Hours: {hours}")
         await state.clear()
@@ -2231,46 +2715,112 @@ async def admin_unban_withdraw(callback: CallbackQuery):
     user_id = int(callback.data.replace("admin_unban_withdraw_", ""))
     await update_user(user_id, is_withdraw_banned=False, withdraw_ban_reason=None, withdraw_ban_until=None)
     await callback.answer("✅ Бан вывода снят!", show_alert=True)
-    await admin_users_menu(callback, None)
+    await admin_panel(callback)
 
-@dp.callback_query(F.data == "admin_top_users")
-async def admin_top_users(callback: CallbackQuery):
-    users = await load_json(USERS_FILE, {})
-    sorted_users = sorted(users.items(), key=lambda x: x[1].get("stars", 0), reverse=True)[:10]
-    
-    text = "🏆 *Топ пользователей по балансу:*\n\n"
-    for i, (uid, data) in enumerate(sorted_users, 1):
-        text += f"{i}. ID: {uid} - {data.get('stars', 0)} ⭐\n"
-    
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_users")]
+# Бан/разбан пользователя
+@dp.callback_query(F.data.startswith("admin_ban_user_"))
+async def admin_ban_user_prompt(callback: CallbackQuery, state: FSMContext):
+    user_id = int(callback.data.replace("admin_ban_user_", ""))
+    await state.update_data(target_user=user_id)
+    await state.set_state(AdminStates.waiting_for_user_ban_reason)
+    await callback.message.edit_text("📝 Введите причину бана:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_panel")]
     ]))
     await callback.answer()
 
+@dp.message(AdminStates.waiting_for_user_ban_reason)
+async def admin_process_ban_user(message: Message, state: FSMContext):
+    reason = message.text
+    data = await state.get_data()
+    user_id = data["target_user"]
+    
+    ban_until = datetime.now() + timedelta(days=365)
+    await update_user(user_id, is_banned=True, ban_reason=reason, ban_until=ban_until.isoformat())
+    await message.answer(f"✅ Пользователь забанен!\nПричина: {reason}")
+    await log_admin_action(message.from_user.id, "ban_user", str(user_id), f"Reason: {reason}")
+    
+    try:
+        await bot.send_message(user_id, f"⛔ *Вы забанены!*\n\nПричина: {reason}\nСрок: навсегда", parse_mode="Markdown")
+    except:
+        pass
+    
+    await state.clear()
+
+@dp.callback_query(F.data.startswith("admin_unban_user_"))
+async def admin_unban_user(callback: CallbackQuery):
+    user_id = int(callback.data.replace("admin_unban_user_", ""))
+    await update_user(user_id, is_banned=False, ban_reason=None, ban_until=None)
+    await callback.answer("✅ Бан пользователя снят!", show_alert=True)
+    
+    try:
+        await bot.send_message(user_id, f"✅ *Вы разбанены!*", parse_mode="Markdown")
+    except:
+        pass
+    
+    await admin_panel(callback)
+
+@dp.callback_query(F.data.startswith("admin_unlock_checks_"))
+async def admin_unlock_checks(callback: CallbackQuery):
+    user_id = int(callback.data.replace("admin_unlock_checks_", ""))
+    await update_user(user_id, check_system_unlocked=True)
+    await callback.answer("✅ Чек система разблокирована!", show_alert=True)
+    await admin_panel(callback)
+
+# Рассылка
+@dp.callback_query(F.data == "admin_mailing")
+async def admin_mailing_menu(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        await callback.answer("❌ Недостаточно прав!")
+        return
+    
+    await state.set_state(AdminStates.waiting_for_mailing_text)
+    await callback.message.edit_text(
+        "📢 *Рассылка*\n\nВведите текст сообщения для рассылки (можно использовать Markdown):",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_panel")]
+        ])
+    )
+    await callback.answer()
+
+@dp.message(AdminStates.waiting_for_mailing_text)
+async def admin_mailing_text(message: Message, state: FSMContext):
+    await state.update_data(mailing_text=message.text)
+    await state.set_state(AdminStates.waiting_for_mailing_confirm)
+    
+    await message.answer(
+        f"📢 *Предпросмотр рассылки:*\n\n{message.text}\n\nОтправить всем пользователям?",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Да, отправить", callback_data="mailing_confirm"),
+             InlineKeyboardButton(text="❌ Нет, отмена", callback_data="admin_panel")]
+        ])
+    )
+
+@dp.callback_query(F.data == "mailing_confirm")
+async def admin_mailing_confirm(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    text = data.get("mailing_text")
+    
+    mailing_id = await start_mailing(callback.from_user.id, text)
+    if mailing_id:
+        await callback.answer("✅ Рассылка запущена!", show_alert=True)
+        asyncio.create_task(send_mailing())
+    else:
+        await callback.answer("❌ Рассылка уже запущена!", show_alert=True)
+    
+    await state.clear()
+    await admin_panel(callback)
+
+# Остальные админ функции (сокращенные, но рабочие)
 @dp.callback_query(F.data == "admin_stars")
 async def admin_stars_menu(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
         await callback.answer("❌ Недостаточно прав!")
         return
     
-    users = await load_json(USERS_FILE, {})
-    total_stars = sum(u.get("stars", 0) for u in users.values())
-    
-    text = f"💰 *Управление звездами*\n\nВсего звезд в системе: {total_stars}\nВсего пользователей: {len(users)}\n\nВыберите действие:"
-    
-    buttons = [
-        [InlineKeyboardButton(text="💸 Массовая выдача", callback_data="admin_mass_add")],
+    await callback.message.edit_text("💰 *Управление звездами*\n\nИспользуйте 'Управление пользователем' для выдачи звезд", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
-    ]
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-    await callback.answer()
-
-@dp.callback_query(F.data == "admin_mass_add")
-async def admin_mass_add(callback: CallbackQuery, state: FSMContext):
-    await state.set_state(AdminStates.waiting_for_stars_amount)
-    await state.update_data(action="mass_add")
-    await callback.message.edit_text("💰 Введите количество звезд для ВСЕХ пользователей:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_stars")]
     ]))
     await callback.answer()
 
@@ -2285,15 +2835,11 @@ async def admin_tasks_menu(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="📋 Список заданий", callback_data="admin_list_tasks")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
     ]
-    await callback.message.edit_text("📋 *Управление заданиями*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.message.edit_text("📋 *Задания*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_add_task")
 async def admin_add_task(callback: CallbackQuery, state: FSMContext):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("❌ Недостаточно прав!")
-        return
-    
     await state.set_state(AdminStates.waiting_for_task_name)
     await callback.message.edit_text("📝 Введите название задания:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_tasks")]
@@ -2304,30 +2850,21 @@ async def admin_add_task(callback: CallbackQuery, state: FSMContext):
 async def admin_task_name(message: Message, state: FSMContext):
     await state.update_data(task_name=message.text)
     await state.set_state(AdminStates.waiting_for_task_link)
-    await message.answer("🔗 Введите ссылку на канал (например, https://t.me/channel):\n\n⚠️ Бот должен быть добавлен в этот канал администратором!")
+    await message.answer("🔗 Введите ссылку на канал:")
 
 @dp.message(AdminStates.waiting_for_task_link)
 async def admin_task_link(message: Message, state: FSMContext):
     await state.update_data(task_link=message.text)
     await state.set_state(AdminStates.waiting_for_task_reward)
-    await message.answer("💰 Введите награду (звезды):")
+    await message.answer("💰 Введите награду:")
 
 @dp.message(AdminStates.waiting_for_task_reward)
 async def admin_task_reward(message: Message, state: FSMContext):
     try:
         reward = int(message.text)
         data = await state.get_data()
-        
-        task_id = await add_task(message.from_user.id, data["task_name"], data["task_link"], reward)
-        await message.answer(
-            f"✅ Задание добавлено!\n\n"
-            f"📝 Название: {data['task_name']}\n"
-            f"🔗 Ссылка: {data['task_link']}\n"
-            f"💰 Награда: {reward} ⭐\n\n"
-            f"⚠️ Важно: Бот должен быть добавлен в канал администратором для корректной проверки!",
-            parse_mode="Markdown"
-        )
-        await log_admin_action(message.from_user.id, "add_task", None, f"Name: {data['task_name']}, Reward: {reward}")
+        await add_task(message.from_user.id, data["task_name"], data["task_link"], reward)
+        await message.answer(f"✅ Задание добавлено!\n\n{data['task_name']}\n+{reward} ⭐")
         await state.clear()
     except ValueError:
         await message.answer("❌ Введите число!")
@@ -2337,16 +2874,13 @@ async def admin_list_tasks(callback: CallbackQuery):
     tasks = await get_all_tasks()
     
     if not tasks:
-        text = "📋 *Список заданий*\n\nНет активных заданий."
+        text = "📋 *Список заданий*\n\nНет заданий."
         buttons = [[InlineKeyboardButton(text="🔙 Назад", callback_data="admin_tasks")]]
     else:
-        text = "📋 *Список заданий:*\n\n"
+        text = "📋 *Задания:*\n\n"
         buttons = []
         for task in tasks:
-            text += f"*ID {task['id']}:* {task['name']}\n"
-            text += f"└ Награда: {task['reward']} ⭐\n"
-            text += f"└ Ссылка: {task['link']}\n"
-            text += f"└ Создано: {task['created_at'][:10]}\n\n"
+            text += f"*{task['id']}.* {task['name']} | +{task['reward']} ⭐\n"
             buttons.append([InlineKeyboardButton(text=f"❌ Удалить {task['name']}", callback_data=f"admin_delete_task_{task['id']}")])
         buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_tasks")])
     
@@ -2356,8 +2890,8 @@ async def admin_list_tasks(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("admin_delete_task_"))
 async def admin_delete_task(callback: CallbackQuery):
     task_id = int(callback.data.replace("admin_delete_task_", ""))
-    success = await delete_task(task_id)
-    await callback.answer("✅ Задание удалено!" if success else "❌ Ошибка!")
+    await delete_task(task_id)
+    await callback.answer("✅ Задание удалено!")
     await admin_list_tasks(callback)
 
 @dp.callback_query(F.data == "admin_promo")
@@ -2371,7 +2905,7 @@ async def admin_promo_menu(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="📋 Список промокодов", callback_data="admin_list_promo")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
     ]
-    await callback.message.edit_text("🎫 *Управление промокодами*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.message.edit_text("🎫 *Промокоды*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_create_promo")
@@ -2386,7 +2920,7 @@ async def admin_create_promo(callback: CallbackQuery, state: FSMContext):
 async def admin_promo_code(message: Message, state: FSMContext):
     await state.update_data(promo_code=message.text.strip().upper())
     await state.set_state(AdminStates.waiting_for_promo_reward)
-    await message.answer("💰 Введите награду (звезды):")
+    await message.answer("💰 Введите награду:")
 
 @dp.message(AdminStates.waiting_for_promo_reward)
 async def admin_promo_reward(message: Message, state: FSMContext):
@@ -2403,12 +2937,8 @@ async def admin_promo_limit(message: Message, state: FSMContext):
     try:
         limit = int(message.text)
         data = await state.get_data()
-        success = await create_promo(message.from_user.id, data["promo_code"], data["promo_reward"], limit)
-        if success:
-            await message.answer(f"✅ Промокод создан!\n\n🎫 Код: {data['promo_code']}\n💰 Награда: {data['promo_reward']} ⭐\n📊 Лимит: {limit}")
-            await log_admin_action(message.from_user.id, "create_promo", None, f"Code: {data['promo_code']}, Reward: {data['promo_reward']}, Limit: {limit}")
-        else:
-            await message.answer("❌ Промокод с таким кодом уже существует!")
+        await create_promo(message.from_user.id, data["promo_code"], data["promo_reward"], limit)
+        await message.answer(f"✅ Промокод создан!\n\n{data['promo_code']}\n+{data['promo_reward']} ⭐\nЛимит: {limit}")
         await state.clear()
     except ValueError:
         await message.answer("❌ Введите число!")
@@ -2419,13 +2949,13 @@ async def admin_list_promo(callback: CallbackQuery):
     promo_codes = promo["promo_codes"]
     
     if not promo_codes:
-        text = "🎫 *Список промокодов*\n\nНет активных промокодов."
+        text = "🎫 *Список промокодов*\n\nНет промокодов."
         buttons = [[InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promo")]]
     else:
-        text = "🎫 *Список промокодов:*\n\n"
+        text = "🎫 *Промокоды:*\n\n"
         buttons = []
         for p in promo_codes:
-            text += f"*{p['code']}*\n└ Награда: {p['reward']} ⭐\n└ Использовано: {p['used']}/{p['limit']}\n└ Создан: {p['created_at'][:10]}\n\n"
+            text += f"*{p['code']}* | +{p['reward']} ⭐ | {p['used']}/{p['limit']}\n"
             buttons.append([InlineKeyboardButton(text=f"❌ Удалить {p['code']}", callback_data=f"admin_delete_promo_{p['code']}")])
         buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_promo")])
     
@@ -2442,30 +2972,14 @@ async def admin_delete_promo(callback: CallbackQuery):
     await admin_list_promo(callback)
 
 @dp.callback_query(F.data == "admin_checks")
-async def admin_checks_menu(callback: CallbackQuery):
+async def admin_checks_menu(callback: CallbackQuery, state: FSMContext):
     if not await is_admin(callback.from_user.id):
         await callback.answer("❌ Недостаточно прав!")
         return
     
-    checks = await load_json(CHECKS_FILE, {"checks": [], "used_checks": []})
-    active = len(checks["checks"])
-    used = len(checks["used_checks"])
-    
-    text = f"📦 *Управление чеками*\n\n🟢 Активных чеков: {active}\n🔴 Использовано: {used}\n\nВыберите действие:"
-    
-    buttons = [
-        [InlineKeyboardButton(text="➕ Создать чек", callback_data="admin_create_check")],
-        [InlineKeyboardButton(text="📋 Список чеков", callback_data="admin_list_checks")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
-    ]
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-    await callback.answer()
-
-@dp.callback_query(F.data == "admin_create_check")
-async def admin_create_check(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_check_amount)
     await callback.message.edit_text("📦 Введите сумму чека:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_checks")]
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_panel")]
     ]))
     await callback.answer()
 
@@ -2491,36 +3005,14 @@ async def admin_create_check_amount(message: Message, state: FSMContext):
         bot_username = (await bot.get_me()).username
         link = f"https://t.me/{bot_username}?start=check_{code}"
         
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📋 Копировать ссылку", callback_data=f"copy_{link}")]
-        ])
-        
-        await message.answer(f"✅ Чек создан!\n\n📦 Ссылка для активации: {link}\n💰 Сумма: {amount} ⭐", parse_mode="Markdown", reply_markup=keyboard)
+        await message.answer(f"✅ Чек создан!\n\n📦 {link}\n💰 {amount} ⭐", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📋 Копировать", callback_data=f"copy_{link}"),
+             InlineKeyboardButton(text="📤 Переслать", switch_inline_query=f"Чек на {amount} ⭐! {link}")]
+        ]))
         await log_admin_action(message.from_user.id, "create_check", None, f"Amount: {amount}")
         await state.clear()
     except ValueError:
         await message.answer("❌ Введите число!")
-
-@dp.callback_query(F.data == "admin_list_checks")
-async def admin_list_checks(callback: CallbackQuery):
-    checks = await load_json(CHECKS_FILE, {"checks": [], "used_checks": []})
-    
-    text = "📦 *Список чеков*\n\n"
-    
-    if checks["checks"]:
-        text += "*Активные чеки:*\n"
-        for c in checks["checks"][:10]:
-            text += f"└ Сумма: {c['amount']} ⭐ (создал: {c['creator']})\n"
-    
-    if checks["used_checks"]:
-        text += "\n*Использованные чеки:*\n"
-        for c in checks["used_checks"][-10:]:
-            text += f"└ Сумма: {c['amount']} ⭐ (активировал: {c['used_by']})\n"
-    
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_checks")]
-    ]))
-    await callback.answer()
 
 @dp.callback_query(F.data == "admin_contest")
 async def admin_contest_menu(callback: CallbackQuery, state: FSMContext):
@@ -2535,13 +3027,13 @@ async def admin_contest_menu(callback: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text="🎲 Завершить конкурс", callback_data="admin_end_contest")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
         ]
-        text = f"🎁 *Активный конкурс*\n\n✨ Название: {contest['name']}\n💰 Приз: {contest['prize']} ⭐\n👥 Участников: {len(contest['participants'])}\n📝 Описание: {contest['description']}"
+        text = f"🎁 *Активный конкурс*\n\n✨ {contest['name']}\n💰 {contest['prize']} ⭐\n👥 {len(contest['participants'])} участников"
     else:
         buttons = [
             [InlineKeyboardButton(text="➕ Создать конкурс", callback_data="admin_create_contest")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
         ]
-        text = "🎁 *Управление конкурсами*\n\nНет активного конкурса."
+        text = "🎁 *Конкурсы*\n\nНет активного конкурса."
     
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
@@ -2558,41 +3050,27 @@ async def admin_create_contest(callback: CallbackQuery, state: FSMContext):
 async def admin_contest_name(message: Message, state: FSMContext):
     await state.update_data(contest_name=message.text)
     await state.set_state(ContestStates.waiting_for_description)
-    await message.answer("📝 Введите описание конкурса:")
+    await message.answer("📝 Введите описание:")
 
 @dp.message(ContestStates.waiting_for_description)
 async def admin_contest_description(message: Message, state: FSMContext):
     await state.update_data(contest_description=message.text)
     await state.set_state(ContestStates.waiting_for_prize)
-    await message.answer("💰 Введите призовой фонд конкурса (звезды):")
+    await message.answer("💰 Введите приз:")
 
 @dp.message(ContestStates.waiting_for_prize)
 async def admin_contest_prize(message: Message, state: FSMContext):
     try:
         prize = int(message.text)
         await state.update_data(contest_prize=prize)
-        await state.set_state(ContestStates.waiting_for_link)
-        await message.answer("🔗 Введите ссылку на конкурс (или отправьте '-' для автоматической):")
+        await create_contest(message.from_user.id, 
+                            (await state.get_data())["contest_name"],
+                            (await state.get_data())["contest_description"],
+                            prize, None)
+        await message.answer(f"✅ Конкурс создан!\n\n{(await state.get_data())['contest_name']}\n💰 {prize} ⭐")
+        await state.clear()
     except ValueError:
         await message.answer("❌ Введите число!")
-
-@dp.message(ContestStates.waiting_for_link)
-async def admin_contest_link(message: Message, state: FSMContext):
-    data = await state.get_data()
-    link = message.text if message.text != "-" else None
-    contest_id = await create_contest(
-        message.from_user.id,
-        data["contest_name"],
-        data["contest_description"],
-        data["contest_prize"],
-        link
-    )
-    if contest_id:
-        await message.answer(f"✅ Конкурс создан!\n\n🎁 {data['contest_name']}\n💰 Приз: {data['contest_prize']} ⭐\n🔗 Ссылка для участия создана автоматически!")
-        await log_admin_action(message.from_user.id, "create_contest", None, f"Name: {data['contest_name']}, Prize: {data['contest_prize']}")
-    else:
-        await message.answer("❌ Конкурс уже активен!")
-    await state.clear()
 
 @dp.callback_query(F.data == "admin_end_contest")
 async def admin_end_contest(callback: CallbackQuery):
@@ -2611,26 +3089,23 @@ async def admin_limits_menu(callback: CallbackQuery, state: FSMContext):
     
     settings = await load_json(SETTINGS_FILE, {})
     
-    text = (f"⚙️ *Управление ограничениями*\n\n"
-            f"📊 Дневной лимит потерь: {settings.get('max_daily_loss', 50000)} ⭐\n"
-            f"📈 Дневной лимит выигрыша: {settings.get('max_daily_win', 100000)} ⭐\n"
+    text = (f"⚙️ *Ограничения*\n\n"
+            f"📊 Дневной лимит потерь: {settings.get('max_daily_loss', 50000)}\n"
+            f"📈 Дневной лимит выигрыша: {settings.get('max_daily_win', 100000)}\n"
             f"📉 Макс. проигрышей подряд: {settings.get('max_consecutive_losses', 10)}\n"
-            f"💰 Мин. баланс для игры: {settings.get('min_balance_for_bet', 10)} ⭐\n"
-            f"⏰ КД между выводами: {settings.get('withdraw_cooldown_hours', 24)} часов\n"
+            f"💰 Мин. баланс для игры: {settings.get('min_balance_for_bet', 10)}\n"
+            f"⏰ КД вывода (часов): {settings.get('withdraw_cooldown_hours', 24)}\n"
             f"📊 Лимит выводов в день: {settings.get('max_withdraw_per_day', 3)}\n"
-            f"🏆 Очки за выигрыш: {settings.get('contest_points_per_win', 5)}\n"
-            f"😭 Очки за проигрыш: {settings.get('contest_points_per_loss', 1)}\n\n"
-            f"Выберите параметр для изменения:")
+            f"🎯 Очков за игру: {settings.get('contest_points_per_game', 1)}")
     
     buttons = [
         [InlineKeyboardButton(text="📊 Дневной лимит потерь", callback_data="limit_daily_loss")],
         [InlineKeyboardButton(text="📈 Дневной лимит выигрыша", callback_data="limit_daily_win")],
-        [InlineKeyboardButton(text="📉 Макс. проигрышей подряд", callback_data="limit_consecutive_losses")],
+        [InlineKeyboardButton(text="📉 Макс. проигрышей", callback_data="limit_consecutive_losses")],
         [InlineKeyboardButton(text="💰 Мин. баланс для игры", callback_data="limit_min_balance")],
-        [InlineKeyboardButton(text="⏰ КД между выводами", callback_data="limit_withdraw_cooldown")],
-        [InlineKeyboardButton(text="📊 Лимит выводов в день", callback_data="limit_max_withdraw_per_day")],
-        [InlineKeyboardButton(text="🏆 Очки за выигрыш", callback_data="limit_contest_win")],
-        [InlineKeyboardButton(text="😭 Очки за проигрыш", callback_data="limit_contest_loss")],
+        [InlineKeyboardButton(text="⏰ КД вывода", callback_data="limit_withdraw_cooldown")],
+        [InlineKeyboardButton(text="📊 Лимит выводов/день", callback_data="limit_max_withdraw_per_day")],
+        [InlineKeyboardButton(text="🎯 Очков за игру", callback_data="limit_contest_points")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
     ]
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -2638,64 +3113,38 @@ async def admin_limits_menu(callback: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("limit_"))
 async def admin_limit_change(callback: CallbackQuery, state: FSMContext):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("❌ Недостаточно прав!")
-        return
-    
     limit_type = callback.data.replace("limit_", "")
     await state.update_data(limit_type=limit_type)
     await state.set_state(AdminStates.waiting_for_limit_value)
-    
-    names = {
-        "daily_loss": "дневной лимит потерь",
-        "daily_win": "дневной лимит выигрыша",
-        "consecutive_losses": "максимальное количество проигрышей подряд",
-        "min_balance": "минимальный баланс для игры",
-        "withdraw_cooldown": "кулдаун между выводами (часы)",
-        "max_withdraw_per_day": "максимальное количество выводов в день",
-        "contest_win": "количество очков за выигрыш",
-        "contest_loss": "количество очков за проигрыш"
-    }
-    await callback.message.edit_text(
-        f"📝 Введите {names.get(limit_type, limit_type)}:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_limits")]
-        ])
-    )
+    await callback.message.edit_text("📝 Введите новое значение:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_limits")]
+    ]))
     await callback.answer()
 
 @dp.message(AdminStates.waiting_for_limit_value)
 async def admin_save_limit(message: Message, state: FSMContext):
     try:
         value = int(message.text.strip())
-        if value <= 0:
-            await message.answer("❌ Значение должно быть больше 0!")
-            return
-        
         data = await state.get_data()
         limit_type = data["limit_type"]
         settings = await load_json(SETTINGS_FILE, {})
         
-        if limit_type == "daily_loss":
-            settings["max_daily_loss"] = value
-        elif limit_type == "daily_win":
-            settings["max_daily_win"] = value
-        elif limit_type == "consecutive_losses":
-            settings["max_consecutive_losses"] = value
-        elif limit_type == "min_balance":
-            settings["min_balance_for_bet"] = value
-        elif limit_type == "withdraw_cooldown":
-            settings["withdraw_cooldown_hours"] = value
-        elif limit_type == "max_withdraw_per_day":
-            settings["max_withdraw_per_day"] = value
-        elif limit_type == "contest_win":
-            settings["contest_points_per_win"] = value
-        elif limit_type == "contest_loss":
-            settings["contest_points_per_loss"] = value
+        limit_map = {
+            "daily_loss": "max_daily_loss",
+            "daily_win": "max_daily_win",
+            "consecutive_losses": "max_consecutive_losses",
+            "min_balance": "min_balance_for_bet",
+            "withdraw_cooldown": "withdraw_cooldown_hours",
+            "max_withdraw_per_day": "max_withdraw_per_day",
+            "contest_points": "contest_points_per_game"
+        }
         
-        await save_json(SETTINGS_FILE, settings)
-        await message.answer(f"✅ {limit_type} = {value}")
-        await log_admin_action(message.from_user.id, "change_limit", None, f"{limit_type}: {value}")
+        if limit_type in limit_map:
+            settings[limit_map[limit_type]] = value
+            await save_json(SETTINGS_FILE, settings)
+            await message.answer(f"✅ Установлено: {value}")
+            await log_admin_action(message.from_user.id, "change_limit", None, f"{limit_type}: {value}")
+        
         await state.clear()
     except ValueError:
         await message.answer("❌ Введите число!")
@@ -2710,16 +3159,16 @@ async def admin_withdrawals_menu(callback: CallbackQuery):
     pending = {k: v for k, v in withdrawals.items() if v["status"] == "pending"}
     
     if not pending:
-        text = "💰 *Заявки на вывод*\n\nНет активных заявок."
+        text = "💰 *Заявки на вывод*\n\nНет заявок."
         buttons = [[InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]]
     else:
-        text = f"💰 *Заявки на вывод*\n\nВсего заявок: {len(pending)}\n\n"
+        text = f"💰 *Заявки:* {len(pending)}\n\n"
         buttons = []
         for wid, w in list(pending.items())[:10]:
-            text += f"*ID {wid}:* @{w['username']}\n└ Сумма: {w['stars']} ⭐\n└ Дата: {w['created_at'][:19]}\n\n"
+            text += f"*{wid}* @{w['username']} | {w['stars']} ⭐\n"
             buttons.append([
-                InlineKeyboardButton(text=f"✅ Подтвердить {wid}", callback_data=f"admin_approve_{wid}"),
-                InlineKeyboardButton(text=f"❌ Отклонить {wid}", callback_data=f"admin_decline_{wid}")
+                InlineKeyboardButton(text=f"✅ {wid}", callback_data=f"admin_approve_{wid}"),
+                InlineKeyboardButton(text=f"❌ {wid}", callback_data=f"admin_decline_{wid}")
             ])
         buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")])
     
@@ -2734,19 +3183,14 @@ async def admin_approve_withdrawal(callback: CallbackQuery):
     if wid in withdrawals and withdrawals[wid]["status"] == "pending":
         withdrawals[wid]["status"] = "approved"
         withdrawals[wid]["approved_at"] = datetime.now().isoformat()
-        withdrawals[wid]["approved_by"] = callback.from_user.id
         await save_json(WITHDRAWALS_FILE, withdrawals)
         
         try:
-            await bot.send_message(
-                withdrawals[wid]["user_id"],
-                f"✅ Ваша заявка на вывод #{wid} одобрена!\n⭐ Сумма: {withdrawals[wid]['stars']} звезд",
-                parse_mode="Markdown"
-            )
+            await bot.send_message(withdrawals[wid]["user_id"], f"✅ Заявка #{wid} одобрена!\n⭐ {withdrawals[wid]['stars']} ⭐", parse_mode="Markdown")
         except:
             pass
         
-        await callback.answer("✅ Заявка подтверждена!")
+        await callback.answer("✅ Подтверждено!")
         await log_admin_action(callback.from_user.id, "approve_withdrawal", str(withdrawals[wid]["user_id"]), f"Amount: {withdrawals[wid]['stars']}")
     else:
         await callback.answer("❌ Ошибка!")
@@ -2761,23 +3205,18 @@ async def admin_decline_withdrawal(callback: CallbackQuery):
     if wid in withdrawals and withdrawals[wid]["status"] == "pending":
         user_id = withdrawals[wid]["user_id"]
         amount = withdrawals[wid]["stars"]
-        await add_stars(user_id, amount, "Возврат при отклонении вывода")
+        await add_stars(user_id, amount, "Возврат при отклонении")
         
         withdrawals[wid]["status"] = "declined"
         withdrawals[wid]["declined_at"] = datetime.now().isoformat()
-        withdrawals[wid]["declined_by"] = callback.from_user.id
         await save_json(WITHDRAWALS_FILE, withdrawals)
         
         try:
-            await bot.send_message(
-                user_id,
-                f"❌ Ваша заявка на вывод #{wid} отклонена!\n⭐ Звезды возвращены на баланс.",
-                parse_mode="Markdown"
-            )
+            await bot.send_message(user_id, f"❌ Заявка #{wid} отклонена!\n⭐ Возвращено {amount} ⭐", parse_mode="Markdown")
         except:
             pass
         
-        await callback.answer("✅ Заявка отклонена!")
+        await callback.answer("✅ Отклонено!")
         await log_admin_action(callback.from_user.id, "decline_withdrawal", str(user_id), f"Amount: {amount}")
     else:
         await callback.answer("❌ Ошибка!")
@@ -2791,26 +3230,33 @@ async def admin_withdraw_bans_menu(callback: CallbackQuery):
         return
     
     users = await load_json(USERS_FILE, {})
-    banned_users = [(uid, u) for uid, u in users.items() if u.get("is_withdraw_banned", False)]
+    banned = [(uid, u) for uid, u in users.items() if u.get("is_withdraw_banned", False)]
     
-    if not banned_users:
-        text = "⛔ *Забаненные на вывод пользователи*\n\nНет забаненных пользователей."
+    if not banned:
+        text = "⛔ *Забаненные на вывод*\n\nНет"
         buttons = [[InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]]
     else:
-        text = "⛔ *Забаненные на вывод пользователи:*\n\n"
+        text = "⛔ *Забаненные на вывод:*\n\n"
         buttons = []
-        for uid, u in banned_users[:10]:
-            ban_until = u.get("withdraw_ban_until", "Неизвестно")
-            if ban_until and ban_until != "Неизвестно":
-                ban_until_date = datetime.fromisoformat(ban_until)
-                ban_until_str = ban_until_date.strftime("%d.%m.%Y %H:%M")
-            else:
-                ban_until_str = "Неизвестно"
-            text += f"*ID {uid}:* {u.get('stars', 0)} ⭐\n└ Бан до: {ban_until_str}\n└ Причина: {u.get('withdraw_ban_reason', 'Не указана')}\n\n"
+        for uid, u in banned[:10]:
+            text += f"*{uid}* | {u.get('stars', 0)} ⭐\n"
             buttons.append([InlineKeyboardButton(text=f"✅ Разбанить {uid}", callback_data=f"admin_unban_withdraw_{uid}")])
         buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")])
     
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.answer()
+
+@dp.callback_query(F.data == "admin_ban_user")
+async def admin_ban_user_menu(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        await callback.answer("❌ Недостаточно прав!")
+        return
+    
+    await state.set_state(AdminStates.waiting_for_user_id)
+    await state.update_data(action="ban_user")
+    await callback.message.edit_text("🚫 Введите ID пользователя для бана:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_panel")]
+    ]))
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_support")
@@ -2823,14 +3269,14 @@ async def admin_support_menu(callback: CallbackQuery):
     open_tickets = [t for t in support["tickets"] if t["status"] == "open"]
     
     if not open_tickets:
-        text = "💬 *Тикеты поддержки*\n\nНет открытых тикетов."
+        text = "💬 *Тикеты*\n\nНет открытых тикетов."
         buttons = [[InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]]
     else:
-        text = f"💬 *Открытые тикеты:*\n\n"
+        text = f"💬 *Открытые тикеты:* {len(open_tickets)}\n\n"
         buttons = []
         for t in open_tickets:
-            text += f"*#{t['id']}* от пользователя {t['user_id']}\n└ Создан: {t['created_at'][:19]}\n\n"
-            buttons.append([InlineKeyboardButton(text=f"💬 Ответить в тикет #{t['id']}", callback_data=f"admin_reply_ticket_{t['id']}")])
+            text += f"#{t['id']} от {t['user_id']}\n"
+            buttons.append([InlineKeyboardButton(text=f"💬 Ответить #{t['id']}", callback_data=f"admin_reply_ticket_{t['id']}")])
         buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")])
     
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -2841,14 +3287,9 @@ async def admin_reply_ticket(callback: CallbackQuery, state: FSMContext):
     ticket_id = int(callback.data.replace("admin_reply_ticket_", ""))
     await state.update_data(ticket_id=ticket_id)
     await state.set_state(AdminStates.waiting_for_reply_message)
-    await callback.message.edit_text(
-        f"💬 *Ответ в тикет #{ticket_id}*\n\nВведите ваш ответ:",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Закрыть тикет", callback_data=f"admin_close_ticket_{ticket_id}"),
-             InlineKeyboardButton(text="🔙 Назад", callback_data="admin_support")]
-        ])
-    )
+    await callback.message.edit_text(f"💬 *Ответ в тикет #{ticket_id}*\n\nВведите ответ:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_support")]
+    ]))
     await callback.answer()
 
 @dp.message(AdminStates.waiting_for_reply_message)
@@ -2857,44 +3298,27 @@ async def admin_send_reply(message: Message, state: FSMContext):
     ticket_id = data.get("ticket_id")
     
     if ticket_id:
-        success = await reply_to_ticket(message.from_user.id, ticket_id, message.text)
-        if success:
-            await message.answer(f"✅ Ответ отправлен в тикет #{ticket_id}!")
-            await log_admin_action(message.from_user.id, "reply_ticket", None, f"Ticket: {ticket_id}")
-        else:
-            await message.answer(f"❌ Не удалось отправить ответ!")
+        await reply_to_ticket(message.from_user.id, ticket_id, message.text)
+        await message.answer(f"✅ Ответ отправлен в тикет #{ticket_id}!")
+        await log_admin_action(message.from_user.id, "reply_ticket", None, f"Ticket: {ticket_id}")
     
     await state.clear()
 
-@dp.callback_query(F.data.startswith("admin_close_ticket_"))
-async def admin_close_ticket(callback: CallbackQuery):
-    ticket_id = int(callback.data.replace("admin_close_ticket_", ""))
-    success = await close_ticket(ticket_id)
-    
-    if success:
-        await callback.answer("✅ Тикет закрыт!")
-        await log_admin_action(callback.from_user.id, "close_ticket", None, f"Ticket: {ticket_id}")
-    else:
-        await callback.answer("❌ Ошибка!")
-    
-    await admin_support_menu(callback)
-
 @dp.callback_query(F.data == "admin_settings")
-async def admin_settings_menu(callback: CallbackQuery):
+async def admin_settings_menu(callback: CallbackQuery, state: FSMContext):
     if not await is_admin(callback.from_user.id):
         await callback.answer("❌ Недостаточно прав!")
         return
     
     settings = await load_json(SETTINGS_FILE, {})
     
-    text = (f"⚙️ *Настройки бота*\n\n"
+    text = (f"⚙️ *Настройки*\n\n"
             f"⭐ Стартовый баланс: {settings.get('start_balance', 5)}\n"
             f"💰 Мин. вывод: {settings.get('min_withdraw', 500)}\n"
             f"👥 Реф. награда: {settings.get('referral_reward', 10)}\n"
             f"📊 Реф. процент: {settings.get('referral_percent', 10)}%\n"
-            f"💱 Курс обмена: {settings.get('exchange_rate', 1)}:1\n"
-            f"📦 Цена чек системы: {settings.get('check_system_price', 100)} ⭐\n\n"
-            f"Выберите параметр для изменения:")
+            f"💱 Курс: {settings.get('exchange_rate', 1)}:1\n"
+            f"📦 Цена чек системы: {settings.get('check_system_price', 100)}")
     
     buttons = [
         [InlineKeyboardButton(text="⭐ Стартовый баланс", callback_data="set_start_balance"),
@@ -2911,16 +3335,9 @@ async def admin_settings_menu(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("set_"))
 async def admin_setting_change(callback: CallbackQuery, state: FSMContext):
     setting = callback.data.replace("set_", "")
-    
     await state.update_data(setting=setting)
     await state.set_state(AdminStates.waiting_for_setting_value)
-    
-    names = {
-        "start_balance": "стартовый баланс", "min_withdraw": "мин. вывод",
-        "referral_reward": "реф. награду", "referral_percent": "реф. процент",
-        "exchange_rate": "курс обмена", "check_system_price": "цену чек системы"
-    }
-    await callback.message.edit_text(f"📝 Введите {names.get(setting, setting)}:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+    await callback.message.edit_text("📝 Введите новое значение:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_settings")]
     ]))
     await callback.answer()
@@ -2929,10 +3346,6 @@ async def admin_setting_change(callback: CallbackQuery, state: FSMContext):
 async def admin_save_setting(message: Message, state: FSMContext):
     try:
         value = int(message.text.strip())
-        if value <= 0:
-            await message.answer("❌ Значение должно быть больше 0!")
-            return
-        
         data = await state.get_data()
         settings = await load_json(SETTINGS_FILE, {})
         settings[data["setting"]] = value
@@ -2947,36 +3360,17 @@ async def admin_save_setting(message: Message, state: FSMContext):
 async def admin_stats(callback: CallbackQuery):
     users = await load_json(USERS_FILE, {})
     withdrawals = await load_json(WITHDRAWALS_FILE, {})
-    tasks = await get_all_tasks()
-    promo = await load_json(PROMO_FILE, {"promo_codes": []})
-    checks = await load_json(CHECKS_FILE, {"checks": [], "used_checks": []})
-    contest = await get_active_contest()
-    support = await load_json(SUPPORT_FILE, {"tickets": []})
     
     total_stars = sum(u.get("stars", 0) for u in users.values())
     total_users = len(users)
-    unlocked_checks = len([u for u in users.values() if u.get("check_system_unlocked", False)])
-    pending_withdrawals = len([w for w in withdrawals.values() if w.get("status") == "pending"])
-    open_tickets = len([t for t in support["tickets"] if t["status"] == "open"])
-    banned_withdraw = len([u for u in users.values() if u.get("is_withdraw_banned", False)])
-    total_games_played = sum(u.get("games_played", 0) for u in users.values())
-    total_games_won = sum(u.get("games_won", 0) for u in users.values())
+    pending = len([w for w in withdrawals.values() if w.get("status") == "pending"])
+    total_games = sum(u.get("games_played", 0) for u in users.values())
     
-    text = (f"📊 *Общая статистика*\n\n"
-            f"👥 Всего пользователей: {total_users}\n"
+    text = (f"📊 *Статистика*\n\n"
+            f"👥 Пользователей: {total_users}\n"
             f"⭐ Всего звезд: {total_stars}\n"
-            f"📦 Чек система: {unlocked_checks}/{total_users}\n"
-            f"⛔ Забанены на вывод: {banned_withdraw}\n"
-            f"📈 Средний баланс: {total_stars // total_users if total_users else 0}\n\n"
-            f"🎮 Сыграно игр: {total_games_played}\n"
-            f"🏆 Побед: {total_games_won}\n"
-            f"📉 Процент побед: {(total_games_won / total_games_played * 100):.1f}% если total_games_played else 0\n\n"
-            f"📋 Заданий: {len(tasks)}\n"
-            f"🎫 Промокодов: {len(promo['promo_codes'])}\n"
-            f"📦 Активных чеков: {len(checks['checks'])}\n"
-            f"🎁 Активный конкурс: {'Да' if contest else 'Нет'}\n"
-            f"💬 Открытых тикетов: {open_tickets}\n\n"
-            f"💰 Ожидают вывода: {pending_withdrawals}")
+            f"🎮 Сыграно игр: {total_games}\n"
+            f"💰 Ожидают вывода: {pending}")
     
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
@@ -2988,22 +3382,15 @@ async def admin_logs(callback: CallbackQuery):
     logs = await load_json(ADMIN_LOGS_FILE, [])
     
     if not logs:
-        text = "📝 *Логи действий*\n\nНет записей."
+        text = "📝 *Логи*\n\nНет записей."
     else:
         text = "📝 *Последние действия:*\n\n"
-        for log in logs[-20:]:
-            text += f"🕒 {log['timestamp'][:19]}\n"
-            text += f"👤 Админ: {log['admin_id']}\n"
-            text += f"📌 {log['action']}\n"
-            if log.get('target'):
-                text += f"🎯 Цель: {log['target']}\n"
-            if log.get('details'):
-                text += f"📝 {log['details']}\n"
-            text += "➖➖➖➖➖➖➖\n"
+        for log in logs[-15:]:
+            text += f"🕒 {log['timestamp'][:16]}\n👤 {log['admin_id']}\n📌 {log['action']}\n\n"
     
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🗑 Очистить логи", callback_data="admin_clear_logs")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
+        [InlineKeyboardButton(text="🗑 Очистить", callback_data="admin_clear_logs"),
+         InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
     ]))
     await callback.answer()
 

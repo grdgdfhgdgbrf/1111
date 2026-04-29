@@ -1,1435 +1,883 @@
 import telebot
+from telebot import types
 import json
 import random
 import time
 from datetime import datetime, timedelta
-from telebot import types
-import threading
 
-TOKEN = "8670879387:AAGz1v65wqhThDmwGNzCaEY9SY24XDJYLFE"
+# Конфигурация
+TOKEN = '8670879387:AAGz1v65wqhThDmwGNzCaEY9SY24XDJYLFE'
+ADMIN_ID = 5356400377
 bot = telebot.TeleBot(TOKEN)
 
-# ==================== ХРАНИЛИЩЕ ДАННЫХ ====================
-try:
-    with open('group_data.json', 'r', encoding='utf-8') as f:
-        data = json.load(f)
-except:
-    data = {
-        "groups": {},
-        "global_boss": {"hp": 1000000, "max_hp": 1000000, "level": 1, "name": "🐉 Мировой Дракон"},
-        "weather": "☀️ солнечно",
-        "season": "🌸 Весна",
-        "global_lottery": {"pool": 0, "tickets": {}, "last_draw": None}
-    }
+# Файлы для хранения данных
+USERS_FILE = 'users.json'
+ITEMS_FILE = 'items.json'
+DUELS_FILE = 'duels.json'
+LIMITED_FILE = 'limited_items.json'
 
-def save():
-    with open('group_data.json', 'w', encoding='utf-8') as f:
+# Стартовые данные
+def load_json(filename, default={}):
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except:
+        return default
+
+def save_json(filename, data):
+    with open(filename, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-# ==================== КОНСТАНТЫ ====================
+# Загрузка данных
+users = load_json(USERS_FILE, {})
+items = load_json(ITEMS_FILE, {
+    "wooden_sword": {"name": "🗡 Деревянный меч", "damage": 5, "price": 100, "type": "weapon"},
+    "iron_sword": {"name": "⚔ Железный меч", "damage": 10, "price": 300, "type": "weapon"},
+    "legendary_sword": {"name": "🔥 Легендарный меч", "damage": 25, "price": 1000, "type": "weapon"},
+    "wooden_shield": {"name": "🛡 Деревянный щит", "defense": 5, "price": 150, "type": "shield"},
+    "iron_shield": {"name": "🛡 Железный щит", "defense": 10, "price": 400, "type": "shield"},
+    "health_potion": {"name": "🧪 Зелье здоровья", "heal": 20, "price": 50, "type": "potion"},
+    "magic_wand": {"name": "🪄 Волшебная палочка", "damage": 15, "price": 500, "type": "weapon"},
+    "dragon_armor": {"name": "🐉 Броня дракона", "defense": 20, "price": 2000, "type": "armor"}
+})
+duels = load_json(DUELS_FILE, {})
+limited_items = load_json(LIMITED_FILE, {
+    "excalibur": {"name": "⚡ Экскалибур", "damage": 50, "total": 10, "remaining": 10, "price": 5000, "type": "weapon"},
+    "infinity_shield": {"name": "💎 Бесконечный щит", "defense": 40, "total": 5, "remaining": 5, "price": 10000, "type": "shield"},
+    "phoenix_feather": {"name": "🦅 Перо Феникса", "heal": 100, "total": 15, "remaining": 15, "price": 3000, "type": "potion"}
+})
 
-# 1. МАГАЗИН
-SHOP_ITEMS = {
-    "weapon_1": {"name": "⚔️ Меч новичка", "price": 500, "attack": 10, "type": "weapon", "rarity": "common"},
-    "weapon_2": {"name": "🗡️ Кинжал тени", "price": 1200, "attack": 18, "type": "weapon", "rarity": "uncommon"},
-    "weapon_3": {"name": "🪓 Боевой топор", "price": 2500, "attack": 28, "type": "weapon", "rarity": "rare"},
-    "weapon_4": {"name": "🏹 Лук эльфа", "price": 5000, "attack": 40, "type": "weapon", "rarity": "epic"},
-    "weapon_5": {"name": "⚡ Меч молний", "price": 10000, "attack": 60, "type": "weapon", "rarity": "legendary"},
-    "armor_1": {"name": "🛡️ Деревянный щит", "price": 400, "defense": 8, "type": "shield", "rarity": "common"},
-    "armor_2": {"name": "🔰 Стальной щит", "price": 1500, "defense": 20, "type": "shield", "rarity": "rare"},
-    "armor_3": {"name": "💎 Алмазный щит", "price": 5000, "defense": 35, "type": "shield", "rarity": "epic"},
-    "potion_1": {"name": "🧪 Зелье здоровья", "price": 200, "heal": 50, "type": "potion"},
-    "potion_2": {"name": "💚 Большое зелье", "price": 500, "heal": 150, "type": "potion"},
-    "ring_1": {"name": "💍 Кольцо силы", "price": 1000, "attack": 5, "defense": 5, "type": "ring"},
-    "ring_2": {"name": "💫 Кольцо удачи", "price": 3000, "luck": 15, "type": "ring"},
-    "bag_1": {"name": "🎒 Рюкзак", "price": 300, "slots": 5, "type": "bag"},
-    "scroll_1": {"name": "📜 Свиток опыта", "price": 600, "exp": 200, "type": "scroll"},
-    "scroll_2": {"name": "📜 Свиток богатства", "price": 800, "coins": 500, "type": "scroll"}
-}
-
-# 2. ЛИМИТИРОВАННЫЕ ПРЕДМЕТЫ
-LIMITED_ITEMS = {
-    "lim_1": {"name": "👑 Корона королей", "price": 50000, "limit": 5, "sold": 0, "attack": 100, "defense": 50, "rarity": "mythical"},
-    "lim_2": {"name": "❄️ Ледяной клинок", "price": 30000, "limit": 10, "sold": 0, "attack": 80, "rarity": "mythical"},
-    "lim_3": {"name": "🔥 Плащ феникса", "price": 40000, "limit": 7, "sold": 0, "defense": 60, "rarity": "mythical"},
-    "lim_4": {"name": "💎 Кристалл души", "price": 25000, "limit": 15, "sold": 0, "special": "revive", "rarity": "mythical"},
-    "lim_5": {"name": "🌙 Лунный амулет", "price": 35000, "limit": 10, "sold": 0, "luck": 30, "rarity": "mythical"}
-}
-
-# 3. ПИТОМЦЫ
-PETS = {
-    "🐺 Волчонок": {"price": 5000, "bonus_attack": 5, "food_cost": 100, "loyalty": 50, "level": 1},
-    "🐉 Дракончик": {"price": 15000, "bonus_attack": 15, "food_cost": 300, "loyalty": 50, "level": 1},
-    "🦊 Лисёнок": {"price": 8000, "bonus_luck": 10, "food_cost": 200, "loyalty": 50, "level": 1},
-    "🦅 Орлёнок": {"price": 10000, "bonus_exp": 20, "food_cost": 250, "loyalty": 50, "level": 1},
-    "🐱 Кот-маг": {"price": 12000, "bonus_coins": 15, "food_cost": 150, "loyalty": 50, "level": 1}
-}
-
-# 4. ДОСТИЖЕНИЯ
-ACHIEVEMENTS = {
-    "first_blood": {"name": "🩸 Первая кровь", "desc": "Убить первого монстра", "reward": 500},
-    "rich_1": {"name": "💰 Богач", "desc": "Накопить 10000 коинов", "reward": 1000},
-    "rich_2": {"name": "💎 Миллионер", "desc": "Накопить 100000 коинов", "reward": 10000},
-    "warrior_10": {"name": "⚔️ Воин", "desc": "Достигнуть 10 уровня", "reward": 2000},
-    "warrior_50": {"name": "🛡️ Рыцарь", "desc": "Достигнуть 50 уровня", "reward": 10000},
-    "collector": {"name": "🎨 Коллекционер", "desc": "Купить лимитированный предмет", "reward": 3000},
-    "married": {"name": "💑 Семьянин", "desc": "Вступить в брак", "reward": 1500},
-    "gambler": {"name": "🎰 Игрок", "desc": "Выиграть в казино 10 раз", "reward": 800},
-    "slayer_100": {"name": "💀 Убийца", "desc": "Убить 100 монстров", "reward": 5000},
-    "social_butterfly": {"name": "🦋 Душа компании", "desc": "Отправить 1000 сообщений", "reward": 5000},
-    "crafter": {"name": "🔨 Мастер", "desc": "Создать 10 предметов", "reward": 2000},
-}
-
-# 5. ПРОФЕССИИ
-PROFESSIONS = {
-    "⚒️ Шахтёр": {"tool": "⛏️ Кирка", "materials": ["🪨 Камень", "💎 Самоцвет", "⛏️ Железо"], "salary": 500},
-    "🌿 Травник": {"tool": "🌿 Серп", "materials": ["🌱 Трава", "🍄 Гриб", "🌸 Цветок"], "salary": 400},
-    "🐟 Рыбак": {"tool": "🎣 Удочка", "materials": ["🐟 Рыба", "🦐 Креветка", "🐙 Осьминог"], "salary": 450},
-    "🏹 Охотник": {"tool": "🏹 Лук", "materials": ["🦴 Кость", "🦷 Клык", "🪶 Перо"], "salary": 600}
-}
-
-# 6. КРАФТ
-CRAFTING_RECIPES = {
-    "⚡ Молниеносный меч": {
-        "materials": {"⚔️ Меч новичка": 1, "💎 Самоцвет": 3},
-        "result": {"name": "⚡ Молниеносный меч", "attack": 40, "type": "weapon", "rarity": "epic"},
-        "level_req": 5
-    },
-    "✨ Магический щит": {
-        "materials": {"🛡️ Стальной щит": 1, "🔮 Кристалл": 2},
-        "result": {"name": "✨ Магический щит", "defense": 30, "type": "shield", "rarity": "epic"},
-        "level_req": 5
-    },
-    "🧪 Эликсир силы": {
-        "materials": {"🧪 Зелье здоровья": 2, "🧫 Экстракт": 1},
-        "result": {"name": "🧪 Эликсир силы", "heal": 100, "attack_boost": 10, "type": "potion"},
-        "level_req": 3
-    }
-}
-
-# 7. ЗАЧАРОВАНИЯ
-ENCHANTMENTS = {
-    "🔥 Огненное": {"cost": 2000, "bonus": 10, "type": "attack"},
-    "❄️ Ледяное": {"cost": 2000, "bonus": 8, "type": "defense"},
-    "💚 Природное": {"cost": 2500, "bonus": 50, "type": "hp"},
-    "⚡ Электрическое": {"cost": 3000, "bonus": 15, "type": "speed"}
-}
-
-# 8. PVP РАНГИ
-PVP_RANKS = {
-    "🥉 Бронза": {"min_rating": 0, "max_rating": 1000},
-    "🥈 Серебро": {"min_rating": 1000, "max_rating": 2500},
-    "🥇 Золото": {"min_rating": 2500, "max_rating": 5000},
-    "💎 Платина": {"min_rating": 5000, "max_rating": 10000},
-    "👑 Легенда": {"min_rating": 10000, "max_rating": float('inf')}
-}
-
-# 9. ПОГОДА
-WEATHER_TYPES = ["☀️ солнечно", "🌧️ дождливо", "❄️ снежно", "🌪️ шторм", "🌈 радуга"]
-WEATHER_EFFECTS = {
-    "☀️ солнечно": {"attack_bonus": 5, "coins_bonus": 10},
-    "🌧️ дождливо": {"defense_bonus": 8, "exp_bonus": 15},
-    "❄️ снежно": {"special_chance": 20},
-    "🌪️ шторм": {"damage_bonus": 15, "risk": 10},
-    "🌈 радуга": {"all_bonus": 10, "luck": 25}
-}
-
-# 10. СЕЗОНЫ
-SEASONS = {
-    "🌸 Весна": {"exp_bonus": 10, "heal_bonus": 15},
-    "☀️ Лето": {"attack_bonus": 15, "coins_bonus": 10},
-    "🍂 Осень": {"drop_bonus": 20, "craft_bonus": 10},
-    "❄️ Зима": {"defense_bonus": 15, "special_bonus": 10}
-}
-
-# 11. МОНСТРЫ
-MONSTERS = {
-    "easy": [
-        {"name": "🐺 Волк", "hp": 30, "attack": 8, "reward": 200, "exp": 50},
-        {"name": "🐗 Кабан", "hp": 40, "attack": 10, "reward": 280, "exp": 70},
-        {"name": "🐍 Змея", "hp": 25, "attack": 12, "reward": 250, "exp": 60},
-        {"name": "🕷️ Паук", "hp": 35, "attack": 9, "reward": 230, "exp": 55}
-    ],
-    "medium": [
-        {"name": "👹 Гоблин", "hp": 60, "attack": 15, "reward": 400, "exp": 100},
-        {"name": "💀 Скелет", "hp": 70, "attack": 18, "reward": 500, "exp": 120},
-        {"name": "🧟 Зомби", "hp": 80, "attack": 14, "reward": 450, "exp": 110},
-        {"name": "👻 Призрак", "hp": 45, "attack": 20, "reward": 550, "exp": 140}
-    ],
-    "hard": [
-        {"name": "🐉 Дракон", "hp": 150, "attack": 30, "reward": 1000, "exp": 300},
-        {"name": "👹 Демон", "hp": 200, "attack": 35, "reward": 1500, "exp": 400},
-        {"name": "⚔️ Рыцарь тьмы", "hp": 180, "attack": 32, "reward": 1200, "exp": 350}
-    ],
-    "boss": [
-        {"name": "👹 Король демонов", "hp": 1000, "attack": 50, "reward": 10000, "exp": 2000},
-        {"name": "🐉 Адский дракон", "hp": 1500, "attack": 60, "reward": 15000, "exp": 3000}
-    ]
-}
-
-# 12. ЛОКАЦИИ
-LOCATIONS = {
-    "🌲 Лес": {"monsters": "easy", "resources": ["🌱 Трава", "🍄 Гриб", "🪵 Древесина"]},
-    "🏔️ Горы": {"monsters": "medium", "resources": ["🪨 Камень", "💎 Самоцвет", "⛏️ Железо"]},
-    "🌊 Океан": {"monsters": "medium", "resources": ["🐟 Рыба", "🦐 Креветка", "🐙 Осьминог"]},
-    "🏜️ Пустыня": {"monsters": "hard", "resources": ["🔮 Кристалл", "🌑 Обсидиан", "💀 Кость"]},
-    "🌋 Вулкан": {"monsters": "boss", "resources": ["🔥 Эссенция огня", "💎 Алмаз", "🌟 Звездная пыль"]}
-}
-
-# 13. КЛАНЫ
-CLAN_PERKS = {
-    "level_1": {"members": 10, "bonus_exp": 5, "bonus_coins": 5},
-    "level_2": {"members": 20, "bonus_exp": 10, "bonus_coins": 10},
-    "level_3": {"members": 30, "bonus_exp": 15, "bonus_coins": 15}
-}
-
-# 14. ПРЕСТИЖ
-PRESTIGE_REWARDS = {
-    1: {"coins": 5000, "title": "🌟 Просветлённый", "bonus_exp": 10},
-    2: {"coins": 15000, "title": "✨ Вознесённый", "bonus_exp": 25},
-    3: {"coins": 30000, "title": "💫 Трансцендентный", "bonus_exp": 50}
-}
-
-# 15. КАЗИНО ИГРЫ
-CASINO_GAMES = {
-    "slots_classic": {"name": "🎰 Классические слоты", "min_bet": 50, "win_chance": 35, "multiplier": 3},
-    "slots_fortune": {"name": "🎰 Слоты Фортуны", "min_bet": 100, "win_chance": 30, "multiplier": 5},
-    "blackjack": {"name": "🃏 Блэкджек", "min_bet": 100, "win_chance": 42, "multiplier": 2},
-    "roulette": {"name": "🎡 Рулетка", "min_bet": 100, "win_chance": 48, "multiplier": 2},
-    "dice_craps": {"name": "🎲 Крэпс", "min_bet": 100, "win_chance": 45, "multiplier": 2},
-    "coin_flip": {"name": "🪙 Орёл и Решка", "min_bet": 10, "win_chance": 50, "multiplier": 2}
-}
-
-# ==================== ФУНКЦИИ ПОЛЬЗОВАТЕЛЯ ====================
-
-def get_user(uid, gid):
-    uid = str(uid)
-    gid = str(gid)
+# Класс пользователя
+class User:
+    def __init__(self, user_id, username="Неизвестный"):
+        if str(user_id) not in users:
+            users[str(user_id)] = {
+                "username": username,
+                "money": 500,
+                "level": 1,
+                "exp": 0,
+                "wins": 0,
+                "losses": 0,
+                "inventory": [],
+                "equipped_weapon": None,
+                "equipped_shield": None,
+                "equipped_armor": None,
+                "last_daily": None,
+                "last_work": None,
+                "title": "Новичок"
+            }
+            save_json(USERS_FILE, users)
     
-    if gid not in data["groups"]:
-        data["groups"][gid] = {
-            "users": {},
-            "settings": {"welcome_message": True, "anti_spam": True},
-            "clans": {},
-            "market": {}
-        }
+    @property
+    def data(self):
+        return users[str(self.user_id)]
     
-    group = data["groups"][gid]
-    
-    if uid not in group["users"]:
-        group["users"][uid] = {
-            "coins": 1000,
-            "level": 1,
-            "exp": 0,
-            "hp": 100,
-            "max_hp": 100,
-            "attack": 5,
-            "defense": 3,
-            "inventory": [],
-            "equipped": {"weapon": None, "shield": None, "ring": None},
-            "last_daily": None,
-            "last_work": None,
-            "marry": None,
-            "clan": None,
-            "profession": None,
-            "warns": 0,
-            "mute_until": None,
-            "limited_items": [],
-            "pet": None,
-            "achievements": [],
-            "crafting_materials": [],
-            "enchantments": [],
-            "pvp_rating": 1000,
-            "prestige": 0,
-            "total_kills": 0,
-            "total_deaths": 0,
-            "luck": 0,
-            "location": "🌲 Лес",
-            "messages_count": 0,
-            "total_crafted": 0,
-            "gamble_wins": 0
-        }
-        save()
-    
-    return data["groups"][gid]["users"][uid]
+    def save(self):
+        users[str(self.user_id)] = self.data
+        save_json(USERS_FILE, users)
 
-def get_group(gid):
-    gid = str(gid)
-    if gid not in data["groups"]:
-        data["groups"][gid] = {
-            "users": {},
-            "settings": {"welcome_message": True, "anti_spam": True},
-            "clans": {},
-            "market": {}
-        }
-        save()
-    return data["groups"][gid]
-
-def exp_to_level(level):
-    return level * 100 + (level * 15)
-
-def add_exp(uid, gid, amount):
-    user = get_user(uid, gid)
-    group = get_group(gid)
-    
-    if user["clan"] and group["clans"].get(user["clan"]):
-        clan = group["clans"][user["clan"]]
-        clan_level = clan.get("level", 1)
-        clan_perk = CLAN_PERKS.get(f"level_{clan_level}", {})
-        amount += int(amount * clan_perk.get("bonus_exp", 0) / 100)
-    
-    if user["prestige"] > 0:
-        prestige_bonus = PRESTIGE_REWARDS[min(user["prestige"], 3)]["bonus_exp"]
-        amount += int(amount * prestige_bonus / 100)
-    
-    weather = data.get("weather", "☀️ солнечно")
-    if "exp_bonus" in WEATHER_EFFECTS.get(weather, {}):
-        amount += int(amount * WEATHER_EFFECTS[weather]["exp_bonus"] / 100)
-    
-    season = data.get("season", "🌸 Весна")
-    if "exp_bonus" in SEASONS.get(season, {}):
-        amount += int(amount * SEASONS[season]["exp_bonus"] / 100)
-    
-    user["exp"] += amount
-    needed = exp_to_level(user["level"])
-    
-    while user["exp"] >= needed:
-        user["exp"] -= needed
-        user["level"] += 1
-        user["max_hp"] += 25
-        user["hp"] = user["max_hp"]
-        user["attack"] += 4
-        user["defense"] += 3
-        user["coins"] += 500 * user["level"]
-        
-        check_achievement(uid, gid, "warrior_10" if user["level"] >= 10 else None)
-        check_achievement(uid, gid, "warrior_50" if user["level"] >= 50 else None)
-        
-        needed = exp_to_level(user["level"])
-    
-    if user["coins"] >= 10000:
-        check_achievement(uid, gid, "rich_1")
-    if user["coins"] >= 100000:
-        check_achievement(uid, gid, "rich_2")
-    
-    save()
-
-def check_achievement(uid, gid, ach_id):
-    if not ach_id:
-        return
-    user = get_user(uid, gid)
-    if ach_id not in user["achievements"] and ach_id in ACHIEVEMENTS:
-        user["achievements"].append(ach_id)
-        user["coins"] += ACHIEVEMENTS[ach_id]["reward"]
+# Система опыта и уровней
+def check_level_up(user_id):
+    user = User(user_id)
+    level = user.data["level"]
+    exp_needed = level * 100
+    if user.data["exp"] >= exp_needed:
+        user.data["exp"] -= exp_needed
+        user.data["level"] += 1
+        user.save()
+        titles = ["Новичок", "Воитель", "Рыцарь", "Ветеран", "Мастер", "Грандмастер", "Легенда", "Божество"]
+        if user.data["level"] <= len(titles):
+            user.data["title"] = titles[user.data["level"]-1]
+        user.save()
         return True
     return False
 
-# ==================== КЛАВИАТУРЫ ====================
-
-def main_menu():
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
-    kb.add("💰 Баланс", "📊 Профиль", "🎒 Инвентарь")
-    kb.add("⚔️ Битва", "🏪 Магазин", "💎 Лимитки")
-    kb.add("💼 Работа", "🎰 Казино", "🎁 Бонус")
-    kb.add("💍 Брак", "👥 Клан", "🏆 Топ")
-    kb.add("🎭 РП", "📜 Квесты", "🎪 Игры")
-    kb.add("🐾 Питомцы", "🔨 Крафт", "⚗️ Чары")
-    kb.add("⚔️ PvP", "💱 Трейд", "⭐ Престиж")
-    kb.add("🏅 Ачивки", "👤 Профессии", "🌤️ Погода")
-    kb.add("🗺️ Локации", "🎯 Боссы", "❓ Помощь")
-    return kb
-
-def admin_menu():
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
-    kb.add("👮 Выдать коины", "👮 Забрать коины", "👮 Мут")
-    kb.add("👮 Варн", "👮 Анонс", "👮 Обнулить")
-    kb.add("🔙 Выход")
-    return kb
-
-# ==================== ОБРАБОТЧИКИ СООБЩЕНИЙ ====================
-
+# Основное меню
 @bot.message_handler(commands=['start'])
 def start(message):
-    if message.chat.type == 'private':
-        bot.send_message(message.chat.id, 
-            "🎮 *RPG Чат-Бот*\n\n"
-            "Добавьте меня в группу и начните игру!\n"
-            "50+ игровых систем, экономика, битвы, крафт!",
-            parse_mode="Markdown")
-    else:
-        uid = str(message.from_user.id)
-        gid = str(message.chat.id)
-        get_user(uid, gid)
-        bot.send_message(message.chat.id, 
-            f"🎮 *{message.from_user.first_name}* в мире RPG!\n"
-            f"💰 Старт: 1000 коинов",
-            parse_mode="Markdown", reply_markup=main_menu())
+    user_id = message.from_user.id
+    username = message.from_user.username or message.from_user.first_name
+    User(user_id, username)
+    
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row("⚔ Дуэль", "📊 Профиль")
+    markup.row("🎒 Инвентарь", "🏪 Магазин")
+    markup.row("💎 Лимитированные", "⚙ Настройки")
+    markup.row("🎮 РП Команды", "💰 Работа")
+    markup.row("🎁 Ежедневный бонус")
+    
+    welcome_text = f"""
+⚔ *ДУЭЛЬ БОТ* ⚔
 
-@bot.message_handler(func=lambda m: m.chat.type in ['group', 'supergroup'])
-def handle_group_message(message):
-    text = message.text.strip()
-    uid = str(message.from_user.id)
-    gid = str(message.chat.id)
-    user = get_user(uid, gid)
-    
-    user["messages_count"] += 1
-    check_achievement(uid, gid, "social_butterfly" if user["messages_count"] >= 1000 else None)
-    
-    if user.get("mute_until") and datetime.now() < datetime.fromisoformat(user["mute_until"]):
-        try:
-            bot.delete_message(message.chat.id, message.message_id)
-        except:
-            pass
-        return
-    
-    save()
-    
-    if text == "/admin" and is_admin(message.from_user.id, message.chat.id):
-        bot.send_message(message.chat.id, "🔐 Админ-панель", reply_markup=admin_menu())
-        return
-    
-    if text == "🔙 Выход":
-        bot.send_message(message.chat.id, "Вышли из админки", reply_markup=main_menu())
-        return
-    
-    handlers = {
-        "💰 Баланс": cmd_balance,
-        "📊 Профиль": cmd_profile,
-        "🎒 Инвентарь": cmd_inventory,
-        "⚔️ Битва": cmd_battle,
-        "🏪 Магазин": cmd_shop,
-        "💎 Лимитки": cmd_limited,
-        "💼 Работа": cmd_work,
-        "🎰 Казино": cmd_casino,
-        "🎁 Бонус": cmd_bonus,
-        "💍 Брак": cmd_marry,
-        "👥 Клан": cmd_clan,
-        "🏆 Топ": cmd_top,
-        "🎭 РП": cmd_rp_actions,
-        "📜 Квесты": cmd_quests,
-        "🎪 Игры": cmd_minigames,
-        "🐾 Питомцы": cmd_pets,
-        "🔨 Крафт": cmd_crafting,
-        "⚗️ Чары": cmd_enchantments,
-        "⚔️ PvP": cmd_pvp_arena,
-        "💱 Трейд": cmd_trade,
-        "⭐ Престиж": cmd_prestige,
-        "🏅 Ачивки": cmd_achievements,
-        "👤 Профессии": cmd_professions,
-        "🌤️ Погода": cmd_weather,
-        "🗺️ Локации": cmd_locations,
-        "🎯 Боссы": cmd_boss,
-        "❓ Помощь": cmd_help
-    }
-    
-    if text in handlers:
-        handlers[text](message)
-    elif text.startswith("👮"):
-        handle_admin_command(message)
-    else:
-        handle_rp_actions(message)
+Привет, {message.from_user.first_name}!
+Добро пожаловать в мир бесконечных сражений!
 
-# ==================== ИГРОВЫЕ КОМАНДЫ ====================
+🎯 Сражайся с другими игроками
+🛡 Собирай редкое оружие
+💎 Покупай лимитированные предметы
+🏆 Стань легендой арены!
 
-def cmd_balance(message):
-    uid = str(message.from_user.id)
-    gid = str(message.chat.id)
-    user = get_user(uid, gid)
-    bot.send_message(message.chat.id, 
-        f"💰 *Баланс:* {user['coins']:,} коинов".replace(',', ' '),
-        parse_mode="Markdown")
+Твой баланс: 500 монет
+Для начала используй кнопки меню!
+    """
+    
+    bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=markup)
 
-def cmd_profile(message):
-    uid = str(message.from_user.id)
-    gid = str(message.chat.id)
-    user = get_user(uid, gid)
+# Профиль
+@bot.message_handler(func=lambda m: m.text == "📊 Профиль")
+def profile(message):
+    user_id = message.from_user.id
+    user = User(user_id)
+    u = user.data
     
-    exp_needed = exp_to_level(user["level"])
-    marry = "Нет"
-    if user["marry"]:
-        try:
-            marry_user = bot.get_chat_member(message.chat.id, int(user["marry"]))
-            marry = marry_user.user.first_name
-        except:
-            marry = "Неизвестно"
-    
-    pvp_rank = "🥉 Бронза"
-    for rank_name, rank_range in PVP_RANKS.items():
-        if rank_range["min_rating"] <= user["pvp_rating"] <= rank_range["max_rating"]:
-            pvp_rank = rank_name
-            break
+    equipped = []
+    if u["equipped_weapon"]:
+        equipped.append(f"Оружие: {items[u['equipped_weapon']]['name']}")
+    if u["equipped_shield"]:
+        equipped.append(f"Щит: {items[u['equipped_shield']]['name']}")
+    if u["equipped_armor"]:
+        equipped.append(f"Броня: {items[u['equipped_armor']]['name']}")
     
     profile_text = f"""
-📊 *Профиль {message.from_user.first_name}*
+📊 *Профиль игрока*
 
-⭐ Уровень: {user['level']}
-✨ Опыт: {user['exp']}/{exp_needed}
-❤️ HP: {user['hp']}/{user['max_hp']}
-⚔️ Атака: {user['attack']}
-🛡️ Защита: {user['defense']}
-💰 Коины: {user['coins']:,}
-💍 Брак: {marry}
-👥 Клан: {user['clan'] or 'Нет'}
-🎖️ PvP Ранг: {pvp_rank}
-⭐ Престиж: {user['prestige']}
-👤 Профессия: {user['profession'] or 'Нет'}
-🐾 Питомец: {user['pet'] or 'Нет'}
-🎒 Предметов: {len(user['inventory'])}
-🏅 Достижений: {len(user['achievements'])}/{len(ACHIEVEMENTS)}
-💀 Убийств: {user['total_kills']}
-🗺️ Локация: {user['location']}
-    """.replace(',', ' ')
-    
+👤 Имя: {u['username']}
+🏅 Титул: {u['title']}
+⭐ Уровень: {u['level']}
+✨ Опыт: {u['exp']}/{u['level']*100}
+
+💰 Баланс: {u['money']} монет
+
+⚔ Статистика дуэлей:
+✅ Побед: {u['wins']}
+❌ Поражений: {u['losses']}
+📊 Винрейт: {(u['wins']/(u['wins']+u['losses'])*100 if (u['wins']+u['losses']) > 0 else 0):.1f}%
+
+🛡 Экипировка:
+{chr(10).join(equipped) if equipped else 'Нет экипировки'}
+
+🎒 Предметов в инвентаре: {len(u['inventory'])}
+    """
     bot.send_message(message.chat.id, profile_text, parse_mode="Markdown")
 
-def cmd_inventory(message):
-    uid = str(message.from_user.id)
-    gid = str(message.chat.id)
-    user = get_user(uid, gid)
+# Инвентарь
+@bot.message_handler(func=lambda m: m.text == "🎒 Инвентарь")
+def inventory(message):
+    user_id = message.from_user.id
+    user = User(user_id)
     
-    if not user["inventory"]:
-        bot.send_message(message.chat.id, "🎒 Инвентарь пуст!")
+    if not user.data["inventory"]:
+        bot.send_message(message.chat.id, "🎒 Ваш инвентарь пуст!")
         return
     
-    inv_text = f"🎒 *Инвентарь:*\n\n"
-    for i, item in enumerate(user["inventory"][:20], 1):
-        stats = ""
-        if item.get("attack"):
-            stats += f"⚔️{item['attack']} "
-        if item.get("defense"):
-            stats += f"🛡️{item['defense']} "
-        inv_text += f"{i}. {item['name']} {stats}\n"
+    inv_text = "🎒 *Ваш инвентарь:*\n\n"
+    for i, item_key in enumerate(user.data["inventory"], 1):
+        item = items.get(item_key, limited_items.get(item_key))
+        if item:
+            inv_text += f"{i}. {item['name']}\n"
     
-    if len(user["inventory"]) > 20:
-        inv_text += f"\n... и ещё {len(user['inventory']) - 20}"
-    
-    kb = types.InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        types.InlineKeyboardButton("🎯 Использовать", callback_data=f"use_item_{uid}"),
-        types.InlineKeyboardButton("💸 Продать", callback_data=f"sell_item_{uid}")
-    )
-    
-    bot.send_message(message.chat.id, inv_text, parse_mode="Markdown", reply_markup=kb)
-
-def cmd_battle(message):
-    uid = str(message.from_user.id)
-    gid = str(message.chat.id)
-    user = get_user(uid, gid)
-    
-    if user["hp"] <= 0:
-        bot.send_message(message.chat.id, "💀 Вы мертвы! Используйте зелье здоровья!")
-        return
-    
-    location = user["location"]
-    location_data = LOCATIONS.get(location, LOCATIONS["🌲 Лес"])
-    monster_pool = MONSTERS.get(location_data["monsters"], MONSTERS["easy"])
-    monster = random.choice(monster_pool)
-    
-    attack = user["attack"]
-    defense = user["defense"]
-    
-    if user["pet"]:
-        for pet_name, pet_stats in PETS.items():
-            if user["pet"] == pet_name and "bonus_attack" in pet_stats:
-                attack += pet_stats["bonus_attack"]
-    
-    weather = data.get("weather", "☀️ солнечно")
-    if "attack_bonus" in WEATHER_EFFECTS.get(weather, {}):
-        attack += int(attack * WEATHER_EFFECTS[weather]["attack_bonus"] / 100)
-    if "defense_bonus" in WEATHER_EFFECTS.get(weather, {}):
-        defense += int(defense * WEATHER_EFFECTS[weather]["defense_bonus"] / 100)
-    
-    monster_hp = monster["hp"]
-    battle_log = f"⚔️ *Битва с {monster['name']}!*\n📍 {location}\n\n"
-    
-    player_damage = max(1, attack - random.randint(0, 5))
-    crit_chance = 10 + user["luck"]
-    if random.random() * 100 < crit_chance:
-        player_damage *= 2
-        battle_log += "💥 КРИТИЧЕСКИЙ УДАР!\n"
-    
-    monster_hp -= player_damage
-    battle_log += f"💢 Вы нанесли {player_damage}\n"
-    
-    if monster_hp > 0:
-        monster_damage = max(1, monster["attack"] - defense)
-        user["hp"] -= monster_damage
-        battle_log += f"💥 {monster['name']}: {monster_damage} урона\n"
-    
-    if monster_hp <= 0:
-        season = data.get("season", "🌸 Весна")
-        reward_mult = 1.0
-        if "drop_bonus" in SEASONS.get(season, {}):
-            reward_mult *= (1 + SEASONS[season]["drop_bonus"] / 100)
-        
-        reward = int(monster["reward"] * reward_mult)
-        user["coins"] += reward
-        add_exp(uid, gid, monster["exp"])
-        user["total_kills"] += 1
-        
-        battle_log += f"\n🎉 Победа! +{reward}💰 +{monster['exp']}✨"
-        
-        if random.random() < 0.2:
-            dropped_item = random.choice(list(SHOP_ITEMS.values()))
-            user["inventory"].append(dropped_item.copy())
-            battle_log += f"\n🎁 Дроп: {dropped_item['name']}!"
-        
-        if user["total_kills"] == 1:
-            check_achievement(uid, gid, "first_blood")
-        check_achievement(uid, gid, "slayer_100" if user["total_kills"] >= 100 else None)
-        
-        if random.random() < 0.001:
-            legendary = {"name": "🌟 Звездный меч", "attack": 100, "type": "weapon", "rarity": "legendary"}
-            user["inventory"].append(legendary)
-            battle_log += "\n🌟 ЛЕГЕНДАРНЫЙ ДРОП!"
-    else:
-        battle_log += f"\n❤️ {monster['name']}: {monster_hp} HP"
-        if user["hp"] <= 0:
-            user["total_deaths"] += 1
-            battle_log += "\n💀 Вы пали в бою!"
-    
-    save()
-    
-    kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("⚔️ Сражаться снова", callback_data=f"battle_again_{uid}"))
-    
-    bot.send_message(message.chat.id, battle_log, parse_mode="Markdown", reply_markup=kb)
-
-def cmd_shop(message):
-    shop_text = "🏪 *Магазин:*\n\n"
-    kb = types.InlineKeyboardMarkup(row_width=2)
-    
-    for id, item in list(SHOP_ITEMS.items())[:10]:
-        stats = ""
-        if item.get("attack"):
-            stats += f"⚔️{item['attack']}"
-        if item.get("defense"):
-            stats += f"🛡️{item['defense']}"
-        shop_text += f"*{item['name']}* - {item['price']}💰 {stats}\n"
-        kb.add(types.InlineKeyboardButton(
-            f"{item['name']} ({item['price']}💰)",
-            callback_data=f"shop_buy_{id}_{message.from_user.id}"
-        ))
-    
-    bot.send_message(message.chat.id, shop_text, parse_mode="Markdown", reply_markup=kb)
-
-def cmd_limited(message):
-    text = "💎 *Лимитированные предметы:*\n\n"
-    kb = types.InlineKeyboardMarkup(row_width=1)
-    
-    for id, item in LIMITED_ITEMS.items():
-        available = item["limit"] - item["sold"]
-        if available > 0:
-            stats = ""
-            if item.get("attack"):
-                stats += f"⚔️{item['attack']} "
-            if item.get("defense"):
-                stats += f"🛡️{item['defense']} "
-            text += f"🟡 *{item['name']}*\n   💰 {item['price']} | 📦 {available}/{item['limit']}\n   {stats}\n\n"
-            kb.add(types.InlineKeyboardButton(
-                f"Купить {item['name']}",
-                callback_data=f"lim_buy_{id}_{message.from_user.id}"
+    markup = types.InlineKeyboardMarkup()
+    for item_key in set(user.data["inventory"]):
+        item = items.get(item_key, limited_items.get(item_key))
+        if item and item["type"] in ["weapon", "shield", "armor"]:
+            markup.add(types.InlineKeyboardButton(
+                f"Экипировать {item['name']}", 
+                callback_data=f"equip_{item_key}"
             ))
     
-    if not kb.keyboard:
-        text += "😔 Всё распродано!"
-    
-    bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=kb)
+    bot.send_message(message.chat.id, inv_text, parse_mode="Markdown", reply_markup=markup)
 
-def cmd_work(message):
-    uid = str(message.from_user.id)
-    gid = str(message.chat.id)
-    user = get_user(uid, gid)
+# Магазин
+@bot.message_handler(func=lambda m: m.text == "🏪 Магазин")
+def shop(message):
+    shop_text = "🏪 *МАГАЗИН ОРУЖИЯ*\n\n"
+    markup = types.InlineKeyboardMarkup(row_width=1)
     
-    if user.get("last_work") and datetime.now() < datetime.fromisoformat(user["last_work"]) + timedelta(hours=2):
-        remaining = datetime.fromisoformat(user["last_work"]) + timedelta(hours=2) - datetime.now()
-        bot.send_message(message.chat.id, f"⏰ Устали! Отдых {remaining.seconds//60} мин.")
+    for item_key, item in items.items():
+        shop_text += f"{item['name']}\n"
+        if item["type"] == "weapon":
+            shop_text += f"⚔ Урон: {item['damage']}\n"
+        elif item["type"] == "shield":
+            shop_text += f"🛡 Защита: {item['defense']}\n"
+        elif item["type"] == "potion":
+            shop_text += f"💊 Лечение: {item['heal']}\n"
+        shop_text += f"💰 Цена: {item['price']} монет\n\n"
+        
+        markup.add(types.InlineKeyboardButton(
+            f"Купить {item['name']} - {item['price']}💰", 
+            callback_data=f"buy_{item_key}"
+        ))
+    
+    bot.send_message(message.chat.id, shop_text, parse_mode="Markdown", reply_markup=markup)
+
+# Лимитированные предметы
+@bot.message_handler(func=lambda m: m.text == "💎 Лимитированные")
+def limited_shop(message):
+    if not limited_items:
+        bot.send_message(message.chat.id, "💎 Лимитированных предметов нет в наличии!")
         return
     
-    if user["profession"]:
-        prof = PROFESSIONS[user["profession"]]
-        material = random.choice(prof["materials"])
-        user["crafting_materials"].append(material)
-        reward = prof["salary"] + random.randint(0, 200)
-        user["coins"] += reward
-        add_exp(uid, gid, 30)
-        user["last_work"] = datetime.now().isoformat()
-        save()
-        bot.send_message(message.chat.id, 
-            f"👤 *{user['profession']}*\n💰 Заработано: {reward}\n📦 Добыто: {material}",
-            parse_mode="Markdown")
+    limit_text = "💎 *ЛИМИТИРОВАННЫЕ ПРЕДМЕТЫ*\n\n"
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    for item_key, item in limited_items.items():
+        if item["remaining"] > 0:
+            limit_text += f"{item['name']}\n"
+            limit_text += f"📦 Осталось: {item['remaining']}/{item['total']}\n"
+            if item["type"] == "weapon":
+                limit_text += f"⚔ Урон: {item['damage']}\n"
+            elif item["type"] == "shield":
+                limit_text += f"🛡 Защита: {item['defense']}\n"
+            elif item["type"] == "potion":
+                limit_text += f"💊 Лечение: {item['heal']}\n"
+            limit_text += f"💰 Цена: {item['price']} монет\n\n"
+            
+            markup.add(types.InlineKeyboardButton(
+                f"Купить {item['name']} - {item['price']}💰", 
+                callback_data=f"buylimited_{item_key}"
+            ))
+    
+    bot.send_message(message.chat.id, limit_text, parse_mode="Markdown", reply_markup=markup)
+
+# Ежедневный бонус
+@bot.message_handler(func=lambda m: m.text == "🎁 Ежедневный бонус")
+def daily_bonus(message):
+    user_id = message.from_user.id
+    user = User(user_id)
+    
+    today = datetime.now().strftime("%Y-%m-%d")
+    if user.data["last_daily"] == today:
+        bot.send_message(message.chat.id, "🎁 Вы уже получили ежедневный бонус! Приходите завтра.")
+        return
+    
+    bonus = random.randint(50, 200)
+    exp_bonus = random.randint(10, 50)
+    user.data["money"] += bonus
+    user.data["exp"] += exp_bonus
+    user.data["last_daily"] = today
+    user.save()
+    
+    bonus_text = f"""
+🎁 *ЕЖЕДНЕВНЫЙ БОНУС*
+
+Вы получили:
+💰 Монет: +{bonus}
+✨ Опыта: +{exp_bonus}
+
+Приходите завтра за новой наградой!
+    """
+    bot.send_message(message.chat.id, bonus_text, parse_mode="Markdown")
+    
+    if check_level_up(user_id):
+        user = User(user_id)
+        bot.send_message(message.chat.id, f"🎉 Поздравляем! Вы достигли уровня {user.data['level']}!")
+
+# Работа
+@bot.message_handler(func=lambda m: m.text == "💰 Работа")
+def work(message):
+    user_id = message.from_user.id
+    user = User(user_id)
+    
+    now = datetime.now()
+    if user.data["last_work"] and (now - datetime.fromisoformat(user.data["last_work"])) < timedelta(hours=2):
+        remaining = timedelta(hours=2) - (now - datetime.fromisoformat(user.data["last_work"]))
+        bot.send_message(message.chat.id, f"⏰ Вы устали! Отдохните ещё {remaining.seconds//3600}ч {remaining.seconds%3600//60}м")
         return
     
     jobs = [
-        {"name": "🛠️ Кузнец", "reward": random.randint(300, 600), "exp": 30},
-        {"name": "🌾 Фермер", "reward": random.randint(200, 500), "exp": 25},
-        {"name": "📜 Писец", "reward": random.randint(400, 700), "exp": 35}
+        "Охотились на монстров",
+        "Собирали травы",
+        "Защищали деревню",
+        "Тренировали новобранцев",
+        "Исследовали подземелье",
+        "Торговали на рынке",
+        "Выполняли поручения гильдии"
     ]
     
-    job = random.choice(jobs)
-    user["coins"] += job["reward"]
-    add_exp(uid, gid, job["exp"])
-    user["last_work"] = datetime.now().isoformat()
-    save()
+    reward = random.randint(30, 100) * user.data["level"]
+    exp_reward = random.randint(20, 60)
     
-    bot.send_message(message.chat.id, 
-        f"💼 *{job['name']}*\n💰 +{job['reward']}\n✨ +{job['exp']} опыта",
-        parse_mode="Markdown")
+    user.data["money"] += reward
+    user.data["exp"] += exp_reward
+    user.data["last_work"] = now.isoformat()
+    user.save()
+    
+    work_text = f"""
+⚒ *РАБОТА*
+Вы {random.choice(jobs)}
 
-def cmd_casino(message):
-    kb = types.InlineKeyboardMarkup(row_width=2)
-    
-    for game_id, game in CASINO_GAMES.items():
-        kb.add(types.InlineKeyboardButton(
-            f"{game['name']} (x{game['multiplier']})",
-            callback_data=f"casino_{game_id}_{message.from_user.id}"
-        ))
-    
-    kb.add(types.InlineKeyboardButton("🏆 Джекпот", callback_data=f"casino_jackpot_{message.from_user.id}"))
-    
-    bot.send_message(message.chat.id,
-        f"🎰 *Казино*\n🏆 Джекпот: {data['global_lottery']['pool']}💰\nВыберите игру:",
-        parse_mode="Markdown", reply_markup=kb)
-
-def cmd_bonus(message):
-    uid = str(message.from_user.id)
-    gid = str(message.chat.id)
-    user = get_user(uid, gid)
-    
-    if user.get("last_daily") and datetime.now() < datetime.fromisoformat(user["last_daily"]) + timedelta(hours=12):
-        remaining = datetime.fromisoformat(user["last_daily"]) + timedelta(hours=12) - datetime.now()
-        bot.send_message(message.chat.id, f"⏰ Бонус через {remaining.seconds//3600}ч")
-        return
-    
-    bonus = random.randint(500, 2000)
-    user["coins"] += bonus
-    user["last_daily"] = datetime.now().isoformat()
-    save()
-    
-    bot.send_message(message.chat.id, f"🎁 *Бонус!* +{bonus}💰", parse_mode="Markdown")
-
-def cmd_marry(message):
-    kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("💍 Предложить брак", callback_data=f"marry_propose_{message.from_user.id}"))
-    kb.add(types.InlineKeyboardButton("💔 Развестись", callback_data=f"marry_divorce_{message.from_user.id}"))
-    
-    bot.send_message(message.chat.id, 
-        "💍 *Брак*\nБонусы: +10% опыт, +10% коины",
-        parse_mode="Markdown", reply_markup=kb)
-
-def cmd_clan(message):
-    gid = str(message.chat.id)
-    uid = str(message.from_user.id)
-    group = get_group(gid)
-    
-    kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("🏰 Создать клан", callback_data=f"clan_create_{uid}"))
-    kb.add(types.InlineKeyboardButton("🤝 Вступить", callback_data=f"clan_join_{uid}"))
-    
-    clan_text = "👥 *Кланы*\n\n"
-    if group["clans"]:
-        for clan_name, clan_data in list(group["clans"].items())[:5]:
-            clan_text += f"🏰 {clan_name} - {len(clan_data.get('members', []))} чел.\n"
-    
-    bot.send_message(message.chat.id, clan_text, parse_mode="Markdown", reply_markup=kb)
-
-def cmd_top(message):
-    gid = str(message.chat.id)
-    group = get_group(gid)
-    
-    sorted_users = sorted(group["users"].items(), 
-                         key=lambda x: (x[1]["level"], x[1]["coins"]), 
-                         reverse=True)[:10]
-    
-    top_text = "🏆 *Топ-10:*\n\n"
-    for i, (uid, user_data) in enumerate(sorted_users, 1):
-        try:
-            member = bot.get_chat_member(message.chat.id, int(uid))
-            name = member.user.first_name
-        except:
-            name = f"Игрок {uid[:8]}"
-        
-        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
-        medal = medals.get(i, f"{i}.")
-        top_text += f"{medal} {name}\n   Ур.{user_data['level']} | 💰{user_data['coins']} | ⚔️{user_data['total_kills']}\n\n"
-    
-    bot.send_message(message.chat.id, top_text, parse_mode="Markdown")
-
-def cmd_rp_actions(message):
-    kb = types.InlineKeyboardMarkup(row_width=3)
-    actions = ["🤗 Обнять", "👊 Ударить", "💋 Поцеловать", "🤝 Пожать руку", "😈 Укусить", "👍 Лайкнуть"]
-    
-    for action in actions:
-        kb.add(types.InlineKeyboardButton(action, callback_data=f"rp_{action}_{message.from_user.id}"))
-    
-    bot.send_message(message.chat.id, "🎭 *РП Действия*\nОтветьте на сообщение:", 
-                    parse_mode="Markdown", reply_markup=kb)
-
-def cmd_quests(message):
-    quests = [
-        {"name": "⚔️ Убить 10 монстров", "reward": "1000💰 + 200✨"},
-        {"name": "💼 Поработать 3 раза", "reward": "500💰 + Меч"},
-        {"name": "🎰 Сыграть в казино 5 раз", "reward": "800💰 + Бонус"},
-        {"name": "🔨 Создать 3 предмета", "reward": "1500💰 + Редкий предмет"}
-    ]
-    
-    quest_text = "📜 *Квесты:*\n\n"
-    for i, quest in enumerate(quests, 1):
-        quest_text += f"{i}. {quest['name']}\n   🎁 {quest['reward']}\n\n"
-    
-    bot.send_message(message.chat.id, quest_text, parse_mode="Markdown")
-
-def cmd_minigames(message):
-    kb = types.InlineKeyboardMarkup(row_width=2)
-    games = [
-        ("🎯 Угадай число", "guess"), ("🎲 Кости", "dice"), ("🃏 21 очко", "blackjack"),
-        ("💣 Минное поле", "mines"), ("🪙 Монетка", "coinflip"), ("🎯 Дартс", "darts")
-    ]
-    
-    for name, game_id in games:
-        kb.add(types.InlineKeyboardButton(name, callback_data=f"minigame_{game_id}_{message.from_user.id}"))
-    
-    bot.send_message(message.chat.id, "🎪 *Мини-игры*\nВыберите игру:", 
-                    parse_mode="Markdown", reply_markup=kb)
-
-def cmd_pets(message):
-    uid = str(message.from_user.id)
-    gid = str(message.chat.id)
-    user = get_user(uid, gid)
-    
-    if user["pet"]:
-        pet_stats = PETS.get(user["pet"], PETS["🐺 Волчонок"])
-        pet_text = f"🐾 *Ваш питомец: {user['pet']}*\n💚 Верность: {pet_stats['loyalty']}%\n\n🎁 *Бонусы:*\n"
-        if "bonus_attack" in pet_stats:
-            pet_text += f"⚔️ +{pet_stats['bonus_attack']} к атаке\n"
-        if "bonus_luck" in pet_stats:
-            pet_text += f"🍀 +{pet_stats['bonus_luck']}% удачи\n"
-        if "bonus_exp" in pet_stats:
-            pet_text += f"✨ +{pet_stats['bonus_exp']}% опыта\n"
-        if "bonus_coins" in pet_stats:
-            pet_text += f"💰 +{pet_stats['bonus_coins']}% монет\n"
-        
-        kb = types.InlineKeyboardMarkup(row_width=2)
-        kb.add(
-            types.InlineKeyboardButton("🍖 Покормить (100💰)", callback_data=f"pet_feed_{uid}"),
-            types.InlineKeyboardButton("💔 Отпустить", callback_data=f"pet_release_{uid}")
-        )
-    else:
-        pet_text = "🐾 *Питомцы:*\n\n"
-        kb = types.InlineKeyboardMarkup(row_width=1)
-        for pet_name, pet_stat in PETS.items():
-            pet_text += f"*{pet_name}* - {pet_stat['price']}💰\n"
-            bonuses = []
-            if "bonus_attack" in pet_stat:
-                bonuses.append(f"⚔️+{pet_stat['bonus_attack']}")
-            if "bonus_luck" in pet_stat:
-                bonuses.append(f"🍀+{pet_stat['bonus_luck']}%")
-            pet_text += f"   {', '.join(bonuses)}\n\n"
-            kb.add(types.InlineKeyboardButton(f"Купить {pet_name}", callback_data=f"pet_buy_{pet_name}_{uid}"))
-    
-    bot.send_message(message.chat.id, pet_text, parse_mode="Markdown", reply_markup=kb)
-
-def cmd_crafting(message):
-    uid = str(message.from_user.id)
-    gid = str(message.chat.id)
-    user = get_user(uid, gid)
-    
-    craft_text = "🔨 *Крафт:*\n\n"
-    kb = types.InlineKeyboardMarkup(row_width=1)
-    
-    for recipe_name, recipe in CRAFTING_RECIPES.items():
-        if user["level"] < recipe["level_req"]:
-            continue
-        
-        mats_text = ", ".join([f"{mat} x{qty}" for mat, qty in recipe["materials"].items()])
-        craft_text += f"*{recipe_name}* (Ур.{recipe['level_req']})\n📦 {mats_text}\n\n"
-        kb.add(types.InlineKeyboardButton(f"Создать {recipe_name}", callback_data=f"craft_{recipe_name}_{uid}"))
-    
-    if user["crafting_materials"]:
-        craft_text += "📦 *Ваши материалы:*\n"
-        mat_count = {}
-        for mat in user["crafting_materials"]:
-            mat_count[mat] = mat_count.get(mat, 0) + 1
-        for mat, count in mat_count.items():
-            craft_text += f"• {mat} x{count}\n"
-    
-    bot.send_message(message.chat.id, craft_text, parse_mode="Markdown", reply_markup=kb)
-
-def cmd_enchantments(message):
-    uid = str(message.from_user.id)
-    gid = str(message.chat.id)
-    user = get_user(uid, gid)
-    
-    if not user["inventory"]:
-        bot.send_message(message.chat.id, "❌ Нет предметов!")
-        return
-    
-    ench_text = "⚗️ *Зачарования:*\n\n"
-    kb = types.InlineKeyboardMarkup(row_width=2)
-    
-    for ench_name, ench_data in ENCHANTMENTS.items():
-        ench_text += f"*{ench_name}* - {ench_data['cost']}💰\n📈 +{ench_data['bonus']} к {ench_data['type']}\n\n"
-        kb.add(types.InlineKeyboardButton(
-            f"{ench_name} ({ench_data['cost']}💰)",
-            callback_data=f"enchant_{ench_name}_{uid}"
-        ))
-    
-    bot.send_message(message.chat.id, ench_text, parse_mode="Markdown", reply_markup=kb)
-
-def cmd_pvp_arena(message):
-    uid = str(message.from_user.id)
-    gid = str(message.chat.id)
-    user = get_user(uid, gid)
-    
-    current_rank = "🥉 Бронза"
-    for rank_name, rank_range in PVP_RANKS.items():
-        if rank_range["min_rating"] <= user["pvp_rating"] <= rank_range["max_rating"]:
-            current_rank = rank_name
-            break
-    
-    pvp_text = f"⚔️ *PvP Арена*\n\n🏅 Рейтинг: {user['pvp_rating']}\n🎖️ Ранг: {current_rank}\n⚡ Побед: {user['total_kills']}\n💀 Поражений: {user['total_deaths']}\n"
-    
-    kb = types.InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        types.InlineKeyboardButton("⚔️ Быстрый бой", callback_data=f"pvp_quick_{uid}"),
-        types.InlineKeyboardButton("📊 Топ PvP", callback_data=f"pvp_top_{uid}")
-    )
-    
-    bot.send_message(message.chat.id, pvp_text, parse_mode="Markdown", reply_markup=kb)
-
-def cmd_trade(message):
-    gid = str(message.chat.id)
-    uid = str(message.from_user.id)
-    group = get_group(gid)
-    
-    trade_text = "💱 *Торговая площадка*\n\n"
-    
-    if group["market"]:
-        for trade_id, trade_data in list(group["market"].items())[:5]:
-            trade_text += f"#{trade_id[:8]}: {trade_data['item']['name']} - {trade_data['price']}💰\n"
-    else:
-        trade_text += "Нет предложений\n"
-    
-    kb = types.InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        types.InlineKeyboardButton("📤 Продать", callback_data=f"trade_sell_{uid}"),
-        types.InlineKeyboardButton("📥 Купить", callback_data=f"trade_buy_{uid}")
-    )
-    
-    bot.send_message(message.chat.id, trade_text, parse_mode="Markdown", reply_markup=kb)
-
-def cmd_prestige(message):
-    uid = str(message.from_user.id)
-    gid = str(message.chat.id)
-    user = get_user(uid, gid)
-    
-    if user["level"] < 20:
-        bot.send_message(message.chat.id, f"❌ Нужен 20 уровень! Ваш: {user['level']}")
-        return
-    
-    if user["prestige"] >= 3:
-        bot.send_message(message.chat.id, "🌟 Максимальный престиж!")
-        return
-    
-    next_prestige = user["prestige"] + 1
-    reward = PRESTIGE_REWARDS[next_prestige]
-    
-    prestige_text = f"⭐ *Престиж {next_prestige}*\n\n⚠️ *Сбросится:* уровень, опыт, часть предметов\n\n🎁 *Награда:*\n• 💰 {reward['coins']} коинов\n• 🏅 {reward['title']}\n• ✨ +{reward['bonus_exp']}% опыта"
-    
-    kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("✅ Подтвердить", callback_data=f"prestige_{uid}"))
-    
-    bot.send_message(message.chat.id, prestige_text, parse_mode="Markdown", reply_markup=kb)
-
-def cmd_achievements(message):
-    uid = str(message.from_user.id)
-    gid = str(message.chat.id)
-    user = get_user(uid, gid)
-    
-    ach_text = f"🏅 *Достижения ({len(user['achievements'])}/{len(ACHIEVEMENTS)})*\n\n"
-    
-    for ach_id, ach_data in ACHIEVEMENTS.items():
-        status = "✅" if ach_id in user["achievements"] else "🔒"
-        ach_text += f"{status} *{ach_data['name']}*\n  📝 {ach_data['desc']}\n  🎁 {ach_data['reward']}💰\n\n"
-    
-    bot.send_message(message.chat.id, ach_text, parse_mode="Markdown")
-
-def cmd_professions(message):
-    uid = str(message.from_user.id)
-    gid = str(message.chat.id)
-    user = get_user(uid, gid)
-    
-    if user["profession"]:
-        prof = PROFESSIONS[user["profession"]]
-        prof_text = f"👤 *Ваша профессия: {user['profession']}*\n\n🛠️ {prof['tool']}\n💰 Зарплата: {prof['salary']}\n📦 Ресурсы: {', '.join(prof['materials'][:3])}"
-        
-        kb = types.InlineKeyboardMarkup()
-        kb.add(types.InlineKeyboardButton("⚒️ Работать", callback_data=f"prof_work_{uid}"))
-    else:
-        prof_text = "👤 *Выберите профессию:*\n\n"
-        kb = types.InlineKeyboardMarkup(row_width=1)
-        
-        for prof_name, prof_data in PROFESSIONS.items():
-            prof_text += f"*{prof_name}*\n🛠️ {prof_data['tool']}\n💰 {prof_data['salary']} коинов/час\n\n"
-            kb.add(types.InlineKeyboardButton(f"Выбрать {prof_name}", callback_data=f"prof_select_{prof_name}_{uid}"))
-    
-    bot.send_message(message.chat.id, prof_text, parse_mode="Markdown", reply_markup=kb)
-
-def cmd_weather(message):
-    weather = data.get("weather", "☀️ солнечно")
-    season = data.get("season", "🌸 Весна")
-    
-    weather_text = f"🌤️ *Погода*\n🌍 Сезон: {season}\n🌤️ Погода: {weather}\n\n"
-    
-    if weather in WEATHER_EFFECTS:
-        weather_text += "📊 *Эффекты:*\n"
-        for effect, value in WEATHER_EFFECTS[weather].items():
-            weather_text += f"• {effect}: +{value}%\n"
-    
-    kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("🔄 Обновить", callback_data=f"weather_update_{message.from_user.id}"))
-    
-    bot.send_message(message.chat.id, weather_text, parse_mode="Markdown", reply_markup=kb)
-
-def cmd_locations(message):
-    uid = str(message.from_user.id)
-    gid = str(message.chat.id)
-    user = get_user(uid, gid)
-    
-    loc_text = f"🗺️ *Локации*\n📍 Текущая: {user['location']}\n\n"
-    kb = types.InlineKeyboardMarkup(row_width=2)
-    
-    for loc_name, loc_data in LOCATIONS.items():
-        status = "✅" if loc_name == user["location"] else ""
-        loc_text += f"{status} {loc_name}\n   👹 {loc_data['monsters']}\n   📦 {', '.join(loc_data['resources'][:2])}\n\n"
-        kb.add(types.InlineKeyboardButton(f"📍 {loc_name}", callback_data=f"loc_{loc_name}_{uid}"))
-    
-    bot.send_message(message.chat.id, loc_text, parse_mode="Markdown", reply_markup=kb)
-
-def cmd_boss(message):
-    boss_text = f"🎯 *Мировой босс*\n\n🐉 *{data['global_boss']['name']}*\n❤️ HP: {data['global_boss']['hp']:,}\n📊 Уровень: {data['global_boss']['level']}\n🏆 Награда: {10000 * data['global_boss']['level']}💰"
-    
-    kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("⚔️ Атаковать босса!", callback_data=f"boss_attack_{message.from_user.id}"))
-    
-    bot.send_message(message.chat.id, boss_text, parse_mode="Markdown", reply_markup=kb)
-
-def cmd_help(message):
-    help_text = """
-❓ *Помощь по RPG Боту*
-
-🎮 *Основное:*
-💰 Баланс - проверить коины
-📊 Профиль - информация о персонаже
-⚔️ Битва - сражаться с монстрами
-💼 Работа - заработать коины
-🎁 Бонус - ежедневный бонус
-
-🏪 *Экономика:*
-🏪 Магазин - купить предметы
-💎 Лимитки - редкие предметы
-💱 Трейд - торговля
-
-⚔️ *Бой:*
-⚔️ PvP - дуэли
-🎯 Боссы - мировые боссы
-🗺️ Локации - путешествия
-
-👥 *Социальное:*
-👥 Клан - создание кланов
-💍 Брак - система брака
-
-🔨 *Развитие:*
-🔨 Крафт - создание предметов
-⚗️ Чары - зачарования
-🐾 Питомцы - спутники
-👤 Профессии - специальности
-🏅 Ачивки - достижения
-⭐ Престиж - сброс с бонусами
-
-🎰 *Развлечения:*
-🎰 Казино - азартные игры
-🎪 Игры - мини-игры
-🎭 РП - ролевые действия
-
-🌤️ *Мир:*
-🌤️ Погода - эффекты погоды
-
-💡 Используйте кнопки для навигации!
+Награда:
+💰 Монет: +{reward}
+✨ Опыта: +{exp_reward}
     """
+    bot.send_message(message.chat.id, work_text, parse_mode="Markdown")
     
-    bot.send_message(message.chat.id, help_text, parse_mode="Markdown")
+    if check_level_up(user_id):
+        user = User(user_id)
+        bot.send_message(message.chat.id, f"🎉 Поздравляем! Вы достигли уровня {user.data['level']}! Титул: {user.data['title']}")
 
-def handle_rp_actions(message):
-    if not message.reply_to_message:
-        return
-    
-    text = message.text.lower()
-    user = message.from_user
-    target = message.reply_to_message.from_user
-    
-    rp_actions = {
-        "обнять": "тепло обнимает",
-        "ударить": "сильно бьёт",
-        "поцеловать": "нежно целует",
-        "пожать руку": "крепко жмёт руку",
-        "укусить": "игриво кусает"
-    }
-    
-    for action, phrase in rp_actions.items():
-        if action in text:
-            bot.send_message(message.chat.id, 
-                f"🎭 *{user.first_name}* {phrase} *{target.first_name}*!",
-                parse_mode="Markdown")
-            return
+# РП команды
+@bot.message_handler(func=lambda m: m.text == "🎮 РП Команды")
+def rp_commands(message):
+    rp_text = """
+🎮 *РП КОМАНДЫ*
 
-# ==================== АДМИН КОМАНДЫ ====================
+Боевые:
+/attack [имя] - Атаковать противника
+/defend - Встать в защиту
+/use_potion - Использовать зелье
 
-def is_admin(user_id, chat_id):
+Социальные:
+/hello - Поздороваться
+/dance - Танцевать
+/sit - Сесть
+/meditate - Медитировать
+/train - Тренироваться
+/explore - Исследовать
+
+Экономика:
+/give [сумма] @user - Передать монеты
+/bet [сумма] - Сделать ставку
+
+Прочее:
+/flip - Подбросить монетку
+/roll - Бросить кубик
+/hug @user - Обнять игрока
+/punch @user - Ударить игрока (шутка)
+    """
+    bot.send_message(message.chat.id, rp_text, parse_mode="Markdown")
+
+# РП команды
+@bot.message_handler(commands=['hello'])
+def hello(message):
+    greetings = [
+        f"{message.from_user.first_name} приветствует всех! 👋",
+        f"{message.from_user.first_name} машет рукой! 🌟",
+        f"Привет от {message.from_user.first_name}! 🤗"
+    ]
+    bot.send_message(message.chat.id, random.choice(greetings))
+
+@bot.message_handler(commands=['dance'])
+def dance(message):
+    bot.send_message(message.chat.id, f"💃 {message.from_user.first_name} зажигательно танцует!")
+
+@bot.message_handler(commands=['sit'])
+def sit(message):
+    bot.send_message(message.chat.id, f"🪑 {message.from_user.first_name} присел отдохнуть.")
+
+@bot.message_handler(commands=['meditate'])
+def meditate(message):
+    user_id = message.from_user.id
+    user = User(user_id)
+    exp = random.randint(5, 15)
+    user.data["exp"] += exp
+    user.save()
+    bot.send_message(message.chat.id, f"🧘 {message.from_user.first_name} медитирует и получает {exp} опыта!")
+    check_level_up(user_id)
+
+@bot.message_handler(commands=['train'])
+def train(message):
+    user_id = message.from_user.id
+    user = User(user_id)
+    exp = random.randint(10, 30)
+    user.data["exp"] += exp
+    user.save()
+    bot.send_message(message.chat.id, f"💪 {message.from_user.first_name} усердно тренируется! +{exp} опыта")
+    check_level_up(user_id)
+
+@bot.message_handler(commands=['explore'])
+def explore(message):
+    user_id = message.from_user.id
+    user = User(user_id)
+    
+    discoveries = [
+        "нашел древние руины! 🏛",
+        "обнаружил пещеру с сокровищами! 💎",
+        "встретил дружелюбного дракона! 🐉",
+        "нашел заброшенный храм! ⛩",
+        "открыл новый торговый путь! 🗺"
+    ]
+    
+    reward = random.randint(20, 80)
+    user.data["money"] += reward
+    user.save()
+    bot.send_message(message.chat.id, f"🔍 {message.from_user.first_name} {random.choice(discoveries)} +{reward}💰")
+
+@bot.message_handler(commands=['flip'])
+def flip_coin(message):
+    result = random.choice(["Орёл 🦅", "Решка 👑"])
+    bot.send_message(message.chat.id, f"🪙 {message.from_user.first_name} подбрасывает монетку... {result}!")
+
+@bot.message_handler(commands=['roll'])
+def roll_dice(message):
+    result = random.randint(1, 6)
+    dice_faces = ["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"]
+    bot.send_message(message.chat.id, f"🎲 {message.from_user.first_name} бросает кубик: {dice_faces[result-1]} ({result})")
+
+@bot.message_handler(commands=['hug'])
+def hug(message):
+    if message.reply_to_message:
+        target = message.reply_to_message.from_user.first_name
+        bot.send_message(message.chat.id, f"🤗 {message.from_user.first_name} крепко обнимает {target}!")
+    else:
+        bot.send_message(message.chat.id, f"🤗 {message.from_user.first_name} обнимает всех!")
+
+@bot.message_handler(commands=['punch'])
+def punch(message):
+    if message.reply_to_message:
+        target = message.reply_to_message.from_user.first_name
+        bot.send_message(message.chat.id, f"👊 {message.from_user.first_name} шутливо бьёт {target}! Это не больно 😄")
+    else:
+        bot.send_message(message.chat.id, f"👊 {message.from_user.first_name} бьёт воздух!")
+
+@bot.message_handler(commands=['give'])
+def give_money(message):
     try:
-        member = bot.get_chat_member(chat_id, user_id)
-        return member.status in ['creator', 'administrator']
+        parts = message.text.split()
+        amount = int(parts[1])
+        
+        if message.reply_to_message:
+            target_id = message.reply_to_message.from_user.id
+            target_name = message.reply_to_message.from_user.first_name
+        else:
+            bot.send_message(message.chat.id, "❌ Ответьте на сообщение игрока, которому хотите передать монеты!")
+            return
+        
+        user_id = message.from_user.id
+        user = User(user_id)
+        
+        if user.data["money"] < amount:
+            bot.send_message(message.chat.id, "❌ Недостаточно монет!")
+            return
+        
+        if amount <= 0:
+            bot.send_message(message.chat.id, "❌ Сумма должна быть положительной!")
+            return
+        
+        target = User(target_id)
+        user.data["money"] -= amount
+        target.data["money"] += amount
+        user.save()
+        target.save()
+        
+        bot.send_message(message.chat.id, f"💰 {message.from_user.first_name} передал {amount} монет игроку {target_name}!")
     except:
-        return False
+        bot.send_message(message.chat.id, "❌ Использование: /give [сумма] (в ответ на сообщение игрока)")
 
-def handle_admin_command(message):
-    if not is_admin(message.from_user.id, message.chat.id):
+# Дуэль
+@bot.message_handler(func=lambda m: m.text == "⚔ Дуэль")
+def duel_start(message):
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Быстрая дуэль", callback_data="quick_duel"))
+    markup.add(types.InlineKeyboardButton("Дуэль с игроком", callback_data="player_duel"))
+    
+    duel_text = """
+⚔ *СИСТЕМА ДУЭЛЕЙ*
+
+Выберите тип дуэли:
+• Быстрая дуэль - случайный противник
+• Дуэль с игроком - ответьте на сообщение игрока
+
+Ставка: 50 монет с каждого участника
+Победитель забирает всё!
+    """
+    bot.send_message(message.chat.id, duel_text, parse_mode="Markdown", reply_markup=markup)
+
+# Настройки
+@bot.message_handler(func=lambda m: m.text == "⚙ Настройки")
+def settings(message):
+    user_id = message.from_user.id
+    user = User(user_id)
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Сменить никнейм", callback_data="change_nick"))
+    markup.add(types.InlineKeyboardButton("Сбросить статистику", callback_data="reset_stats"))
+    
+    settings_text = f"""
+⚙ *НАСТРОЙКИ*
+
+👤 Текущий ник: {user.data['username']}
+🎮 Уровень: {user.data['level']}
+🏆 Побед: {user.data['wins']}
+    """
+    bot.send_message(message.chat.id, settings_text, parse_mode="Markdown", reply_markup=markup)
+
+# Админ-панель
+@bot.message_handler(commands=['admin'])
+def admin_panel(message):
+    if message.from_user.id != ADMIN_ID:
+        bot.send_message(message.chat.id, "❌ У вас нет доступа к админ-панели!")
         return
     
-    text = message.text.strip()
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton("📊 Статистика бота", callback_data="admin_stats"))
+    markup.add(types.InlineKeyboardButton("💰 Выдать монеты", callback_data="admin_give_money"))
+    markup.add(types.InlineKeyboardButton("🎁 Выдать предмет", callback_data="admin_give_item"))
+    markup.add(types.InlineKeyboardButton("👤 Информация об игроке", callback_data="admin_user_info"))
+    markup.add(types.InlineKeyboardButton("🔄 Сбросить бонусы", callback_data="admin_reset_bonuses"))
+    markup.add(types.InlineKeyboardButton("📦 Управление лимитированными", callback_data="admin_limited"))
+    markup.add(types.InlineKeyboardButton("📢 Рассылка", callback_data="admin_broadcast"))
     
-    if "Выдать коины" in text:
-        bot.send_message(message.chat.id, "Используйте: /givecoins [ID] [сумма]")
-    elif "Забрать коины" in text:
-        bot.send_message(message.chat.id, "Используйте: /takecoins [ID] [сумма]")
-    elif "Мут" in text:
-        bot.send_message(message.chat.id, "Используйте: /mute [ID] [минуты]")
-    elif "Варн" in text:
-        bot.send_message(message.chat.id, "Используйте: /warn [ID] [причина]")
-    elif "Анонс" in text:
-        bot.send_message(message.chat.id, "Используйте: /announce [текст]")
-    elif "Обнулить" in text:
-        bot.send_message(message.chat.id, "Используйте: /reset [ID]")
+    bot.send_message(message.chat.id, "🔧 *АДМИН-ПАНЕЛЬ*", parse_mode="Markdown", reply_markup=markup)
 
-# ==================== CALLBACK ОБРАБОТЧИКИ ====================
-
+# Обработка callback
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
-    data_cb = call.data
-    uid = str(call.from_user.id)
-    gid = str(call.message.chat.id) if call.message.chat else None
+    user_id = call.from_user.id
+    user = User(user_id)
     
-    if not gid:
+    # Покупка обычных предметов
+    if call.data.startswith("buy_"):
+        item_key = call.data[4:]
+        item = items.get(item_key)
+        
+        if not item:
+            bot.answer_callback_query(call.id, "❌ Предмет не найден!")
+            return
+        
+        if user.data["money"] < item["price"]:
+            bot.answer_callback_query(call.id, "❌ Недостаточно монет!")
+            return
+        
+        user.data["money"] -= item["price"]
+        user.data["inventory"].append(item_key)
+        user.save()
+        
+        bot.answer_callback_query(call.id, f"✅ Вы купили {item['name']}!")
+        bot.send_message(call.message.chat.id, f"✅ Поздравляем с покупкой: {item['name']}!")
+    
+    # Покупка лимитированных предметов
+    elif call.data.startswith("buylimited_"):
+        item_key = call.data[12:]
+        item = limited_items.get(item_key)
+        
+        if not item or item["remaining"] <= 0:
+            bot.answer_callback_query(call.id, "❌ Предмет закончился!")
+            return
+        
+        if user.data["money"] < item["price"]:
+            bot.answer_callback_query(call.id, "❌ Недостаточно монет!")
+            return
+        
+        user.data["money"] -= item["price"]
+        user.data["inventory"].append(item_key)
+        item["remaining"] -= 1
+        user.save()
+        save_json(LIMITED_FILE, limited_items)
+        
+        bot.answer_callback_query(call.id, f"✅ Вы купили лимитированный предмет: {item['name']}!")
+        bot.send_message(call.message.chat.id, f"💎 Поздравляем! Вы приобрели редкий предмет: {item['name']}!\nОсталось: {item['remaining']}/{item['total']}")
+    
+    # Экипировка предметов
+    elif call.data.startswith("equip_"):
+        item_key = call.data[6:]
+        item = items.get(item_key, limited_items.get(item_key))
+        
+        if not item:
+            bot.answer_callback_query(call.id, "❌ Предмет не найден!")
+            return
+        
+        if item["type"] == "weapon":
+            user.data["equipped_weapon"] = item_key
+        elif item["type"] in ["shield", "armor"]:
+            user.data["equipped_shield"] = item_key
+        
+        user.save()
+        bot.answer_callback_query(call.id, f"✅ {item['name']} экипирован!")
+    
+    # Быстрая дуэль
+    elif call.data == "quick_duel":
+        if user.data["money"] < 50:
+            bot.answer_callback_query(call.id, "❌ Нужно 50 монет для дуэли!")
+            return
+        
+        user.data["money"] -= 50
+        user.save()
+        
+        # Генерация бота-противника
+        bot_level = random.randint(max(1, user.data["level"]-2), user.data["level"]+2)
+        bot_weapon = random.choice(list(items.keys()) + list(limited_items.keys()))
+        
+        player_damage = 0
+        if user.data["equipped_weapon"]:
+            weapon = items.get(user.data["equipped_weapon"], limited_items.get(user.data["equipped_weapon"]))
+            if weapon and "damage" in weapon:
+                player_damage = weapon["damage"]
+        
+        player_defense = 0
+        if user.data["equipped_shield"]:
+            shield = items.get(user.data["equipped_shield"], limited_items.get(user.data["equipped_shield"]))
+            if shield and "defense" in shield:
+                player_defense = shield["defense"]
+        
+        player_power = player_damage + user.data["level"] * 2 - bot_level
+        bot_power = random.randint(5, 15) * bot_level - player_defense
+        
+        if player_power > bot_power:
+            reward = 100
+            user.data["money"] += reward
+            user.data["wins"] += 1
+            user.data["exp"] += 30
+            user.save()
+            result_text = f"⚔ Победа! Вы победили бота уровня {bot_level}!\n💰 Награда: {reward} монет\n✨ Опыт: +30"
+        else:
+            user.data["losses"] += 1
+            user.data["exp"] += 10
+            user.save()
+            result_text = f"💀 Поражение! Бот уровня {bot_level} оказался сильнее.\n✨ Утешительный опыт: +10"
+        
+        if check_level_up(user_id):
+            user = User(user_id)
+            result_text += f"\n🎉 Новый уровень: {user.data['level']}!"
+        
+        bot.send_message(call.message.chat.id, result_text)
+    
+    # Дуэль с игроком
+    elif call.data == "player_duel":
+        bot.send_message(call.message.chat.id, "⚔ Для дуэли с игроком, ответьте на его сообщение командой /duel")
+    
+    # Админ-колбэки
+    elif call.data == "admin_stats":
+        if user_id != ADMIN_ID: return
+        total_users = len(users)
+        total_money = sum(u["money"] for u in users.values())
+        total_duels = sum(u["wins"] + u["losses"] for u in users.values())
+        
+        stats = f"""
+📊 *СТАТИСТИКА БОТА*
+
+👥 Пользователей: {total_users}
+💰 Всего монет в обороте: {total_money}
+⚔ Всего дуэлей: {total_duels}
+🎁 Лимитированных предметов: {len(limited_items)}
+        """
+        bot.send_message(call.message.chat.id, stats, parse_mode="Markdown")
+    
+    elif call.data == "admin_give_money":
+        if user_id != ADMIN_ID: return
+        bot.send_message(call.message.chat.id, "💰 Введите команду: /give_money [ID] [сумма]")
+    
+    elif call.data == "admin_broadcast":
+        if user_id != ADMIN_ID: return
+        bot.send_message(call.message.chat.id, "📢 Введите команду: /broadcast [текст рассылки]")
+
+# Админ команды
+@bot.message_handler(commands=['give_money'])
+def admin_give_money_cmd(message):
+    if message.from_user.id != ADMIN_ID:
         return
     
-    user = get_user(uid, gid)
-    group = get_group(gid)
-    
-    # Магазин
-    if data_cb.startswith("shop_buy_"):
-        parts = data_cb.split("_")
-        item_id = parts[2]
-        buyer_uid = parts[3]
+    try:
+        parts = message.text.split()
+        target_id = int(parts[1])
+        amount = int(parts[2])
         
-        if uid != buyer_uid:
-            return
+        target = User(target_id)
+        target.data["money"] += amount
+        target.save()
         
-        if item_id in SHOP_ITEMS:
-            item = SHOP_ITEMS[item_id]
-            if user["coins"] >= item["price"]:
-                user["coins"] -= item["price"]
-                user["inventory"].append(item.copy())
-                save()
-                bot.answer_callback_query(call.id, f"✅ {item['name']}!")
-            else:
-                bot.answer_callback_query(call.id, "❌ Мало коинов!")
-    
-    # Лимитки
-    elif data_cb.startswith("lim_buy_"):
-        parts = data_cb.split("_")
-        item_id = parts[2]
-        buyer_uid = parts[3]
-        
-        if uid != buyer_uid:
-            return
-        
-        if item_id in LIMITED_ITEMS:
-            item = LIMITED_ITEMS[item_id]
-            if item["sold"] < item["limit"] and user["coins"] >= item["price"]:
-                user["coins"] -= item["price"]
-                user["limited_items"].append(item.copy())
-                user["inventory"].append(item.copy())
-                item["sold"] += 1
-                check_achievement(uid, gid, "collector")
-                save()
-                bot.answer_callback_query(call.id, f"✅ {item['name']}!")
-            else:
-                bot.answer_callback_query(call.id, "❌ Нет в наличии!")
-    
-    # Битва снова
-    elif data_cb.startswith("battle_again_"):
-        battle_uid = data_cb.split("_")[2]
-        if uid == battle_uid:
-            user["hp"] = user["max_hp"]
-            save()
-            cmd_battle(call.message)
-    
-    # Крафт
-    elif data_cb.startswith("craft_"):
-        parts = data_cb.split("_")
-        recipe_name = "_".join(parts[1:-1])
-        crafter_uid = parts[-1]
-        
-        if uid != crafter_uid:
-            return
-        
-        if recipe_name in CRAFTING_RECIPES:
-            recipe = CRAFTING_RECIPES[recipe_name]
-            has_all = True
-            
-            for mat, qty in recipe["materials"].items():
-                count = sum(1 for m in user["crafting_materials"] if m == mat)
-                if count < qty:
-                    has_all = False
-                    break
-            
-            if has_all:
-                for mat, qty in recipe["materials"].items():
-                    for _ in range(qty):
-                        if mat in user["crafting_materials"]:
-                            user["crafting_materials"].remove(mat)
-                
-                user["inventory"].append(recipe["result"].copy())
-                user["total_crafted"] += 1
-                check_achievement(uid, gid, "crafter" if user["total_crafted"] >= 10 else None)
-                save()
-                bot.answer_callback_query(call.id, f"✅ {recipe_name}!")
-            else:
-                bot.answer_callback_query(call.id, "❌ Нет материалов!")
-    
-    # Питомцы
-    elif data_cb.startswith("pet_buy_"):
-        parts = data_cb.split("_")
-        pet_name = "_".join(parts[2:-1])
-        buyer_uid = parts[-1]
-        
-        if uid != buyer_uid or user["pet"]:
-            return
-        
-        if pet_name in PETS and user["coins"] >= PETS[pet_name]["price"]:
-            user["coins"] -= PETS[pet_name]["price"]
-            user["pet"] = pet_name
-            save()
-            bot.answer_callback_query(call.id, f"✅ Питомец {pet_name}!")
-    
-    elif data_cb.startswith("pet_feed_"):
-        pet_uid = data_cb.split("_")[2]
-        if uid == pet_uid and user["pet"] and user["coins"] >= 100:
-            user["coins"] -= 100
-            PETS[user["pet"]]["loyalty"] = min(100, PETS[user["pet"]]["loyalty"] + 5)
-            save()
-            bot.answer_callback_query(call.id, "🍖 Питомец накормлен!")
-    
-    # PvP
-    elif data_cb.startswith("pvp_quick_"):
-        pvp_uid = data_cb.split("_")[2]
-        if uid != pvp_uid or user["hp"] <= 0:
-            return
-        
-        opponents = [(u_id, u) for u_id, u in group["users"].items() 
-                    if u_id != uid and u["hp"] > 0 and abs(u["level"] - user["level"]) <= 5]
-        
-        if not opponents:
-            bot.answer_callback_query(call.id, "😔 Нет противников!")
-            return
-        
-        opp_id, opponent = random.choice(opponents)
-        
-        player_dmg = max(1, user["attack"] - opponent["defense"] // 2)
-        opp_dmg = max(1, opponent["attack"] - user["defense"] // 2)
-        
-        user["hp"] -= opp_dmg
-        group["users"][opp_id]["hp"] -= player_dmg
-        
-        if user["hp"] <= 0:
-            user["total_deaths"] += 1
-            user["pvp_rating"] -= 25
-            group["users"][opp_id]["pvp_rating"] += 50
-            group["users"][opp_id]["total_kills"] += 1
-            bot.answer_callback_query(call.id, "💀 Поражение!")
-        elif opponent["hp"] <= 0:
-            user["total_kills"] += 1
-            user["pvp_rating"] += 50
-            group["users"][opp_id]["pvp_rating"] -= 25
-            bot.answer_callback_query(call.id, "🎉 Победа!")
-        
-        save()
-    
-    # Престиж
-    elif data_cb.startswith("prestige_"):
-        prestige_uid = data_cb.split("_")[1]
-        if uid == prestige_uid and user["level"] >= 20 and user["prestige"] < 3:
-            next_p = user["prestige"] + 1
-            reward = PRESTIGE_REWARDS[next_p]
-            
-            kept_items = user["inventory"][:3]
-            
-            user["level"] = 1
-            user["exp"] = 0
-            user["coins"] = reward["coins"]
-            user["hp"] = 100
-            user["max_hp"] = 100
-            user["attack"] = 5
-            user["defense"] = 3
-            user["inventory"] = kept_items
-            user["prestige"] = next_p
-            
-            save()
-            bot.answer_callback_query(call.id, f"⭐ Престиж {next_p}!")
-    
-    # Профессии
-    elif data_cb.startswith("prof_select_"):
-        parts = data_cb.split("_")
-        prof_name = "_".join(parts[2:-1])
-        prof_uid = parts[-1]
-        
-        if uid == prof_uid and not user["profession"]:
-            if prof_name in PROFESSIONS:
-                user["profession"] = prof_name
-                save()
-                bot.answer_callback_query(call.id, f"✅ {prof_name}")
-    
-    elif data_cb.startswith("prof_work_"):
-        work_uid = data_cb.split("_")[2]
-        if uid == work_uid and user["profession"]:
-            prof = PROFESSIONS[user["profession"]]
-            material = random.choice(prof["materials"])
-            user["crafting_materials"].append(material)
-            reward = prof["salary"] + random.randint(0, 200)
-            user["coins"] += reward
-            add_exp(uid, gid, 30)
-            save()
-            bot.answer_callback_query(call.id, f"💰 +{reward} | 📦 {material}")
-    
-    # Локации
-    elif data_cb.startswith("loc_"):
-        parts = data_cb.split("_")
-        loc_name = "_".join(parts[1:-1])
-        loc_uid = parts[-1]
-        
-        if uid == loc_uid and loc_name in LOCATIONS:
-            user["location"] = loc_name
-            save()
-            bot.answer_callback_query(call.id, f"📍 {loc_name}")
-    
-    # Босс
-    elif data_cb.startswith("boss_attack_"):
-        boss_uid = data_cb.split("_")[2]
-        if uid == boss_uid and user["hp"] > 0:
-            damage = user["attack"] * 2 + random.randint(0, user["level"])
-            data["global_boss"]["hp"] -= damage
-            
-            if data["global_boss"]["hp"] <= 0:
-                reward = 10000 * data["global_boss"]["level"]
-                user["coins"] += reward
-                data["global_boss"]["hp"] = data["global_boss"]["max_hp"] * 2
-                data["global_boss"]["max_hp"] *= 2
-                data["global_boss"]["level"] += 1
-                bot.answer_callback_query(call.id, f"🎉 Босс убит! +{reward}💰")
-            else:
-                boss_dmg = data["global_boss"]["level"] * 10
-                user["hp"] -= boss_dmg
-                bot.answer_callback_query(call.id, f"⚔️ -{damage} боссу!")
-            
-            save()
-    
-    # Казино
-    elif data_cb.startswith("casino_"):
-        parts = data_cb.split("_")
-        
-        if "jackpot" in data_cb:
-            bot.answer_callback_query(call.id, f"🏆 Джекпот: {data['global_lottery']['pool']}💰")
-            return
-        
-        game_id = parts[1] if len(parts) > 2 else parts[1]
-        player_uid = parts[-1]
-        
-        if uid == player_uid and game_id in CASINO_GAMES:
-            game = CASINO_GAMES[game_id]
-            if user["coins"] < game["min_bet"]:
-                bot.answer_callback_query(call.id, "❌ Мало коинов!")
-                return
-            
-            bet = game["min_bet"]
-            user["coins"] -= bet
-            data["global_lottery"]["pool"] += bet // 2
-            
-            luck_mod = user["luck"]
-            if user["pet"]:
-                for pet_name, pet_stats in PETS.items():
-                    if user["pet"] == pet_name and "bonus_luck" in pet_stats:
-                        luck_mod += pet_stats["bonus_luck"]
-            
-            adjusted_chance = min(90, game["win_chance"] + luck_mod)
-            
-            if random.random() * 100 < adjusted_chance:
-                win = int(bet * game["multiplier"])
-                user["coins"] += win
-                user["gamble_wins"] += 1
-                check_achievement(uid, gid, "gambler" if user["gamble_wins"] >= 10 else None)
-                bot.answer_callback_query(call.id, f"🎉 +{win}💰!")
-            else:
-                bot.answer_callback_query(call.id, f"😢 -{bet}💰")
-            
-            save()
-    
-    # РП
-    elif data_cb.startswith("rp_"):
-        parts = data_cb.split("_")
-        action = parts[1]
-        rp_uid = parts[2]
-        
-        if uid == rp_uid and call.message.reply_to_message:
-            target = call.message.reply_to_message.from_user
-            action_texts = {
-                "🤗 Обнять": "тепло обнимает",
-                "👊 Ударить": "сильно бьёт",
-                "💋 Поцеловать": "нежно целует",
-                "🤝 Пожать руку": "крепко жмёт руку",
-                "😈 Укусить": "игриво кусает",
-                "👍 Лайкнуть": "ставит лайк"
-            }
-            
-            if action in action_texts:
-                text = f"🎭 *{call.from_user.first_name}* {action_texts[action]} *{target.first_name}*!"
-                bot.send_message(call.message.chat.id, text, parse_mode="Markdown")
-                bot.answer_callback_query(call.id, "✅")
-    
-    # Мини-игры
-    elif data_cb.startswith("minigame_coinflip_"):
-        game_uid = data_cb.split("_")[2]
-        if uid == game_uid and user["coins"] >= 100:
-            user["coins"] -= 100
-            if random.random() < 0.5:
-                user["coins"] += 200
-                bot.answer_callback_query(call.id, "🪙 Орёл! +200💰")
-            else:
-                bot.answer_callback_query(call.id, "🪙 Решка! -100💰")
-            save()
-    
-    # Погода
-    elif data_cb.startswith("weather_update_"):
-        data["weather"] = random.choice(WEATHER_TYPES)
-        if random.random() < 0.1:
-            data["season"] = random.choice(list(SEASONS.keys()))
-        save()
-        bot.answer_callback_query(call.id, f"🌤️ {data['weather']}")
+        bot.send_message(message.chat.id, f"✅ Выдано {amount} монет игроку {target_id}")
+    except:
+        bot.send_message(message.chat.id, "❌ Формат: /give_money [ID] [сумма]")
 
-# ==================== ЗАПУСК ====================
+@bot.message_handler(commands=['give_item'])
+def admin_give_item(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    
+    try:
+        parts = message.text.split()
+        target_id = int(parts[1])
+        item_key = parts[2]
+        
+        target = User(target_id)
+        target.data["inventory"].append(item_key)
+        target.save()
+        
+        item_name = items.get(item_key, limited_items.get(item_key, {}))
+        bot.send_message(message.chat.id, f"✅ Предмет {item_name.get('name', item_key)} выдан игроку {target_id}")
+    except:
+        bot.send_message(message.chat.id, "❌ Формат: /give_item [ID] [item_key]")
+
+@bot.message_handler(commands=['broadcast'])
+def broadcast(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    
+    text = message.text.replace('/broadcast', '', 1).strip()
+    if not text:
+        bot.send_message(message.chat.id, "❌ Введите текст рассылки!")
+        return
+    
+    success = 0
+    for user_id in users:
+        try:
+            bot.send_message(user_id, f"📢 *Рассылка:*\n{text}", parse_mode="Markdown")
+            success += 1
+        except:
+            pass
+    
+    bot.send_message(message.chat.id, f"✅ Рассылка отправлена {success} пользователям!")
+
+@bot.message_handler(commands=['user_info'])
+def admin_user_info(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    
+    try:
+        user_id = int(message.text.split()[1])
+        user = User(user_id)
+        u = user.data
+        
+        info = f"""
+👤 *Информация об игроке {user_id}:*
+Имя: {u['username']}
+Уровень: {u['level']}
+Баланс: {u['money']}
+Побед: {u['wins']}
+Поражений: {u['losses']}
+Предметов: {len(u['inventory'])}
+        """
+        bot.send_message(message.chat.id, info, parse_mode="Markdown")
+    except:
+        bot.send_message(message.chat.id, "❌ Формат: /user_info [ID]")
+
+@bot.message_handler(commands=['add_limited'])
+def admin_add_limited(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    
+    try:
+        parts = message.text.split()
+        key = parts[1]
+        name = parts[2]
+        total = int(parts[3])
+        price = int(parts[4])
+        item_type = parts[5]
+        
+        item_data = {
+            "name": name,
+            "total": total,
+            "remaining": total,
+            "price": price,
+            "type": item_type
+        }
+        
+        if item_type == "weapon":
+            item_data["damage"] = int(parts[6])
+        elif item_type == "shield":
+            item_data["defense"] = int(parts[6])
+        elif item_type == "potion":
+            item_data["heal"] = int(parts[6])
+        
+        limited_items[key] = item_data
+        save_json(LIMITED_FILE, limited_items)
+        
+        bot.send_message(message.chat.id, f"✅ Лимитированный предмет '{name}' добавлен!")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ Ошибка: {e}\nФормат: /add_limited [key] [name] [total] [price] [type] [value]")
+
+# Обработка дуэли
+@bot.message_handler(commands=['duel'])
+def duel_player(message):
+    if not message.reply_to_message:
+        bot.send_message(message.chat.id, "❌ Ответьте на сообщение игрока, с которым хотите драться!")
+        return
+    
+    challenger_id = message.from_user.id
+    opponent_id = message.reply_to_message.from_user.id
+    
+    if challenger_id == opponent_id:
+        bot.send_message(message.chat.id, "❌ Нельзя драться с самим собой!")
+        return
+    
+    challenger = User(challenger_id)
+    opponent = User(opponent_id)
+    
+    if challenger.data["money"] < 50:
+        bot.send_message(message.chat.id, "❌ У вас недостаточно монет для дуэли!")
+        return
+    
+    if opponent.data["money"] < 50:
+        bot.send_message(message.chat.id, "❌ У противника недостаточно монет для дуэли!")
+        return
+    
+    # Снимаем ставку
+    challenger.data["money"] -= 50
+    opponent.data["money"] -= 50
+    
+    # Расчёт силы
+    def get_power(user_data):
+        power = user_data["level"] * 3
+        if user_data["equipped_weapon"]:
+            weapon = items.get(user_data["equipped_weapon"], limited_items.get(user_data["equipped_weapon"]))
+            if weapon and "damage" in weapon:
+                power += weapon["damage"]
+        return power
+    
+    def get_defense(user_data):
+        defense = 0
+        if user_data["equipped_shield"]:
+            shield = items.get(user_data["equipped_shield"], limited_items.get(user_data["equipped_shield"]))
+            if shield and "defense" in shield:
+                defense += shield["defense"]
+        return defense
+    
+    ch_power = get_power(challenger.data) + random.randint(-10, 10)
+    ch_total = ch_power - get_defense(opponent.data)
+    
+    op_power = get_power(opponent.data) + random.randint(-10, 10)
+    op_total = op_power - get_defense(challenger.data)
+    
+    if ch_total > op_total:
+        winner = challenger
+        loser = opponent
+        winner_name = message.from_user.first_name
+        loser_name = message.reply_to_message.from_user.first_name
+    else:
+        winner = opponent
+        loser = challenger
+        winner_name = message.reply_to_message.from_user.first_name
+        loser_name = message.from_user.first_name
+    
+    winner.data["money"] += 100
+    winner.data["wins"] += 1
+    winner.data["exp"] += 50
+    
+    loser.data["losses"] += 1
+    loser.data["exp"] += 25
+    
+    winner.save()
+    loser.save()
+    
+    result = f"""
+⚔ *ДУЭЛЬ ЗАВЕРШЕНА!*
+
+Победитель: {winner_name} 🏆
+Сила: {ch_power if winner == challenger else op_power}
+
+Проигравший: {loser_name} 💀
+Сила: {op_power if winner == challenger else ch_power}
+
+💰 Приз: 100 монет!
+✨ Опыт: +50 победителю, +25 проигравшему
+    """
+    
+    bot.send_message(message.chat.id, result, parse_mode="Markdown")
+    
+    if check_level_up(winner_id := (challenger_id if winner == challenger else opponent_id)):
+        winner = User(winner_id)
+        bot.send_message(message.chat.id, f"🎉 {winner_name} достиг уровня {winner.data['level']}!")
+
+# Запуск бота
+print("⚔ ДУЭЛЬ БОТ запущен!")
+print(f"Админ ID: {ADMIN_ID}")
+print("Бот готов к битвам!")
 
 if __name__ == "__main__":
-    print("🤖 Групповой RPG Бот запущен!")
-    print("✅ Все системы полностью реализованы")
-    print("🎯 30+ рабочих систем")
-    
-    bot.infinity_polling()
+    while True:
+        try:
+            bot.polling(none_stop=True, interval=0)
+        except Exception as e:
+            print(f"Ошибка: {e}")
+            time.sleep(5)

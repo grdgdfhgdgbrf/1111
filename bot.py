@@ -11,7 +11,7 @@ import uuid
 import re
 
 # ==================== КОНФИГУРАЦИЯ ====================
-TOKEN = '8359617420:AAGoVnqE31PM7RDaIJ3j4xxwPFBsM6I6Tg8'
+TOKEN = '8670879387:AAH70T6P0ZEn-rvPhQo7rhrNMl9wUKDkILI'
 ADMIN_ID = 5356400377
 bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
 

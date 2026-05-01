@@ -10,7 +10,6 @@ import math
 import copy
 import uuid
 import re
-import hashlib
 
 # ==================== КОНФИГУРАЦИЯ ====================
 TOKEN = '8670879387:AAGz1v65wqhThDmwGNzCaEY9SY24XDJYLFE'
@@ -19,16 +18,9 @@ bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
 
 # ==================== КОНСТАНТЫ ====================
 BODY_PARTS = {
-    "head": {"name": "👤 Голова", "multiplier": 1.5, "hit_chance": 20, "defense_penalty": 0},
-    "body": {"name": "🦾 Тело", "multiplier": 1.0, "hit_chance": 50, "defense_penalty": 0},
-    "legs": {"name": "🦿 Ноги", "multiplier": 0.7, "hit_chance": 30, "defense_penalty": 5}
-}
-
-EQUIPMENT_SLOTS = {
-    "weapon": {"name": "⚔ Оружие", "type": "weapon"},
-    "head": {"name": "👤 Голова", "type": "helmet"},
-    "body": {"name": "🦾 Тело", "type": "armor"},
-    "legs": {"name": "🦿 Ноги", "type": "boots"}
+    "head": {"name": "👤 Голова", "multiplier": 1.5, "defend_bonus": 30},
+    "body": {"name": "🦾 Тело", "multiplier": 1.0, "defend_bonus": 20},
+    "legs": {"name": "🦿 Ноги", "multiplier": 0.7, "defend_bonus": 15}
 }
 
 RARITY_COLORS = {
@@ -54,6 +46,19 @@ ELEMENTS = {
     "light": {"name": "✨ Свет", "strong": "dark", "weak": "dark"}
 }
 
+ENCHANT_EFFECTS = [
+    {"name": "🔥 Огненный", "element": "fire", "effect": "burn", "damage_bonus": 5, "description": "+5 урона, шанс поджечь"},
+    {"name": "❄ Ледяной", "element": "ice", "effect": "freeze", "damage_bonus": 3, "description": "+3 урона, шанс заморозить"},
+    {"name": "⚡ Грозовой", "element": "lightning", "effect": "stun", "damage_bonus": 7, "description": "+7 урона, шанс оглушить"},
+    {"name": "☠ Ядовитый", "element": "nature", "effect": "poison", "damage_bonus": 4, "description": "+4 урона, отравление"},
+    {"name": "💀 Проклятый", "element": "dark", "effect": "curse", "damage_bonus": 8, "description": "+8 урона, проклятие"},
+    {"name": "✨ Благословенный", "element": "light", "effect": "bless", "damage_bonus": 6, "description": "+6 урона, лечение"},
+    {"name": "💚 Вампирский", "effect": "lifesteal", "lifesteal": 15, "description": "15% вампиризма"},
+    {"name": "🛡 Укреплённый", "effect": "fortify", "defense_bonus": 10, "description": "+10 к защите"},
+    {"name": "💨 Стремительный", "effect": "haste", "speed_bonus": 8, "description": "+8 к скорости"},
+    {"name": "💥 Критический", "effect": "crit", "crit_bonus": 10, "description": "+10% к шансу крита"}
+]
+
 STATUS_EFFECTS_DB = {
     "burn": {"name": "🔥 Горение", "damage_per_turn": 12, "duration": 3},
     "freeze": {"name": "❄ Заморозка", "skip_turn_chance": 40, "duration": 2},
@@ -61,12 +66,10 @@ STATUS_EFFECTS_DB = {
     "poison": {"name": "☠ Отравление", "damage_per_turn": 15, "duration": 4},
     "bleed": {"name": "🩸 Кровотечение", "damage_per_turn": 10, "duration": 3},
     "curse": {"name": "👁 Проклятие", "damage_per_turn": 8, "duration": 5},
-    "bless": {"name": "✨ Благословение", "heal_per_turn": 10, "duration": 3},
-    "shield": {"name": "🛡 Щит", "damage_reduction": 30, "duration": 2},
-    "rage": {"name": "💢 Ярость", "damage_bonus": 25, "duration": 3}
+    "bless": {"name": "✨ Благословение", "heal_per_turn": 10, "duration": 3}
 }
 
-# ==================== ФАЙЛЫ ДАННЫХ ====================
+# ==================== ФАЙЛЫ ====================
 DATA_FILES = {
     'users': 'users.json',
     'items': 'items.json',
@@ -79,7 +82,8 @@ DATA_FILES = {
     'events': 'events.json',
     'bans': 'bans.json',
     'quests': 'quests_progress.json',
-    'battle_history': 'battle_history.json'
+    'battle_history': 'battle_history.json',
+    'enchantments': 'enchantments.json'
 }
 
 def load_json(filename, default=None):
@@ -118,7 +122,7 @@ HELMETS = {
         "name": "🐉 Шлем дракона", "defense": 18, "hp_bonus": 50, "price": 2000,
         "type": "helmet", "slot": "head", "rarity": "epic", "level_req": 20,
         "skills": ["dragon_roar", "fire_breath"],
-        "special_effects": {"fire_resist": 25, "intimidation": 15},
+        "special_effects": {"fire_resist": 25},
         "element": "fire",
         "description": "Шлем из черепа дракона"
     },
@@ -157,7 +161,7 @@ ARMORS = {
         "name": "🌑 Теневая броня", "defense": 28, "hp_bonus": 120, "price": 3500,
         "type": "armor", "slot": "body", "rarity": "epic", "level_req": 22,
         "skills": ["shadow_step", "vanish", "dark_mantle"],
-        "special_effects": {"dodge_boost": 15, "darkness_cloak": True},
+        "special_effects": {"dodge_boost": 15},
         "element": "dark",
         "description": "Скрывает в тенях"
     },
@@ -204,7 +208,7 @@ BOOTS = {
         "name": "👟 Сандалии Гермеса", "defense": 12, "speed": 45, "price": 12000,
         "type": "boots", "slot": "legs", "rarity": "legendary", "level_req": 35,
         "skills": ["divine_speed", "double_kick", "mercury_strike"],
-        "special_effects": {"speed_boost": 20, "first_strike": True, "double_turn_chance": 15},
+        "special_effects": {"speed_boost": 20, "first_strike": True},
         "description": "Скорость бога"
     }
 }
@@ -289,12 +293,6 @@ POTIONS = {
         "type": "potion", "rarity": "common", "level_req": 5,
         "description": "Восстанавливает 60 MP"
     },
-    "berserk_potion": {
-        "name": "💢 Зелье ярости", "price": 200, "type": "potion",
-        "rarity": "rare", "level_req": 12,
-        "effects": {"damage_boost": 50, "duration": 3},
-        "description": "+50% урона на 3 хода"
-    },
     "antidote": {
         "name": "💚 Противоядие", "price": 100, "type": "potion",
         "rarity": "common", "level_req": 1,
@@ -325,7 +323,7 @@ LIMITED_ITEMS = {
         "remaining": 2, "price": 75000, "type": "helmet", "slot": "head",
         "rarity": "divine",
         "skills": ["immortality", "mind_shield", "divine_vision"],
-        "special_effects": {"death_prevent": True, "see_invisible": True},
+        "special_effects": {"death_prevent": True},
         "description": "Защищает от смерти"
     },
     "cloak_of_infinity": {
@@ -338,7 +336,6 @@ LIMITED_ITEMS = {
     }
 }
 
-# Объединение всех предметов
 ALL_ITEMS = {}
 ALL_ITEMS.update(HELMETS)
 ALL_ITEMS.update(ARMORS)
@@ -346,7 +343,6 @@ ALL_ITEMS.update(BOOTS)
 ALL_ITEMS.update(WEAPONS)
 ALL_ITEMS.update(POTIONS)
 
-# Загрузка данных
 items = load_json(DATA_FILES['items'], ALL_ITEMS)
 limited_items = load_json(DATA_FILES['limited'], LIMITED_ITEMS)
 users = load_json(DATA_FILES['users'], {})
@@ -359,34 +355,33 @@ events = load_json(DATA_FILES['events'], {})
 banned_users = load_json(DATA_FILES['bans'], {})
 quests_progress = load_json(DATA_FILES['quests'], {})
 battle_history_data = load_json(DATA_FILES['battle_history'], {})
+enchantments_data = load_json(DATA_FILES['enchantments'], {})
 
-# ==================== БАЗА НАВЫКОВ ====================
+# ==================== НАВЫКИ ====================
 SKILLS_DB = {
-    "quick_attack": {"name": "⚡ Быстрая атака", "damage_mult": 1.0, "mana_cost": 0, "cooldown": 0, "category": "attack", "description": "Базовая быстрая атака"},
-    "heavy_attack": {"name": "💪 Тяжёлая атака", "damage_mult": 1.7, "mana_cost": 15, "cooldown": 1, "category": "attack", "description": "Мощная атака"},
-    "defend": {"name": "🛡 Защита", "defense_boost": 25, "mana_cost": 8, "cooldown": 1, "category": "defense", "description": "Усиливает защиту"},
-    "meditate": {"name": "🧘 Медитация", "mana_restore": 35, "cooldown": 2, "category": "support", "description": "Восстанавливает ману"},
-    "focus": {"name": "🎯 Концентрация", "crit_boost": 25, "mana_cost": 12, "cooldown": 2, "category": "support", "description": "Повышает шанс крита"},
-    "first_aid": {"name": "💊 Первая помощь", "hp_restore": 50, "mana_cost": 18, "cooldown": 2, "category": "support", "description": "Лечит раны"},
+    "quick_attack": {"name": "⚡ Быстрая атака", "damage_mult": 1.0, "mana_cost": 0, "cooldown": 0, "category": "attack"},
+    "heavy_attack": {"name": "💪 Тяжёлая атака", "damage_mult": 1.7, "mana_cost": 15, "cooldown": 1, "category": "attack"},
+    "defend": {"name": "🛡 Защита", "defense_boost": 25, "mana_cost": 8, "cooldown": 1, "category": "defense"},
+    "meditate": {"name": "🧘 Медитация", "mana_restore": 35, "cooldown": 2, "category": "support"},
+    "focus": {"name": "🎯 Концентрация", "crit_boost": 25, "mana_cost": 12, "cooldown": 2, "category": "support"},
+    "first_aid": {"name": "💊 Первая помощь", "hp_restore": 50, "mana_cost": 18, "cooldown": 2, "category": "support"},
     
-    "headbutt": {"name": "💢 Удар головой", "damage_mult": 1.3, "mana_cost": 10, "cooldown": 1, "category": "attack", "target": "head", "stun_chance": 20, "description": "Атака в голову"},
-    "slash": {"name": "🗡 Разрез", "damage_mult": 1.2, "mana_cost": 8, "cooldown": 0, "category": "attack", "target": "body", "description": "Удар по телу"},
-    "kick": {"name": "👢 Пинок", "damage_mult": 0.9, "mana_cost": 5, "cooldown": 0, "category": "attack", "target": "legs", "slow_chance": 15, "description": "Удар по ногам"},
+    "headbutt": {"name": "💢 Удар головой", "damage_mult": 1.3, "mana_cost": 10, "cooldown": 1, "category": "attack", "target": "head", "stun_chance": 20},
+    "slash": {"name": "🗡 Разрез", "damage_mult": 1.2, "mana_cost": 8, "cooldown": 0, "category": "attack", "target": "body"},
+    "kick": {"name": "👢 Пинок", "damage_mult": 0.9, "mana_cost": 5, "cooldown": 0, "category": "attack", "target": "legs", "slow_chance": 15},
     
-    "fire_slash": {"name": "🔥 Огненный разрез", "damage_mult": 1.5, "mana_cost": 20, "element": "fire", "burn_chance": 30, "cooldown": 1, "category": "attack", "description": "Удар с пламенем"},
-    "inferno_strike": {"name": "🌋 Инферно удар", "damage_mult": 2.3, "mana_cost": 38, "element": "fire", "burn_chance": 60, "cooldown": 3, "category": "attack", "description": "Мощнейшая огненная атака"},
-    "frost_strike": {"name": "❄ Ледяной удар", "damage_mult": 1.4, "mana_cost": 18, "element": "ice", "freeze_chance": 25, "cooldown": 0, "category": "attack", "description": "Замораживающий удар"},
-    "lightning_bolt": {"name": "⚡ Молния", "damage_mult": 1.6, "mana_cost": 22, "element": "lightning", "stun_chance": 20, "cooldown": 0, "category": "attack", "description": "Разряд молнии"},
-    "assassinate": {"name": "🗡 Убийство", "damage_mult": 3.5, "mana_cost": 60, "element": "dark", "cooldown": 4, "ignore_defense": 50, "category": "attack", "description": "Смертельный удар"},
-    "holy_strike": {"name": "✨ Святой удар", "damage_mult": 1.6, "mana_cost": 22, "element": "light", "cooldown": 0, "category": "attack", "description": "Удар светом"},
-    "divine_judgment": {"name": "⚖ Божий суд", "damage_mult": 3.0, "mana_cost": 50, "element": "light", "cooldown": 3, "category": "attack", "description": "Мощная святая атака"},
+    "fire_slash": {"name": "🔥 Огненный разрез", "damage_mult": 1.5, "mana_cost": 20, "element": "fire", "burn_chance": 30, "cooldown": 1, "category": "attack"},
+    "inferno_strike": {"name": "🌋 Инферно удар", "damage_mult": 2.3, "mana_cost": 38, "element": "fire", "burn_chance": 60, "cooldown": 3, "category": "attack"},
+    "frost_strike": {"name": "❄ Ледяной удар", "damage_mult": 1.4, "mana_cost": 18, "element": "ice", "freeze_chance": 25, "cooldown": 0, "category": "attack"},
+    "lightning_bolt": {"name": "⚡ Молния", "damage_mult": 1.6, "mana_cost": 22, "element": "lightning", "stun_chance": 20, "cooldown": 0, "category": "attack"},
+    "assassinate": {"name": "🗡 Убийство", "damage_mult": 3.5, "mana_cost": 60, "element": "dark", "cooldown": 4, "ignore_defense": 50, "category": "attack"},
+    "holy_strike": {"name": "✨ Святой удар", "damage_mult": 1.6, "mana_cost": 22, "element": "light", "cooldown": 0, "category": "attack"},
     
-    "thunder_gods_wrath": {"name": "⚡ Гнев бога грома", "damage_mult": 4.5, "mana_cost": 85, "element": "lightning", "stun_chance": 50, "cooldown": 5, "category": "attack", "description": "УЛЬТИМАТИВНАЯ АТАКА"},
-    "world_ender": {"name": "🌋 Конец света", "damage_mult": 5.5, "mana_cost": 100, "element": "dark", "cooldown": 6, "ignore_defense": 100, "category": "attack", "description": "АБСОЛЮТНОЕ УНИЧТОЖЕНИЕ"}
+    "thunder_gods_wrath": {"name": "⚡ Гнев бога грома", "damage_mult": 4.5, "mana_cost": 85, "element": "lightning", "stun_chance": 50, "cooldown": 5, "category": "attack"},
+    "world_ender": {"name": "🌋 Конец света", "damage_mult": 5.5, "mana_cost": 100, "element": "dark", "cooldown": 6, "ignore_defense": 100, "category": "attack"}
 }
 
 # ==================== ХРАНИЛИЩЕ ДУЭЛЕЙ ====================
-# Ключ: battle_id, Значение: объект DuelInstance
 active_duels = {}
 
 class DuelInstance:
@@ -396,21 +391,18 @@ class DuelInstance:
         self.p2_id = str(p2_id)
         self.duel_type = duel_type
         self.bet = bet
-        self.turn = 1
+        self.turn = 0
         self.max_turns = 40
         self.active = True
         self.winner = None
         self.log = []
         
-        # Игроки
         self.p1 = Player(self.p1_id)
         self.p2 = Player(self.p2_id)
         
-        # Статы
         self.p1_stats = self.p1.get_full_stats()
         self.p2_stats = self.p2.get_full_stats()
         
-        # HP и MP
         self.p1_hp = self.p1_stats["max_hp"]
         self.p2_hp = self.p2_stats["max_hp"]
         self.p1_max_hp = self.p1_hp
@@ -421,8 +413,14 @@ class DuelInstance:
         self.p1_max_mp = self.p1_mp
         self.p2_max_mp = self.p2_mp
         
-        # Фазы и выбор
-        self.p1_phase = "defend_select"  # defend_select, attack_target, attack_skill, done
+        # Очерёдность по скорости
+        p1_spd = self.p1_stats["speed"] + random.randint(-10, 10)
+        p2_spd = self.p2_stats["speed"] + random.randint(-10, 10)
+        self.first_attacker = 1 if p1_spd >= p2_spd else 2
+        self.second_attacker = 3 - self.first_attacker
+        
+        # Фазы: defend_select -> attack_target -> attack_skill
+        self.p1_phase = "defend_select"
         self.p2_phase = "defend_select"
         self.p1_defend = None
         self.p2_defend = None
@@ -431,38 +429,29 @@ class DuelInstance:
         self.p1_skill = None
         self.p2_skill = None
         
-        # Очерёдность
-        p1_spd = self.p1_stats["speed"] + random.randint(-10, 10)
-        p2_spd = self.p2_stats["speed"] + random.randint(-10, 10)
-        self.current_player = 1 if p1_spd >= p2_spd else 2
-        
-        # Кулдауны
+        # Кулдауны и эффекты
         self.p1_cooldowns = {}
         self.p2_cooldowns = {}
-        
-        # Эффекты
         self.p1_effects = []
         self.p2_effects = []
-        
-        # Баффы
         self.p1_buffs = {"defense": 0, "damage": 0, "crit": 0, "dodge": 0}
         self.p2_buffs = {"defense": 0, "damage": 0, "crit": 0, "dodge": 0}
         
-        # Арена
+        # Специальный флаг для сообщений
+        self.p1_last_action = ""
+        self.p2_last_action = ""
+        
         self.arena = random.choice(["colosseum", "forest", "volcano", "tundra", "void"])
         self.weather = random.choice(["clear", "rain", "storm", "fog"])
         
-        self._save_state()
         self.log.append("⚔ Битва началась!")
+        self._save_state()
     
     def _save_state(self):
-        """Сохранить состояние дуэли в JSON"""
         duels_state[self.battle_id] = {
             "p1_id": self.p1_id, "p2_id": self.p2_id,
             "type": self.duel_type, "bet": self.bet,
             "turn": self.turn, "active": self.active,
-            "current_player": self.current_player,
-            "p1_phase": self.p1_phase, "p2_phase": self.p2_phase,
             "started_at": datetime.now().isoformat()
         }
         save_json(DATA_FILES['duels'], duels_state)
@@ -522,9 +511,8 @@ class DuelInstance:
             self.p2_skill = skill_id
             self.p2_phase = "done"
         
-        # Если оба готовы — разрешаем ход
         if self.p1_phase == "done" and self.p2_phase == "done":
-            self._resolve_turn()
+            self._resolve_full_turn()
             self._reset_phases()
         
         self._save_state()
@@ -538,24 +526,35 @@ class DuelInstance:
         self.p2_target = None
         self.p1_skill = None
         self.p2_skill = None
+        self.p1_last_action = ""
+        self.p2_last_action = ""
     
-    def _resolve_turn(self):
-        """Разрешение хода"""
+    def _resolve_full_turn(self):
+        """Разрешение полного хода: first_attacker атакует, second_attacker защищается"""
+        self.turn += 1
+        
         # Обработка эффектов
         self._process_effects(1)
         self._process_effects(2)
         
-        # Очерёдность
-        first, second = (1, 2) if self.current_player == 1 else (2, 1)
+        # ====== FIRST ATTACKER АТАКУЕТ, SECOND ЗАЩИЩАЕТСЯ ======
+        attacker = self.first_attacker
+        defender = self.second_attacker
         
-        # Первая атака
-        self._do_attack(first, second)
+        self._do_attack(attacker, defender)
+        self.log.append(f"⚔ {self.get_player_name(attacker)} атакует!")
+        
         if self.p1_hp <= 0 or self.p2_hp <= 0:
             self._check_end()
             return
         
-        # Вторая атака
-        self._do_attack(second, first)
+        # ====== SECOND ATTACKER АТАКУЕТ, FIRST ЗАЩИЩАЕТСЯ ======
+        attacker = self.second_attacker
+        defender = self.first_attacker
+        
+        self._do_attack(attacker, defender)
+        self.log.append(f"⚔ {self.get_player_name(attacker)} контратакует!")
+        
         self._check_end()
         
         # Декей баффов
@@ -563,15 +562,15 @@ class DuelInstance:
             for k in b:
                 b[k] = max(0, b[k] - 5)
         
-        self.turn += 1
         if self.turn > self.max_turns:
             self.active = False
             self.winner = 0
     
     def _do_attack(self, attacker, defender):
+        """Выполнить атаку"""
         skill_id = self.p1_skill if attacker == 1 else self.p2_skill
         target = self.p1_target if attacker == 1 else self.p2_target
-        defend = self.p2_defend if attacker == 1 else self.p1_defend
+        defend = self.p2_defend if defender == 2 else self.p1_defend
         
         if not skill_id:
             skill_id = "quick_attack"
@@ -580,23 +579,28 @@ class DuelInstance:
         
         skill = SKILLS_DB.get(skill_id, {"name": "Атака", "damage_mult": 1.0, "mana_cost": 0})
         
-        # Статы
         a_stats = self.p1_stats if attacker == 1 else self.p2_stats
         a_buffs = self.p1_buffs if attacker == 1 else self.p2_buffs
         a_cooldowns = self.p1_cooldowns if attacker == 1 else self.p2_cooldowns
-        d_stats = self.p2_stats if attacker == 1 else self.p1_stats
-        d_buffs = self.p2_buffs if attacker == 1 else self.p1_buffs
+        d_stats = self.p2_stats if defender == 2 else self.p1_stats
+        d_buffs = self.p2_buffs if defender == 2 else self.p1_buffs
         
         # Мана
         mc = skill.get("mana_cost", 0)
         if attacker == 1:
             if self.p1_mp < mc:
-                self.log.append(f"❌ {self.get_player_name(attacker)}: нет маны!")
+                if attacker == 1:
+                    self.p1_last_action = f"❌ Нет маны!"
+                else:
+                    self.p2_last_action = f"❌ Нет маны!"
                 return
             self.p1_mp -= mc
         else:
             if self.p2_mp < mc:
-                self.log.append(f"❌ {self.get_player_name(attacker)}: нет маны!")
+                if attacker == 1:
+                    self.p1_last_action = f"❌ Нет маны!"
+                else:
+                    self.p2_last_action = f"❌ Нет маны!"
                 return
             self.p2_mp -= mc
         
@@ -610,19 +614,14 @@ class DuelInstance:
         body_m = BODY_PARTS.get(target, {}).get("multiplier", 1.0)
         dmg = int(dmg * body_m)
         
-        # Защита части тела
-        if defend == target:
-            def_bonus = 20
-            if defend == "head":
-                def_bonus += d_stats.get("head_defense", 0)
-            elif defend == "body":
-                def_bonus += d_stats.get("body_defense", 0)
-            elif defend == "legs":
-                def_bonus += d_stats.get("legs_defense", 0)
-            
+        # Проверка защиты
+        blocked = False
+        if defend and defend == target:
+            def_bonus = BODY_PARTS.get(defend, {}).get("defend_bonus", 20)
+            def_bonus += d_stats.get("defense", 0)
             red = def_bonus / (def_bonus + 100)
             dmg = int(dmg * (1 - red))
-            self.log.append(f"🛡 {self.get_player_name(defender)} защитил {BODY_PARTS[defend]['name']}!")
+            blocked = True
         
         # Крит
         is_crit = False
@@ -630,13 +629,12 @@ class DuelInstance:
         if random.random() * 100 < crit_ch:
             dmg = int(dmg * a_stats["crit_multiplier"])
             is_crit = True
-            (self.p1 if attacker == 1 else self.p2).data["critical_hits"] += 1
         
         # Элемент
         if "element" in skill and skill["element"]:
             elem = skill["element"]
             def_elem = None
-            def_wpn = (self.p2 if attacker == 1 else self.p1).data["equipment"].get("weapon")
+            def_wpn = (self.p2 if defender == 2 else self.p1).data["equipment"].get("weapon")
             if def_wpn:
                 di = items.get(def_wpn) or limited_items.get(def_wpn)
                 if di and "element" in di:
@@ -644,25 +642,30 @@ class DuelInstance:
             if def_elem and ELEMENTS.get(elem):
                 if ELEMENTS[elem]["strong"] == def_elem:
                     dmg = int(dmg * 1.5)
-                    self.log.append("💥 СУПЕРЭФФЕКТИВНО!")
-                elif ELEMENTS[elem]["weak"] == def_elem:
-                    dmg = int(dmg * 0.7)
-                    self.log.append("🔻 Неэффективно...")
         
         # Уклонение
         if random.random() * 100 < (d_stats["dodge_chance"] + d_buffs["dodge"]):
             dmg = 0
-            self.log.append(f"💨 {self.get_player_name(defender)} уклонился!")
         
-        # Применение урона
-        if dmg > 0:
+        # Формирование сообщения
+        target_name = BODY_PARTS.get(target, {}).get("name", "тело")
+        action_text = f"🎯 Цель: {target_name} | ⚔ {skill['name']}"
+        
+        if dmg == 0 and blocked:
+            action_text += f"\n🛡 {self.get_player_name(defender)} ЗАЩИТИЛ {BODY_PARTS.get(defend, {}).get('name', '')}!"
+            action_text += "\n❌ УРОН ПОЛНОСТЬЮ ЗАБЛОКИРОВАН!"
+        elif dmg == 0:
+            action_text += f"\n💨 {self.get_player_name(defender)} УКЛОНИЛСЯ!"
+        else:
+            # Применение урона
             if defender == 1:
                 self.p1_hp = max(0, self.p1_hp - dmg)
             else:
                 self.p2_hp = max(0, self.p2_hp - dmg)
             
             ct = "💥 КРИТ! " if is_crit else ""
-            self.log.append(f"{ct}⚔ {self.get_player_name(attacker)} → {BODY_PARTS.get(target, {}).get('name', 'тело')}: -{dmg} HP")
+            action_text += f"\n{ct}💔 -{dmg} HP"
+            action_text += f"\n❤ HP {self.get_player_name(defender)}: {self._get_hp(defender)}/{self._get_max_hp(defender)}"
             
             # Вампиризм
             if "life_steal" in skill:
@@ -671,10 +674,18 @@ class DuelInstance:
                     self.p1_hp = min(self.p1_max_hp, self.p1_hp + hl)
                 else:
                     self.p2_hp = min(self.p2_max_hp, self.p2_hp + hl)
-                self.log.append(f"💚 +{hl} HP")
+                action_text += f"\n💚 Вампиризм +{hl} HP"
             
             # Эффекты
-            self._apply_effects(defender, skill)
+            self._apply_effects(defender, skill, target)
+        
+        # Сохранение результата
+        if attacker == 1:
+            self.p1_last_action = action_text
+        else:
+            self.p2_last_action = action_text
+        
+        self.log.append(action_text)
         
         # Лечение
         if "hp_restore" in skill:
@@ -683,7 +694,6 @@ class DuelInstance:
                 self.p1_hp = min(self.p1_max_hp, self.p1_hp + hl)
             else:
                 self.p2_hp = min(self.p2_max_hp, self.p2_hp + hl)
-            self.log.append(f"💚 +{hl} HP")
         
         # Мана
         if "mana_restore" in skill:
@@ -701,23 +711,23 @@ class DuelInstance:
             a_cooldowns[sid] -= 1
             if a_cooldowns[sid] <= 0:
                 del a_cooldowns[sid]
-        
-        (self.p1 if attacker == 1 else self.p2).data["skills_used"] += 1
     
-    def _apply_effects(self, target, skill):
+    def _get_hp(self, num):
+        return self.p1_hp if num == 1 else self.p2_hp
+    
+    def _get_max_hp(self, num):
+        return self.p1_max_hp if num == 1 else self.p2_max_hp
+    
+    def _apply_effects(self, target, skill, body_part):
         effects = []
         if "burn_chance" in skill and random.random() * 100 < skill["burn_chance"]:
             effects.append({"type": "burn", "duration": 3})
-            self.log.append("🔥 Горение!")
         if "freeze_chance" in skill and random.random() * 100 < skill["freeze_chance"]:
             effects.append({"type": "freeze", "duration": 2})
-            self.log.append("❄ Заморозка!")
         if "stun_chance" in skill and random.random() * 100 < skill["stun_chance"]:
             effects.append({"type": "stun", "duration": 1})
-            self.log.append("⚡ Оглушение!")
         if "poison_chance" in skill and random.random() * 100 < skill["poison_chance"]:
             effects.append({"type": "poison", "duration": 4})
-            self.log.append("☠ Отравление!")
         
         if target == 1:
             self.p1_effects.extend(effects)
@@ -734,11 +744,9 @@ class DuelInstance:
             if "damage_per_turn" in ed:
                 d = ed["damage_per_turn"]
                 hp -= d
-                self.log.append(f"{ed['name']} -{d} HP")
             if "heal_per_turn" in ed:
                 h = ed["heal_per_turn"]
                 hp = min(mhp, hp + h)
-                self.log.append(f"{ed['name']} +{h} HP")
             
             eff["duration"] -= 1
             if eff["duration"] <= 0:
@@ -758,7 +766,7 @@ class DuelInstance:
             self.winner = 1
     
     def get_state_text(self, for_player_id):
-        """Текст состояния для игрока"""
+        """Текст состояния"""
         pn = 1 if str(for_player_id) == self.p1_id else 2
         phase = self.p1_phase if pn == 1 else self.p2_phase
         
@@ -771,9 +779,9 @@ class DuelInstance:
         weather_names = {"clear": "Ясно", "rain": "Дождь", "storm": "Шторм", "fog": "Туман"}
         
         text = f"""
-<b>⚔ ПОШАГОВАЯ ДУЭЛЬ #{self.battle_id}</b>
+<b>⚔ ДУЭЛЬ #{self.battle_id}</b>
 ━━━━━━━━━━━━━━━━━━━━
-Ход: <b>#{self.turn}</b> | 🏟 {arena_names.get(self.arena, self.arena)} | 🌤 {weather_names.get(self.weather, self.weather)}
+Ход: <b>#{self.turn}</b> | 🏟 {arena_names.get(self.arena, '')} | 🌤 {weather_names.get(self.weather, '')}
 
 <b>{self.get_player_name(1)}</b>
 ❤ {p1_hp_bar}
@@ -787,28 +795,22 @@ class DuelInstance:
 ━━━━━━━━━━━━━━━━━━━━
 """
         
+        # Действия
+        if self.p1_last_action:
+            text += f"\n<b>{self.get_player_name(1)}:</b>\n{self.p1_last_action}"
+        if self.p2_last_action:
+            text += f"\n\n<b>{self.get_player_name(2)}:</b>\n{self.p2_last_action}"
+        
         if phase == "defend_select":
-            text += "\n🛡 <b>Выберите часть тела для защиты:</b>"
+            text += "\n\n🛡 <b>Выберите часть тела для защиты:</b>"
         elif phase == "attack_target":
-            text += "\n🎯 <b>Выберите цель атаки:</b>"
+            text += "\n\n🎯 <b>Выберите цель атаки:</b>"
         elif phase == "attack_skill":
             tgt = self.p1_target if pn == 1 else self.p2_target
-            text += f"\n🎯 Цель: <b>{BODY_PARTS.get(tgt, {}).get('name', 'Тело')}</b>"
+            text += f"\n\n🎯 Цель: <b>{BODY_PARTS.get(tgt, {}).get('name', 'Тело')}</b>"
             text += "\n<b>Выберите навык:</b>"
         elif phase == "done":
-            text += "\n⏳ <b>Ожидание хода противника...</b>"
-        
-        # Эффекты
-        effs = self.p1_effects if pn == 1 else self.p2_effects
-        if effs:
-            text += "\n<b>Ваши эффекты:</b>\n"
-            for e in effs:
-                name = STATUS_EFFECTS_DB.get(e["type"], {}).get("name", e["type"])
-                text += f"• {name} ({e['duration']} хода)\n"
-        
-        # Лог
-        if self.log:
-            text += f"\n<i>{self.log[-1][:100]}</i>"
+            text += "\n\n⏳ <b>Ожидание действий противника...</b>"
         
         return text
     
@@ -827,13 +829,9 @@ class Player:
                 "username": username,
                 "first_name": first_name,
                 "money": 500,
-                "level": 1,
-                "exp": 0,
-                "total_exp": 0,
-                "hp": 100,
-                "max_hp": 100,
-                "mana": 50,
-                "max_mana": 50,
+                "level": 1, "exp": 0, "total_exp": 0,
+                "hp": 100, "max_hp": 100,
+                "mana": 50, "max_mana": 50,
                 "stats": {"strength": 5, "agility": 5, "intelligence": 5, "vitality": 5, "luck": 5, "defense": 0},
                 "stat_points": 0,
                 "wins": 0, "losses": 0, "draws": 0,
@@ -843,7 +841,8 @@ class Player:
                 "critical_hits": 0, "skills_used": 0,
                 "inventory": [],
                 "equipment": {"weapon": None, "head": None, "body": None, "legs": None},
-                "last_daily": None, "last_dungeon": None, "last_work": None,
+                "enchantments": {},
+                "last_daily": None, "last_dungeon": None,
                 "title": "Новичок",
                 "titles_collected": ["Новичок"],
                 "achievements": [],
@@ -852,7 +851,7 @@ class Player:
                 "clan": None, "clan_role": None,
                 "tournament_wins": 0,
                 "registration_date": datetime.now().isoformat(),
-                "settings": {"notifications": True, "duel_requests": True, "show_battle_log": True},
+                "settings": {"notifications": True, "duel_requests": True},
                 "battle_history": [],
                 "dungeons_completed": 0,
                 "items_found": 0
@@ -881,9 +880,10 @@ class Player:
             "mana": self.data["max_mana"] + base["intelligence"] * 8,
             "max_mana": self.data["max_mana"] + base["intelligence"] * 8,
             "head_defense": 0, "body_defense": 0, "legs_defense": 0,
-            "life_steal": 0, "burn_chance": 0, "freeze_chance": 0
+            "life_steal": 0, "burn_chance": 0, "freeze_chance": 0, "stun_chance": 0
         }
         
+        # Экипировка
         for slot, ik in self.data["equipment"].items():
             if not ik:
                 continue
@@ -902,25 +902,37 @@ class Player:
                         bonuses["burn_chance"] += val
                     elif eff == "freeze_on_hit":
                         bonuses["freeze_chance"] += val
-            
+                    elif eff == "stun_on_hit":
+                        bonuses["stun_chance"] += val
             elif item.get("slot") == "head":
                 bonuses["head_defense"] += item.get("defense", 0)
                 bonuses["max_hp"] += item.get("hp_bonus", 0)
                 bonuses["max_mana"] += item.get("mana_bonus", 0)
                 bonuses["defense"] += item.get("defense", 0)
-            
             elif item.get("slot") == "body":
                 bonuses["body_defense"] += item.get("defense", 0)
                 bonuses["max_hp"] += item.get("hp_bonus", 0)
                 bonuses["defense"] += item.get("defense", 0)
-                for eff, val in item.get("special_effects", {}).items():
-                    if eff == "dodge_boost":
-                        bonuses["dodge_chance"] += val
-            
             elif item.get("slot") == "legs":
                 bonuses["legs_defense"] += item.get("defense", 0)
                 bonuses["speed"] += item.get("speed", 0)
                 bonuses["defense"] += item.get("defense", 0)
+        
+        # Зачарования
+        for slot, ench_id in self.data.get("enchantments", {}).items():
+            ench = next((e for e in ENCHANT_EFFECTS if e.get("name") == ench_id), None)
+            if ench:
+                if "damage_bonus" in ench:
+                    bonuses["min_damage"] += ench["damage_bonus"]
+                    bonuses["max_damage"] += ench["damage_bonus"]
+                if "defense_bonus" in ench:
+                    bonuses["defense"] += ench["defense_bonus"]
+                if "speed_bonus" in ench:
+                    bonuses["speed"] += ench["speed_bonus"]
+                if "crit_bonus" in ench:
+                    bonuses["crit_chance"] += ench["crit_bonus"]
+                if "lifesteal" in ench:
+                    bonuses["life_steal"] += ench["lifesteal"]
         
         bonuses["hp"] = bonuses["max_hp"]
         bonuses["mana"] = bonuses["max_mana"]
@@ -953,17 +965,20 @@ def start_command(message):
     Player(user_id, username, first_name)
     
     welcome = f"""
-<b>⚔️ ДУЭЛЬ БОТ v8.0 ⚔️</b>
+<b>⚔️ ДУЭЛЬ БОТ v9.0 ⚔️</b>
 
 Добро пожаловать, <b>{first_name}</b>!
 
-🎯 <b>ПОЛНАЯ ВЕРСИЯ:</b>
-• Пошаговые дуэли с выбором частей тела
-• Защита/атака: голова, тело, ноги
-• 30+ навыков и стихий
-• Экипировка по 4 слотам
-• Подземелья с пошаговыми боями
-• Кланы, турниры, рынок
+🎯 <b>НОВАЯ БОЕВАЯ СИСТЕМА:</b>
+🛡 Выберите защиту (голова/тело/ноги)
+🎯 Выберите цель атаки
+⚔ Выберите навык
+
+💎 <b>НОВОЕ:</b>
+✨ Зачарования предметов
+🌍 Ивенты каждые 10 минут
+🏟 Турниры с пошаговыми боями
+📦 Передача предметов игрокам
 
 💰 Старт: <b>500 монет</b>
 """
@@ -980,18 +995,7 @@ def duel_section(message):
         types.InlineKeyboardButton("🔥 На выживание", callback_data="survival_duel"),
         types.InlineKeyboardButton("🎯 Спарринг", callback_data="sparring_duel")
     )
-    
-    text = """
-<b>⚔️ ДУЭЛИ</b>
-
-<b>Новая система:</b>
-🛡 Выберите защиту (голова/тело/ноги)
-🎯 Выберите цель атаки
-⚔ Выберите навык
-
-<i>Пошаговая стратегия!</i>
-"""
-    bot.send_message(message.chat.id, text, reply_markup=markup)
+    bot.send_message(message.chat.id, "<b>⚔️ ДУЭЛИ</b>\n\nВыберите тип:", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text == "👤 Герой")
 def hero_section(message):
@@ -1004,7 +1008,9 @@ def hero_section(message):
         types.InlineKeyboardButton("📜 Квесты", callback_data="hero_quests"),
         types.InlineKeyboardButton("⚙ Настройки", callback_data="hero_settings"),
         types.InlineKeyboardButton("📋 История", callback_data="hero_history"),
-        types.InlineKeyboardButton("💊 Лечение", callback_data="hero_heal")
+        types.InlineKeyboardButton("💊 Лечение", callback_data="hero_heal"),
+        types.InlineKeyboardButton("✨ Зачарования", callback_data="hero_enchants"),
+        types.InlineKeyboardButton("👁 Экипировка", callback_data="hero_equipped")
     )
     bot.send_message(message.chat.id, "<b>👤 ГЕРОЙ</b>", reply_markup=markup)
 
@@ -1018,7 +1024,7 @@ def trade_section(message):
         types.InlineKeyboardButton("💱 Рынок", callback_data="trade_market"),
         types.InlineKeyboardButton("💰 Продать", callback_data="trade_sell"),
         types.InlineKeyboardButton("📦 Мои лоты", callback_data="trade_my_lots"),
-        types.InlineKeyboardButton("💼 Работа", callback_data="trade_work"),
+        types.InlineKeyboardButton("📤 Передать", callback_data="trade_transfer"),
         types.InlineKeyboardButton("📊 Курс", callback_data="trade_exchange")
     )
     bot.send_message(message.chat.id, "<b>🏪 ТОРГОВЛЯ</b>", reply_markup=markup)
@@ -1031,16 +1037,15 @@ def world_section(message):
         types.InlineKeyboardButton("🛡 Кланы", callback_data="world_clans"),
         types.InlineKeyboardButton("🏟 Турниры", callback_data="world_tournaments"),
         types.InlineKeyboardButton("📊 Топ", callback_data="world_top"),
-        types.InlineKeyboardButton("🌍 События", callback_data="world_events"),
+        types.InlineKeyboardButton("🌍 Ивенты", callback_data="world_events"),
         types.InlineKeyboardButton("ℹ Помощь", callback_data="world_help")
     )
     bot.send_message(message.chat.id, "<b>🌍 МИР</b>", reply_markup=markup)
 
-# ==================== ДУЭЛИ: ТИПЫ ====================
+# ==================== ДУЭЛИ ====================
 @bot.callback_query_handler(func=lambda call: call.data in ["quick_duel", "pvp_duel", "ranked_duel", "hardcore_duel", "survival_duel", "sparring_duel"])
 def duel_type_handler(call):
     dt = call.data
-    
     if dt == "quick_duel":
         show_quick_duel_menu(call)
     else:
@@ -1059,14 +1064,12 @@ def duel_type_handler(call):
 def show_quick_duel_menu(call):
     user_id = call.from_user.id
     player = Player(user_id)
-    
     markup = types.InlineKeyboardMarkup(row_width=3)
     for bet in [50, 100, 200, 500, 1000, 5000]:
         markup.add(types.InlineKeyboardButton(f"{bet}💰", callback_data=f"qduel_{bet}"))
     markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="back_to_duels"))
-    
     bot.edit_message_text(
-        f"<b>⚡ БЫСТРАЯ ДУЭЛЬ</b>\n\n💰 Баланс: <b>{player.data['money']}💰</b>\nВыберите ставку:",
+        f"<b>⚡ БЫСТРАЯ ДУЭЛЬ</b>\n\n💰 Баланс: <b>{player.data['money']}💰</b>",
         call.message.chat.id, call.message.message_id, reply_markup=markup
     )
 
@@ -1088,7 +1091,6 @@ def start_quick_duel(call):
     bot_level = random.randint(max(1, player.data["level"] - 5), player.data["level"] + 5)
     bot_id = f"bot_{random.randint(100000, 999999)}"
     
-    # Генерация бота
     equip = {"weapon": None, "head": None, "body": None, "legs": None}
     for slot, itype in [("head", "helmet"), ("body", "armor"), ("legs", "boots")]:
         sitems = [k for k, v in items.items() if v.get("type") == itype and v.get("level_req", 1) <= bot_level]
@@ -1111,8 +1113,8 @@ def start_quick_duel(call):
         "pvp_rating": 1000 + bot_level * 10,
         "total_damage_dealt": 0, "total_damage_taken": 0,
         "critical_hits": 0, "skills_used": 0,
-        "inventory": [], "equipment": equip,
-        "last_daily": None, "last_dungeon": None, "last_work": None,
+        "inventory": [], "equipment": equip, "enchantments": {},
+        "last_daily": None, "last_dungeon": None,
         "title": "Бот", "titles_collected": ["Бот"],
         "achievements": [], "active_quests": {}, "completed_quests": 0,
         "clan": None, "clan_role": None, "tournament_wins": 0,
@@ -1128,29 +1130,27 @@ def start_quick_duel(call):
     duel = DuelInstance(user_id, bot_id, "quick", bet)
     active_duels[str(user_id)] = duel
     
-    # Бот выбирает защиту
+    # Авто-ход бота: защита
     bot_def = random.choice(list(BODY_PARTS.keys()))
     duel.set_defend(2, bot_def)
-    # Бот выбирает цель
+    # Авто-ход бота: цель
     bot_tgt = random.choice(list(BODY_PARTS.keys()))
     duel.set_target(2, bot_tgt)
-    # Бот выбирает навык
+    # Авто-ход бота: навык
     bot_skills = duel.get_available_skills(2)
     if bot_skills:
         duel.execute_skill(2, random.choice(bot_skills))
     
-    # Показ интерфейса
     show_duel_interface(call.message.chat.id, call.message.message_id, duel, user_id)
     bot.answer_callback_query(call.id, "Дуэль началась!")
 
 def show_duel_interface(chat_id, message_id, duel, user_id):
-    """Показать интерфейс дуэли (НЕ СОЗДАЁТ НОВУЮ ДУЭЛЬ)"""
+    """Показать интерфейс дуэли"""
     if not duel.active:
         finish_duel(chat_id, message_id, duel, user_id)
         return
     
     state_text = duel.get_state_text(user_id)
-    
     pn = 1 if str(user_id) == duel.p1_id else 2
     phase = duel.p1_phase if pn == 1 else duel.p2_phase
     
@@ -1158,17 +1158,11 @@ def show_duel_interface(chat_id, message_id, duel, user_id):
     
     if phase == "defend_select":
         for part, data in BODY_PARTS.items():
-            markup.add(types.InlineKeyboardButton(
-                f"🛡 {data['name']}",
-                callback_data=f"duel_defend_{part}"
-            ))
+            markup.add(types.InlineKeyboardButton(f"🛡 {data['name']}", callback_data=f"duel_defend_{part}"))
     
     elif phase == "attack_target":
         for part, data in BODY_PARTS.items():
-            markup.add(types.InlineKeyboardButton(
-                f"🎯 {data['name']}",
-                callback_data=f"duel_target_{part}"
-            ))
+            markup.add(types.InlineKeyboardButton(f"🎯 {data['name']}", callback_data=f"duel_target_{part}"))
     
     elif phase == "attack_skill":
         skills = duel.get_available_skills(pn)
@@ -1176,12 +1170,7 @@ def show_duel_interface(chat_id, message_id, duel, user_id):
             skill = SKILLS_DB.get(sid, {})
             name = skill.get("name", sid)
             mana = skill.get("mana_cost", 0)
-            cd = (duel.p1_cooldowns if pn == 1 else duel.p2_cooldowns).get(sid, 0)
-            
-            btn = f"{name} ({mana}MP)"
-            if cd > 0:
-                btn = f"⏳ {name} ({cd})"
-            markup.add(types.InlineKeyboardButton(btn, callback_data=f"duel_skill_{sid}"))
+            markup.add(types.InlineKeyboardButton(f"{name} ({mana}MP)", callback_data=f"duel_skill_{sid}"))
     
     elif phase == "done":
         markup.add(types.InlineKeyboardButton("⏳ Ожидание...", callback_data="duel_wait"))
@@ -1190,39 +1179,29 @@ def show_duel_interface(chat_id, message_id, duel, user_id):
     markup.add(types.InlineKeyboardButton("🏳 Сдаться", callback_data="duel_surrender"))
     
     try:
-        bot.edit_message_text(
-            state_text[:4000],
-            chat_id, message_id,
-            reply_markup=markup
-        )
-    except Exception as e:
-        print(f"Edit error: {e}")
+        bot.edit_message_text(state_text[:4000], chat_id, message_id, reply_markup=markup)
+    except:
+        pass
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("duel_"))
 def duel_action_handler(call):
     user_id = call.from_user.id
     action = call.data.split("_", 1)[1]
     
-    # Получаем существующую дуэль
     duel = active_duels.get(str(user_id))
-    
     if not duel or not duel.active:
-        bot.edit_message_text("❌ Дуэль не найдена или завершена", call.message.chat.id, call.message.message_id)
+        bot.edit_message_text("❌ Дуэль завершена", call.message.chat.id, call.message.message_id)
         return
     
     pn = 1 if str(user_id) == duel.p1_id else 2
     
     if action == "refresh":
-        # ПРОСТО ОБНОВЛЯЕМ ОТОБРАЖЕНИЕ, НЕ СОЗДАЁМ НОВУЮ ДУЭЛЬ
         show_duel_interface(call.message.chat.id, call.message.message_id, duel, user_id)
-        bot.answer_callback_query(call.id, "✅ Обновлено")
         return
     
     if action == "wait":
-        # Проверяем, не ход ли бота
-        other_pn = 3 - pn
+        other = 3 - pn
         if str(duel.p2_id).startswith("bot_") and duel.p2_phase != "done" and pn == 1:
-            # Бот должен сделать ход
             if duel.p2_phase == "defend_select":
                 duel.set_defend(2, random.choice(list(BODY_PARTS.keys())))
             if duel.p2_phase == "attack_target":
@@ -1231,9 +1210,7 @@ def duel_action_handler(call):
                 skills = duel.get_available_skills(2)
                 if skills:
                     duel.execute_skill(2, random.choice(skills))
-        
         show_duel_interface(call.message.chat.id, call.message.message_id, duel, user_id)
-        bot.answer_callback_query(call.id, "✅")
         return
     
     if action == "surrender":
@@ -1245,34 +1222,25 @@ def duel_action_handler(call):
     if action.startswith("defend_"):
         part = action.split("_")[1]
         duel.set_defend(pn, part)
-        bot.answer_callback_query(call.id, f"🛡 {BODY_PARTS[part]['name']}")
-    
     elif action.startswith("target_"):
         part = action.split("_")[1]
         duel.set_target(pn, part)
-        bot.answer_callback_query(call.id, f"🎯 {BODY_PARTS[part]['name']}")
-    
     elif action.startswith("skill_"):
         sid = action.split("_", 1)[1]
         duel.execute_skill(pn, sid)
-        bot.answer_callback_query(call.id, "⚔ Атака!")
     
     show_duel_interface(call.message.chat.id, call.message.message_id, duel, user_id)
 
 def finish_duel(chat_id, message_id, duel, user_id):
-    """Завершение дуэли"""
-    # Очистка
     if str(user_id) in active_duels:
         del active_duels[str(user_id)]
-    # Удаляем ботов
     for uid in [duel.p1_id, duel.p2_id]:
         if uid.startswith("bot_") and uid in users:
             del users[uid]
     save_json(DATA_FILES['users'], users)
     
     if duel.winner == 0:
-        result_text = "<b>🤝 НИЧЬЯ!</b>"
-        bot.edit_message_text(result_text, chat_id, message_id)
+        bot.edit_message_text("<b>🤝 НИЧЬЯ!</b>", chat_id, message_id)
         return
     
     winner_id = duel.p1_id if duel.winner == 1 else duel.p2_id
@@ -1288,7 +1256,6 @@ def finish_duel(chat_id, message_id, duel, user_id):
     winner.data["win_streak"] += 1
     winner.data["total_duels"] += 1
     winner.data["pvp_rating"] += random.randint(20, 35)
-    
     if winner.data["win_streak"] > winner.data["best_streak"]:
         winner.data["best_streak"] = winner.data["win_streak"]
     
@@ -1310,38 +1277,12 @@ def finish_duel(chat_id, message_id, duel, user_id):
     old_l = loser.data["level"]
     check_level_up(loser)
     
-    winner.data.setdefault("battle_history", []).append({
-        "date": datetime.now().isoformat(),
-        "opponent": loser.data["first_name"],
-        "result": "win", "type": duel.duel_type,
-        "turns": duel.turn, "bet": duel.bet
-    })
-    
-    loser.data.setdefault("battle_history", []).append({
-        "date": datetime.now().isoformat(),
-        "opponent": winner.data["first_name"],
-        "result": "loss", "type": duel.duel_type,
-        "turns": duel.turn, "bet": duel.bet
-    })
-    
     winner.save()
     loser.save()
     
-    result_text = f"""
-<b>⚔ ДУЭЛЬ ЗАВЕРШЕНА!</b>
-
-👑 <b>{winner.data['first_name']}</b> побеждает!
-💀 <b>{loser.data['first_name']}</b> проигрывает
-
-💰 Приз: <b>{duel.bet * 2 if duel.bet > 0 else 0}💰</b>
-✨ Опыт: +{exp_w} | +{exp_l}
-📊 Ходов: <b>{duel.turn}</b>
-"""
-    
+    result_text = f"<b>⚔ ДУЭЛЬ ЗАВЕРШЕНА!</b>\n\n👑 <b>{winner.data['first_name']}</b> побеждает!\n💰 Приз: <b>{duel.bet * 2 if duel.bet > 0 else 0}💰</b>\n📊 Ходов: <b>{duel.turn}</b>"
     if winner.data["level"] > old_w:
-        result_text += f"\n🎉 {winner.data['first_name']} получает уровень <b>{winner.data['level']}</b>!"
-    if loser.data["level"] > old_l:
-        result_text += f"\n🎉 {loser.data['first_name']} получает уровень <b>{loser.data['level']}</b>!"
+        result_text += f"\n🎉 Уровень <b>{winner.data['level']}</b>!"
     
     bot.edit_message_text(result_text, chat_id, message_id)
 
@@ -1354,7 +1295,6 @@ def duel_commands(message):
     
     user_id = message.from_user.id
     opponent_id = message.reply_to_message.from_user.id
-    
     if user_id == opponent_id:
         bot.send_message(message.chat.id, "❌ Нельзя вызвать себя!")
         return
@@ -1404,10 +1344,7 @@ def duel_commands(message):
         types.InlineKeyboardButton("✅ Принять", callback_data=f"accept_{user_id}_{duel_type}_{bet}"),
         types.InlineKeyboardButton("❌ Отклонить", callback_data=f"decline_{user_id}")
     )
-    
-    bot.send_message(message.chat.id,
-        f"<b>⚔ ВЫЗОВ!</b>\n{message.from_user.first_name} → {message.reply_to_message.from_user.first_name}\nСтавка: <b>{bet}💰</b>",
-        reply_markup=markup)
+    bot.send_message(message.chat.id, f"<b>⚔ ВЫЗОВ!</b>\n{message.from_user.first_name} → {message.reply_to_message.from_user.first_name}\nСтавка: <b>{bet}💰</b>", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("accept_"))
 def accept_duel(call):
@@ -1431,7 +1368,6 @@ def accept_duel(call):
     
     duel = DuelInstance(challenger_id, opponent_id, duel_type, bet)
     active_duels[str(opponent_id)] = duel
-    
     bot.edit_message_text("⚔ Дуэль начинается! Выберите защиту.", call.message.chat.id, call.message.message_id)
     show_duel_interface(call.message.chat.id, call.message.message_id, duel, opponent_id)
 
@@ -1451,12 +1387,8 @@ def shop_menu(call):
         types.InlineKeyboardButton("🧪 Зелья", callback_data="shopcat_potion"),
         types.InlineKeyboardButton("◀ Назад", callback_data="back_to_trade")
     )
-    
     player = Player(call.from_user.id)
-    bot.edit_message_text(
-        f"<b>🛒 МАГАЗИН</b>\n💰 <b>{player.data['money']}💰</b>",
-        call.message.chat.id, call.message.message_id, reply_markup=markup
-    )
+    bot.edit_message_text(f"<b>🛒 МАГАЗИН</b>\n💰 <b>{player.data['money']}💰</b>", call.message.chat.id, call.message.message_id, reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("shopcat_"))
 def shop_category(call):
@@ -1473,9 +1405,7 @@ def shop_category(call):
     for ik, item in sorted(cat_items.items(), key=lambda x: x[1].get("price", 0)):
         if player.data["level"] < item.get("level_req", 1):
             continue
-        
         r = RARITY_COLORS.get(item.get("rarity", "common"), "⬜")
-        
         if item.get("type") == "weapon":
             s = f"Урон: {item['damage'][0]}-{item['damage'][1]}"
         elif item.get("type") in ["helmet", "armor", "boots"]:
@@ -1488,14 +1418,9 @@ def shop_category(call):
             s = f"Лечение: {item.get('heal', 0)}"
         else:
             s = ""
-        
         text += f"{r} <b>{item['name']}</b> — {s}\n💰 {item['price']} | Ур.{item.get('level_req', 1)}\n\n"
-        
         if player.data["money"] >= item["price"]:
-            markup.add(types.InlineKeyboardButton(
-                f"Купить: {item['name']} - {item['price']}💰",
-                callback_data=f"buyitem_{ik}"
-            ))
+            markup.add(types.InlineKeyboardButton(f"Купить: {item['name']} - {item['price']}💰", callback_data=f"buyitem_{ik}"))
     
     markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="trade_shop"))
     bot.edit_message_text(text[:4000], call.message.chat.id, call.message.message_id, reply_markup=markup)
@@ -1510,15 +1435,12 @@ def buy_item(call):
     if not item:
         bot.answer_callback_query(call.id, "❌ Не найден!")
         return
-    
     if player.data["level"] < item.get("level_req", 1):
         bot.answer_callback_query(call.id, f"❌ Нужен {item.get('level_req', 1)} ур.!")
         return
-    
     if player.data["money"] < item["price"]:
         bot.answer_callback_query(call.id, "❌ Недостаточно!")
         return
-    
     if ik in limited_items:
         if limited_items[ik]["remaining"] <= 0:
             bot.answer_callback_query(call.id, "❌ Закончился!")
@@ -1530,7 +1452,6 @@ def buy_item(call):
     player.data["inventory"].append(ik)
     player.data["items_found"] += 1
     player.save()
-    
     bot.answer_callback_query(call.id, f"✅ {item['name']}!")
     shop_category(call)
 
@@ -1540,17 +1461,14 @@ def limited_shop(call):
     if not limited_items:
         bot.edit_message_text("💎 Нет лимитированных предметов", call.message.chat.id, call.message.message_id)
         return
-    
     text = "<b>💎 ЛИМИТИРОВАННЫЕ</b>\n\n"
     markup = types.InlineKeyboardMarkup(row_width=1)
-    
     for ik, item in limited_items.items():
         if item["remaining"] > 0:
             pct = "█" * int(item["remaining"] / item["total"] * 10)
             emp = "░" * (10 - len(pct))
             text += f"<b>{item['name']}</b>\n[{pct}{emp}] {item['remaining']}/{item['total']}\n💰 <b>{item['price']}💰</b>\n\n"
             markup.add(types.InlineKeyboardButton(f"Купить {item['name']} - {item['price']}💰", callback_data=f"buyitem_{ik}"))
-    
     markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="back_to_trade"))
     bot.edit_message_text(text[:4000], call.message.chat.id, call.message.message_id, reply_markup=markup)
 
@@ -1559,28 +1477,22 @@ def limited_shop(call):
 def daily_bonus(call):
     user_id = call.from_user.id
     player = Player(user_id)
-    
     today = datetime.now().strftime("%Y-%m-%d")
     if player.data.get("last_daily") == today:
         bot.answer_callback_query(call.id, "❌ Уже получен!")
         return
-    
     bonus = random.randint(150, 600) + player.data["level"] * 10
     exp = random.randint(80, 250) + player.data["level"] * 5
-    
     player.data["money"] += bonus
     player.data["exp"] += exp
     player.data["total_exp"] += exp
     player.data["last_daily"] = today
-    
     old = player.data["level"]
     check_level_up(player)
     player.save()
-    
     text = f"<b>🎁 БОНУС</b>\n💰 +{bonus}\n✨ +{exp}"
     if player.data["level"] > old:
         text += f"\n🎉 УРОВЕНЬ <b>{player.data['level']}</b>!"
-    
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id)
 
 # ==================== РЫНОК ====================
@@ -1589,16 +1501,13 @@ def market_menu(call):
     if not market_listings:
         bot.edit_message_text("📦 Рынок пуст\n/sell [номер] [цена]", call.message.chat.id, call.message.message_id)
         return
-    
     text = "<b>💱 РЫНОК</b>\n\n"
     markup = types.InlineKeyboardMarkup(row_width=1)
-    
     for lid, listing in list(market_listings.items())[:10]:
         item = items.get(listing["item_key"]) or limited_items.get(listing["item_key"])
         if item:
             text += f"📦 {item['name']} — <b>{listing['price']}💰</b>\n   👤 {listing.get('seller_name', 'Нет')}\n\n"
             markup.add(types.InlineKeyboardButton(f"Купить: {item['name']}", callback_data=f"mktbuy_{lid}"))
-    
     markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="back_to_trade"))
     bot.edit_message_text(text[:4000], call.message.chat.id, call.message.message_id, reply_markup=markup)
 
@@ -1607,31 +1516,24 @@ def market_buy(call):
     lid = call.data.split("_", 1)[1]
     user_id = str(call.from_user.id)
     player = Player(user_id)
-    
     if lid not in market_listings:
         bot.answer_callback_query(call.id, "❌ Продан!")
         return
-    
     listing = market_listings[lid]
     if user_id == str(listing.get("seller_id")):
         bot.answer_callback_query(call.id, "❌ Своё!")
         return
-    
     if player.data["money"] < listing["price"]:
         bot.answer_callback_query(call.id, "❌ Недостаточно!")
         return
-    
     player.data["money"] -= listing["price"]
     player.data["inventory"].append(listing["item_key"])
     player.save()
-    
     seller = Player(listing["seller_id"])
     seller.data["money"] += listing["price"]
     seller.save()
-    
     del market_listings[lid]
     save_json(DATA_FILES['market'], market_listings)
-    
     item = items.get(listing["item_key"], {})
     bot.answer_callback_query(call.id, f"✅ {item.get('name', 'Предмет')}!")
     market_menu(call)
@@ -1644,20 +1546,16 @@ def sell_info(call):
 def my_lots(call):
     uid = str(call.from_user.id)
     my = {k: v for k, v in market_listings.items() if str(v.get("seller_id")) == uid}
-    
     if not my:
         bot.edit_message_text("📦 Нет лотов", call.message.chat.id, call.message.message_id)
         return
-    
     text = "<b>📦 МОИ ЛОТЫ</b>\n\n"
     markup = types.InlineKeyboardMarkup(row_width=1)
-    
     for lid, listing in my.items():
         item = items.get(listing["item_key"]) or limited_items.get(listing["item_key"])
         if item:
             text += f"📦 {item['name']} — {listing['price']}💰\n"
             markup.add(types.InlineKeyboardButton(f"Снять: {item['name']}", callback_data=f"removelot_{lid}"))
-    
     markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="back_to_trade"))
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
 
@@ -1665,7 +1563,6 @@ def my_lots(call):
 def remove_lot(call):
     lid = call.data.split("_", 1)[1]
     uid = str(call.from_user.id)
-    
     if lid in market_listings and str(market_listings[lid].get("seller_id")) == uid:
         listing = market_listings[lid]
         player = Player(uid)
@@ -1676,8 +1573,51 @@ def remove_lot(call):
         bot.answer_callback_query(call.id, "✅ Снят!")
     else:
         bot.answer_callback_query(call.id, "❌ Ошибка!")
-    
     my_lots(call)
+
+# ==================== ПЕРЕДАЧА ПРЕДМЕТОВ ====================
+@bot.callback_query_handler(func=lambda call: call.data == "trade_transfer")
+def transfer_info(call):
+    bot.edit_message_text("📤 /transfer [номер] @username\nПередать предмет игроку", call.message.chat.id, call.message.message_id)
+
+@bot.message_handler(commands=['transfer'])
+def transfer_item(message):
+    user_id = message.from_user.id
+    player = Player(user_id)
+    try:
+        parts = message.text.split()
+        idx = int(parts[1]) - 1
+        target_username = parts[2].replace('@', '')
+    except:
+        bot.send_message(message.chat.id, "❌ /transfer [номер] @username")
+        return
+    
+    if idx < 0 or idx >= len(player.data["inventory"]):
+        bot.send_message(message.chat.id, "❌ Неверный номер!")
+        return
+    
+    ik = player.data["inventory"][idx]
+    item = items.get(ik) or limited_items.get(ik)
+    
+    # Поиск получателя
+    target_id = None
+    for uid, data in users.items():
+        if data.get("username", "").lower() == target_username.lower():
+            target_id = uid
+            break
+    
+    if not target_id:
+        bot.send_message(message.chat.id, "❌ Игрок не найден!")
+        return
+    
+    target = Player(target_id)
+    
+    player.data["inventory"].pop(idx)
+    player.save()
+    target.data["inventory"].append(ik)
+    target.save()
+    
+    bot.send_message(message.chat.id, f"📤 <b>{item.get('name', ik)}</b> передан @{target_username}!")
 
 # ==================== ГЕРОЙ ====================
 @bot.callback_query_handler(func=lambda call: call.data == "hero_stats")
@@ -1686,12 +1626,9 @@ def hero_stats(call):
     player = Player(user_id)
     s = player.get_full_stats()
     d = player.data
-    
     wr = (d["wins"] / d["total_duels"] * 100) if d["total_duels"] > 0 else 0
-    
     text = f"""
 <b>📊 СТАТИСТИКА</b>
-
 <b>{d['first_name']}</b> | {d['title']}
 ⭐ Ур.{d['level']} | Рейтинг: {d['pvp_rating']}
 💰 {d['money']}💰
@@ -1700,6 +1637,7 @@ def hero_stats(call):
 🛡 Защита: {s['defense']} (Г:{s['head_defense']} Т:{s['body_defense']} Н:{s['legs_defense']})
 💨 Скорость: {s['speed']:.0f}
 💥 Крит: {s['crit_chance']:.1f}%
+🔄 Уклон: {s['dodge_chance']:.1f}%
 
 🏆 Побед: {d['wins']} | 💀 Поражений: {d['losses']}
 📈 Винрейт: {wr:.1f}% | ⚔ Боёв: {d['total_duels']}
@@ -1712,39 +1650,34 @@ def hero_stats(call):
 def hero_inventory(call):
     user_id = call.from_user.id
     player = Player(user_id)
-    
     if not player.data["inventory"]:
         bot.edit_message_text("🎒 Инвентарь пуст", call.message.chat.id, call.message.message_id)
         return
-    
     counts = {}
     for ik in player.data["inventory"]:
         counts[ik] = counts.get(ik, 0) + 1
-    
     text = "<b>🎒 ИНВЕНТАРЬ</b>\n\n"
     markup = types.InlineKeyboardMarkup(row_width=1)
-    
     idx = 1
     for ik, cnt in counts.items():
         item = items.get(ik) or limited_items.get(ik)
         if not item:
             continue
-        
         r = RARITY_COLORS.get(item.get("rarity", "common"), "⬜")
         eq = ""
         for slot, ek in player.data["equipment"].items():
             if ek == ik:
                 eq = f" [{slot}]"
+        # Информация о зачаровании
+        ench = player.data.get("enchantments", {}).get(ik, "")
+        ench_text = f" ✨{ench}" if ench else ""
         
-        text += f"{idx}. {r} {item['name']} x{cnt}{eq}\n"
-        
+        text += f"{idx}. {r} {item['name']} x{cnt}{eq}{ench_text}\n"
         if item.get("type") in ["weapon", "helmet", "armor", "boots"]:
             markup.add(types.InlineKeyboardButton(f"Экипировать: {item['name']}", callback_data=f"equip_{ik}"))
         elif item.get("type") == "potion":
             markup.add(types.InlineKeyboardButton(f"Использовать: {item['name']}", callback_data=f"use_{ik}"))
-        
         idx += 1
-    
     markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="back_to_hero"))
     bot.edit_message_text(text[:4000], call.message.chat.id, call.message.message_id, reply_markup=markup)
 
@@ -1753,31 +1686,24 @@ def equip_item(call):
     ik = call.data.split("_", 1)[1]
     user_id = call.from_user.id
     player = Player(user_id)
-    
     item = items.get(ik) or limited_items.get(ik)
     if not item:
         bot.answer_callback_query(call.id, "❌ Не найден!")
         return
-    
     if ik not in player.data["inventory"]:
         bot.answer_callback_query(call.id, "❌ Нет в инвентаре!")
         return
-    
     slot_map = {"weapon": "weapon", "helmet": "head", "armor": "body", "boots": "legs"}
     slot = slot_map.get(item.get("type"))
-    
     if not slot:
         bot.answer_callback_query(call.id, "❌ Нельзя экипировать!")
         return
-    
     old = player.data["equipment"][slot]
     if old:
         player.data["inventory"].append(old)
-    
     player.data["equipment"][slot] = ik
     player.data["inventory"].remove(ik)
     player.save()
-    
     bot.answer_callback_query(call.id, f"✅ {item['name']} экипирован!")
     hero_inventory(call)
 
@@ -1786,30 +1712,23 @@ def use_potion(call):
     ik = call.data.split("_", 1)[1]
     user_id = call.from_user.id
     player = Player(user_id)
-    
     item = items.get(ik) or limited_items.get(ik)
     if not item or item.get("type") != "potion":
         bot.answer_callback_query(call.id, "❌ Нельзя!")
         return
-    
     if ik not in player.data["inventory"]:
         bot.answer_callback_query(call.id, "❌ Нет!")
         return
-    
     stats = player.get_full_stats()
-    
     if "heal" in item:
         if player.data["hp"] >= stats["max_hp"]:
             bot.answer_callback_query(call.id, "❌ Полное HP!")
             return
         player.data["hp"] = min(stats["max_hp"], player.data["hp"] + item["heal"])
-    
     if "mana_restore" in item:
         player.data["mana"] = min(stats["max_mana"], player.data["mana"] + item["mana_restore"])
-    
     player.data["inventory"].remove(ik)
     player.save()
-    
     bot.answer_callback_query(call.id, "✅ Использовано!")
     hero_inventory(call)
 
@@ -1819,19 +1738,17 @@ def hero_attributes(call):
     player = Player(user_id)
     st = player.data["stats"]
     pts = player.data["stat_points"]
-    
     text = f"""
 <b>⚡ ХАРАКТЕРИСТИКИ</b>
 Очков: <b>{pts}</b>
 
-💪 Сила: {st['strength']} (+{(st['strength']-5)*2} урон)
-🏃 Ловкость: {st['agility']} (+{(st['agility']-5)*1.5} скор)
-🧠 Интеллект: {st['intelligence']} (+{(st['intelligence']-5)*8} мана)
-❤ Живучесть: {st['vitality']} (+{(st['vitality']-5)*15} HP)
-🍀 Удача: {st['luck']} (+{(st['luck']-5)*0.5}% крит)
+💪 Сила: {st['strength']}
+🏃 Ловкость: {st['agility']}
+🧠 Интеллект: {st['intelligence']}
+❤ Живучесть: {st['vitality']}
+🍀 Удача: {st['luck']}
 🛡 Защита: {st['defense']}
 """
-    
     markup = types.InlineKeyboardMarkup(row_width=3)
     if pts > 0:
         markup.add(
@@ -1842,7 +1759,6 @@ def hero_attributes(call):
             types.InlineKeyboardButton("🍀", callback_data="upstat_luk"),
             types.InlineKeyboardButton("🛡", callback_data="upstat_def")
         )
-    
     markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="back_to_hero"))
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
 
@@ -1850,21 +1766,17 @@ def hero_attributes(call):
 def upgrade_stat(call):
     smap = {"str": "strength", "agi": "agility", "int": "intelligence", "vit": "vitality", "luk": "luck", "def": "defense"}
     sk = smap[call.data.split("_")[1]]
-    
     user_id = call.from_user.id
     player = Player(user_id)
-    
     if player.data["stat_points"] <= 0:
         bot.answer_callback_query(call.id, "❌ Нет очков!")
         return
     if player.data["stats"][sk] >= 100:
         bot.answer_callback_query(call.id, "❌ Максимум!")
         return
-    
     player.data["stats"][sk] += 1
     player.data["stat_points"] -= 1
     player.save()
-    
     nm = {"strength": "Сила", "agility": "Ловкость", "intelligence": "Интеллект", "vitality": "Живучесть", "luck": "Удача", "defense": "Защита"}
     bot.answer_callback_query(call.id, f"⬆ {nm[sk]}: {player.data['stats'][sk]}")
     hero_attributes(call)
@@ -1873,7 +1785,6 @@ def upgrade_stat(call):
 def hero_achievements(call):
     user_id = call.from_user.id
     player = Player(user_id)
-    
     ach_list = [
         ("first_blood", "🩸 Первая кровь", "1 победа", player.data["wins"] >= 1),
         ("warrior", "⚔ Воин", "10 побед", player.data["wins"] >= 10),
@@ -1883,18 +1794,14 @@ def hero_achievements(call):
         ("dmaster", "🏰 Мастер данжей", "10 данжей", player.data.get("dungeons_completed", 0) >= 10),
         ("collector", "🎒 Коллекционер", "20 предметов", player.data.get("items_found", 0) >= 20)
     ]
-    
     text = f"<b>🏅 ДОСТИЖЕНИЯ</b> ({len(player.data['achievements'])}/7)\n\n"
-    
     for aid, name, desc, cond in ach_list:
         done = aid in player.data["achievements"] or cond
         icon = "✅" if done else "🔒"
         text += f"{icon} <b>{name}</b>: {desc}\n"
         if cond and aid not in player.data["achievements"]:
             player.data["achievements"].append(aid)
-    
     player.save()
-    
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="back_to_hero"))
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
@@ -1903,7 +1810,6 @@ def hero_achievements(call):
 def hero_quests(call):
     user_id = call.from_user.id
     player = Player(user_id)
-    
     today = datetime.now().strftime("%Y-%m-%d")
     if player.data.get("quests_date") != today:
         player.data["active_quests"] = {
@@ -1913,14 +1819,11 @@ def hero_quests(call):
         }
         player.data["quests_date"] = today
         player.save()
-    
     text = f"<b>📜 КВЕСТЫ ({today})</b>\n\n"
-    
     for qid, quest in player.data["active_quests"].items():
         pct = min(quest["progress"] / quest["target"], 1.0)
         bar = "█" * int(pct * 10) + "░" * (10 - int(pct * 10))
         text += f"<b>{quest['name']}</b>\n[{bar}] {quest['progress']}/{quest['target']}\n🎁 {quest['reward']}💰\n\n"
-    
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="back_to_hero"))
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
@@ -1930,36 +1833,27 @@ def hero_settings(call):
     user_id = call.from_user.id
     player = Player(user_id)
     s = player.data.get("settings", {})
-    
     text = f"""
 <b>⚙ НАСТРОЙКИ</b>
-
 🔔 Уведомления: {'✅' if s.get('notifications', True) else '❌'}
 ⚔ Запросы: {'✅' if s.get('duel_requests', True) else '❌'}
-📋 Лог: {'✅' if s.get('show_battle_log', True) else '❌'}
 """
-    
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton("🔔 Уведомления", callback_data="set_notify"),
         types.InlineKeyboardButton("⚔ Запросы", callback_data="set_duelreq"),
-        types.InlineKeyboardButton("📋 Лог", callback_data="set_log"),
         types.InlineKeyboardButton("◀ Назад", callback_data="back_to_hero")
     )
-    
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("set_"))
 def toggle_setting(call):
-    smap = {"notify": "notifications", "duelreq": "duel_requests", "log": "show_battle_log"}
+    smap = {"notify": "notifications", "duelreq": "duel_requests"}
     setting = smap[call.data.split("_")[1]]
-    
     user_id = call.from_user.id
     player = Player(user_id)
-    
     player.data["settings"][setting] = not player.data["settings"].get(setting, True)
     player.save()
-    
     bot.answer_callback_query(call.id, "✅ Изменено!")
     hero_settings(call)
 
@@ -1967,20 +1861,14 @@ def toggle_setting(call):
 def hero_history(call):
     user_id = call.from_user.id
     player = Player(user_id)
-    
     history = player.data.get("battle_history", [])
     if not history:
         bot.edit_message_text("📋 История пуста", call.message.chat.id, call.message.message_id)
         return
-    
     text = "<b>📋 ПОСЛЕДНИЕ 10 БОЁВ</b>\n\n"
-    
     for battle in history[-10:]:
         icon = "🏆" if battle.get("result") == "win" else "💀" if battle.get("result") == "loss" else "🤝"
-        text += f"{icon} vs {battle.get('opponent', 'Нет')}\n"
-        text += f"   {battle.get('type', '')} | {battle.get('turns', 0)} ходов | {battle.get('bet', 0)}💰\n"
-        text += f"   {battle.get('date', '')[:10]}\n\n"
-    
+        text += f"{icon} vs {battle.get('opponent', 'Нет')}\n   {battle.get('type', '')} | {battle.get('turns', 0)} ходов | {battle.get('bet', 0)}💰\n   {battle.get('date', '')[:10]}\n\n"
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="back_to_hero"))
     bot.edit_message_text(text[:4000], call.message.chat.id, call.message.message_id, reply_markup=markup)
@@ -1990,28 +1878,93 @@ def hero_heal(call):
     user_id = call.from_user.id
     player = Player(user_id)
     stats = player.get_full_stats()
-    
     potions = [k for k in player.data["inventory"] if items.get(k, {}).get("type") == "potion" and items.get(k, {}).get("heal", 0) > 0]
-    
     if not potions:
         bot.edit_message_text("💊 Нет зелий!", call.message.chat.id, call.message.message_id)
         return
-    
     if player.data["hp"] >= stats["max_hp"]:
         bot.edit_message_text("💊 Полное здоровье!", call.message.chat.id, call.message.message_id)
         return
-    
     pk = potions[0]
     potion = items[pk]
-    
     player.data["hp"] = min(stats["max_hp"], player.data["hp"] + potion["heal"])
     player.data["inventory"].remove(pk)
     player.save()
+    bot.edit_message_text(f"💊 <b>{potion['name']}</b>\n❤ HP: {player.data['hp']}/{stats['max_hp']}", call.message.chat.id, call.message.message_id)
+
+@bot.callback_query_handler(func=lambda call: call.data == "hero_enchants")
+def hero_enchants(call):
+    user_id = call.from_user.id
+    player = Player(user_id)
+    ench = player.data.get("enchantments", {})
+    if not ench:
+        text = "<b>✨ ЗАЧАРОВАНИЯ</b>\n\nУ вас нет зачарований!\nПолучите их в ивентах или купите."
+    else:
+        text = "<b>✨ ЗАЧАРОВАНИЯ</b>\n\n"
+        for ik, ench_name in ench.items():
+            item = items.get(ik) or limited_items.get(ik)
+            if item:
+                text += f"📦 {item['name']}: ✨ <b>{ench_name}</b>\n"
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="back_to_hero"))
+    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data == "hero_equipped")
+def hero_equipped(call):
+    user_id = call.from_user.id
+    player = Player(user_id)
+    equip = player.data["equipment"]
     
-    bot.edit_message_text(
-        f"💊 <b>{potion['name']}</b>\n❤ HP: {player.data['hp']}/{stats['max_hp']}",
-        call.message.chat.id, call.message.message_id
+    text = "<b>👁 ЭКИПИРОВКА</b>\n\n"
+    slot_names = {"weapon": "⚔ Оружие", "head": "👤 Голова", "body": "🦾 Тело", "legs": "🦿 Ноги"}
+    
+    for slot, ik in equip.items():
+        if ik:
+            item = items.get(ik) or limited_items.get(ik)
+            if item:
+                ench = player.data.get("enchantments", {}).get(ik, "")
+                ench_text = f" ✨{ench}" if ench else ""
+                text += f"{slot_names.get(slot, slot)}: <b>{item['name']}</b>{ench_text}\n"
+                
+                if item.get("type") == "weapon":
+                    text += f"   Урон: {item['damage'][0]}-{item['damage'][1]}\n"
+                elif item.get("type") in ["helmet", "armor", "boots"]:
+                    text += f"   Защита: {item.get('defense', 0)}\n"
+                    if "speed" in item:
+                        text += f"   Скорость: +{item['speed']}\n"
+                    if "hp_bonus" in item:
+                        text += f"   HP: +{item['hp_bonus']}\n"
+            else:
+                text += f"{slot_names.get(slot, slot)}: Неизвестный предмет\n"
+        else:
+            text += f"{slot_names.get(slot, slot)}: Пусто\n"
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("🗑 Снять оружие", callback_data="unequip_weapon"),
+        types.InlineKeyboardButton("🗑 Снять шлем", callback_data="unequip_head"),
+        types.InlineKeyboardButton("🗑 Снять броню", callback_data="unequip_body"),
+        types.InlineKeyboardButton("🗑 Снять обувь", callback_data="unequip_legs"),
+        types.InlineKeyboardButton("◀ Назад", callback_data="back_to_hero")
     )
+    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("unequip_"))
+def unequip_item(call):
+    slot = call.data.split("_")[1]
+    user_id = call.from_user.id
+    player = Player(user_id)
+    
+    ik = player.data["equipment"].get(slot)
+    if ik:
+        player.data["inventory"].append(ik)
+        player.data["equipment"][slot] = None
+        player.save()
+        bot.answer_callback_query(call.id, "✅ Снято!")
+    else:
+        bot.answer_callback_query(call.id, "❌ Пусто!")
+    
+    hero_equipped(call)
 
 @bot.callback_query_handler(func=lambda call: call.data == "back_to_hero")
 def back_to_hero(call):
@@ -2026,7 +1979,6 @@ def back_to_trade(call):
 def world_dungeons(call):
     text = """
 <b>🏰 ПОДЗЕМЕЛЬЯ</b>
-
 🐺 Логово волка (Ур. 1+)
 🕷 Паучьи пещеры (Ур. 5+)
 💀 Катакомбы (Ур. 10+)
@@ -2040,7 +1992,6 @@ def world_dungeons(call):
     for i, name in enumerate(["🐺 Логово волка", "🕷 Паучьи пещеры", "💀 Катакомбы", "🐉 Драконье логово", "👹 Бездна"], 1):
         markup.add(types.InlineKeyboardButton(name, callback_data=f"dung_{i}"))
     markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="back_to_world"))
-    
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("dung_"))
@@ -2048,23 +1999,19 @@ def start_dungeon(call):
     dl = int(call.data.split("_")[1])
     user_id = call.from_user.id
     player = Player(user_id)
-    
     level_reqs = [1, 5, 10, 15, 25]
     if player.data["level"] < level_reqs[dl - 1]:
         bot.answer_callback_query(call.id, f"❌ Нужен {level_reqs[dl-1]} ур.!")
         return
-    
     if player.data.get("last_dungeon"):
         last = datetime.fromisoformat(player.data["last_dungeon"])
         if (datetime.now() - last) < timedelta(hours=1):
             r = timedelta(hours=1) - (datetime.now() - last)
             bot.answer_callback_query(call.id, f"⏰ {r.seconds//60} мин.")
             return
-    
     bosses = ["Вожак стаи", "Королева пауков", "Некромант", "Древний дракон", "Владыка бездны"]
     reward = random.randint(50, 250) * dl * player.data["level"]
     exp = 50 * dl * player.data["level"]
-    
     got_item = None
     if random.random() < 0.1 + dl * 0.05:
         possible = [k for k, v in items.items() if v.get("level_req", 1) <= player.data["level"]]
@@ -2072,44 +2019,29 @@ def start_dungeon(call):
             got_item = random.choice(possible)
             player.data["inventory"].append(got_item)
             player.data["items_found"] += 1
-    
     player.data["money"] += reward
     player.data["exp"] += exp
     player.data["total_exp"] += exp
     player.data["last_dungeon"] = datetime.now().isoformat()
     player.data["dungeons_completed"] = player.data.get("dungeons_completed", 0) + 1
-    
     old = player.data["level"]
     check_level_up(player)
     player.save()
-    
-    result = f"""
-<b>🏰 ДАНЖ ПРОЙДЕН!</b>
-
-Босс: <b>{bosses[dl-1]}</b>
-💰 +{reward} | ✨ +{exp}
-"""
+    result = f"<b>🏰 ДАНЖ ПРОЙДЕН!</b>\n\nБосс: <b>{bosses[dl-1]}</b>\n💰 +{reward} | ✨ +{exp}"
     if got_item:
         result += f"\n🎁 <b>{items[got_item]['name']}</b>!"
     if player.data["level"] > old:
         result += f"\n🎉 УРОВЕНЬ <b>{player.data['level']}</b>!"
-    
     bot.edit_message_text(result, call.message.chat.id, call.message.message_id)
 
+# ==================== КЛАНЫ ====================
 @bot.callback_query_handler(func=lambda call: call.data == "world_clans")
 def world_clans(call):
     user_id = call.from_user.id
     player = Player(user_id)
-    
     if player.data.get("clan"):
         clan = clans.get(player.data["clan"], {})
-        text = f"""
-<b>🛡 {player.data['clan']}</b>
-
-👥 {len(clan.get('members', []))} уч.
-💰 Казна: {clan.get('treasury', 0)}💰
-👑 {clan.get('leader_name', 'Нет')}
-"""
+        text = f"<b>🛡 {player.data['clan']}</b>\n👥 {len(clan.get('members', []))} уч.\n💰 Казна: {clan.get('treasury', 0)}💰"
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
             types.InlineKeyboardButton("👥 Участники", callback_data="clan_members"),
@@ -2117,13 +2049,12 @@ def world_clans(call):
             types.InlineKeyboardButton("🚪 Покинуть", callback_data="clan_leave")
         )
     else:
-        text = "<b>🛡 КЛАНЫ</b>\n\n/createclan [имя] — создать\n/joinclan [имя] — вступить\n💰 5000💰"
+        text = "<b>🛡 КЛАНЫ</b>\n\n/createclan [имя]\n/joinclan [имя]\n💰 5000💰"
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
             types.InlineKeyboardButton("📋 Список", callback_data="clan_list"),
             types.InlineKeyboardButton("ℹ Инфо", callback_data="clan_info")
         )
-    
     markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="back_to_world"))
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
 
@@ -2132,11 +2063,9 @@ def clan_list(call):
     if not clans:
         bot.edit_message_text("📋 Нет кланов", call.message.chat.id, call.message.message_id)
         return
-    
     text = "<b>📋 КЛАНЫ</b>\n\n"
     for name, data in clans.items():
         text += f"🛡 <b>{name}</b>: {len(data.get('members', []))} уч.\n"
-    
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="world_clans"))
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
@@ -2153,16 +2082,13 @@ def clan_members(call):
     user_id = call.from_user.id
     player = Player(user_id)
     cn = player.data.get("clan")
-    
     if not cn:
         bot.answer_callback_query(call.id, "❌ Не в клане!")
         return
-    
     members = clans.get(cn, {}).get("members", [])
     text = f"<b>👥 {cn}</b>\n\n"
     for i, m in enumerate(members, 1):
         text += f"{i}. {m}\n"
-    
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="world_clans"))
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
@@ -2175,52 +2101,41 @@ def clan_donate_info(call):
 def clan_donate_cmd(message):
     user_id = message.from_user.id
     player = Player(user_id)
-    
     if not player.data.get("clan"):
         bot.send_message(message.chat.id, "❌ Не в клане!")
         return
-    
     try:
         amount = int(message.text.split()[1])
     except:
         bot.send_message(message.chat.id, "❌ /clandonate [сумма]")
         return
-    
     if player.data["money"] < amount:
         bot.send_message(message.chat.id, "❌ Недостаточно!")
         return
-    
     player.data["money"] -= amount
     player.save()
-    
     cn = player.data["clan"]
     clans[cn]["treasury"] = clans[cn].get("treasury", 0) + amount
     save_json(DATA_FILES['clans'], clans)
-    
     bot.send_message(message.chat.id, f"✅ +{amount}💰!")
 
 @bot.callback_query_handler(func=lambda call: call.data == "clan_leave")
 def clan_leave_handler(call):
     user_id = call.from_user.id
     player = Player(user_id)
-    
     if not player.data.get("clan"):
         bot.answer_callback_query(call.id, "❌ Не в клане!")
         return
-    
     cn = player.data["clan"]
     if player.data.get("clan_role") == "leader":
         bot.answer_callback_query(call.id, "❌ Лидер не может выйти!")
         return
-    
     player.data["clan"] = None
     player.data["clan_role"] = None
     player.save()
-    
     if player.data["first_name"] in clans[cn].get("members", []):
         clans[cn]["members"].remove(player.data["first_name"])
     save_json(DATA_FILES['clans'], clans)
-    
     bot.answer_callback_query(call.id, "✅ Вы вышли!")
     world_clans(call)
 
@@ -2228,85 +2143,66 @@ def clan_leave_handler(call):
 def create_clan_cmd(message):
     user_id = message.from_user.id
     player = Player(user_id)
-    
     if player.data.get("clan"):
         bot.send_message(message.chat.id, "❌ Уже в клане!")
         return
     if player.data["money"] < 5000:
         bot.send_message(message.chat.id, "❌ 5000💰!")
         return
-    
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
         bot.send_message(message.chat.id, "❌ /createclan [имя]")
         return
-    
     name = parts[1].strip()
     if name in clans:
         bot.send_message(message.chat.id, "❌ Существует!")
         return
-    
     player.data["money"] -= 5000
     player.data["clan"] = name
     player.data["clan_role"] = "leader"
     player.save()
-    
-    clans[name] = {
-        "leader_id": user_id, "leader_name": message.from_user.first_name,
-        "members": [message.from_user.first_name], "treasury": 0,
-        "created_at": datetime.now().isoformat()
-    }
+    clans[name] = {"leader_id": user_id, "leader_name": message.from_user.first_name, "members": [message.from_user.first_name], "treasury": 0, "created_at": datetime.now().isoformat()}
     save_json(DATA_FILES['clans'], clans)
-    
     bot.send_message(message.chat.id, f"✅ Клан <b>{name}</b> создан!")
 
 @bot.message_handler(commands=['joinclan'])
 def join_clan_cmd(message):
     user_id = message.from_user.id
     player = Player(user_id)
-    
     if player.data.get("clan"):
         bot.send_message(message.chat.id, "❌ Уже в клане!")
         return
-    
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
         bot.send_message(message.chat.id, "❌ /joinclan [имя]")
         return
-    
     name = parts[1].strip()
     if name not in clans:
         bot.send_message(message.chat.id, "❌ Не найден!")
         return
-    
     player.data["clan"] = name
     player.data["clan_role"] = "member"
     player.save()
-    
     if message.from_user.first_name not in clans[name].get("members", []):
         clans[name]["members"].append(message.from_user.first_name)
     save_json(DATA_FILES['clans'], clans)
-    
     bot.send_message(message.chat.id, f"✅ Вы в <b>{name}</b>!")
 
+# ==================== ТУРНИРЫ С ПОШАГОВЫМИ БОЯМИ ====================
 @bot.callback_query_handler(func=lambda call: call.data == "world_tournaments")
 def world_tournaments(call):
     if not tournaments.get("active"):
-        tournaments["active"] = {
-            "name": "Турнир", "participants": [], "prize_pool": 5000,
-            "status": "registration", "started_at": datetime.now().isoformat()
-        }
+        tournaments["active"] = {"name": "Турнир", "participants": [], "prize_pool": 5000, "status": "registration", "started_at": datetime.now().isoformat()}
         save_json(DATA_FILES['tournaments'], tournaments)
-    
     tour = tournaments["active"]
-    
     text = f"""
 <b>🏟 ТУРНИР</b>
-
 <b>{tour['name']}</b>
 Участников: {len(tour.get('participants', []))}/16
 Приз: <b>{tour.get('prize_pool', 0)}💰</b>
 Взнос: 500💰
+
+<i>Пошаговые бои между участниками!</i>
 """
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
@@ -2314,55 +2210,136 @@ def world_tournaments(call):
         types.InlineKeyboardButton("📋 Участники", callback_data="tour_list"),
         types.InlineKeyboardButton("◀ Назад", callback_data="back_to_world")
     )
-    
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data == "tour_join")
 def tour_join(call):
     user_id = call.from_user.id
     player = Player(user_id)
-    
     if player.data["money"] < 500:
         bot.answer_callback_query(call.id, "❌ 500💰!")
         return
-    
     tour = tournaments.get("active", {})
     participants = tour.get("participants", [])
-    
     if str(user_id) in participants:
         bot.answer_callback_query(call.id, "❌ Уже участвуете!")
         return
     if len(participants) >= 16:
         bot.answer_callback_query(call.id, "❌ Заполнен!")
         return
-    
     player.data["money"] -= 500
     player.save()
-    
     participants.append(str(user_id))
     tour["participants"] = participants
     tour["prize_pool"] = tour.get("prize_pool", 0) + 500
     tournaments["active"] = tour
     save_json(DATA_FILES['tournaments'], tournaments)
-    
     bot.answer_callback_query(call.id, "✅ Зарегистрированы!")
     world_tournaments(call)
 
 @bot.callback_query_handler(func=lambda call: call.data == "tour_list")
 def tour_list(call):
     participants = tournaments.get("active", {}).get("participants", [])
-    
     if not participants:
         bot.answer_callback_query(call.id, "📋 Пусто")
         return
-    
     text = "<b>📋 УЧАСТНИКИ</b>\n\n"
     for i, uid in enumerate(participants[:16], 1):
         p = Player(uid)
         text += f"{i}. {p.data['first_name']} (Lv.{p.data['level']})\n"
-    
     bot.send_message(call.message.chat.id, text)
 
+# ==================== ИВЕНТЫ КАЖДЫЕ 10 МИНУТ ====================
+@bot.callback_query_handler(func=lambda call: call.data == "world_events")
+def world_events(call):
+    # Проверка и обновление ивента
+    current_event = events.get("current", {})
+    event_time = current_event.get("started_at", "")
+    
+    should_refresh = True
+    if event_time:
+        try:
+            last = datetime.fromisoformat(event_time)
+            if (datetime.now() - last) < timedelta(minutes=10):
+                should_refresh = False
+        except:
+            should_refresh = True
+    
+    if should_refresh or not current_event:
+        # Генерация нового ивента
+        event_types = [
+            {"name": "⚡ Гроза", "description": "Повышенный шанс молний в бою! Двойной опыт!", "reward": 500, "bonus": "double_exp"},
+            {"name": "🔥 Извержение", "description": "Огненные атаки усилены! +30% урона огнём", "reward": 400, "bonus": "fire_boost"},
+            {"name": "💎 Сокровищница", "description": "Удвоенные награды в данжах!", "reward": 600, "bonus": "double_dungeon"},
+            {"name": "✨ Магический шторм", "description": "Шанс получить зачарование после дуэли!", "reward": 800, "bonus": "enchant_drop"},
+            {"name": "🌑 Затмение", "description": "Тёмные атаки +40%! Риск проклятия", "reward": 700, "bonus": "dark_boost"}
+        ]
+        current_event = random.choice(event_types)
+        current_event["started_at"] = datetime.now().isoformat()
+        current_event["participants"] = []
+        events["current"] = current_event
+        save_json(DATA_FILES['events'], events)
+    
+    ev = events.get("current", {})
+    uid = str(call.from_user.id)
+    
+    # Проверка участия
+    if uid not in ev.get("participants", []):
+        # Авто-участие
+        ev.setdefault("participants", []).append(uid)
+        events["current"] = ev
+        save_json(DATA_FILES['events'], events)
+    
+    # Шанс получить зачарование во время ивента
+    got_enchant = None
+    if ev.get("bonus") == "enchant_drop" and random.random() < 0.2:
+        player = Player(uid)
+        # Найти предмет в инвентаре или экипировке
+        all_player_items = player.data["inventory"] + list(player.data["equipment"].values())
+        all_player_items = [x for x in all_player_items if x]
+        if all_player_items:
+            target_item = random.choice(all_player_items)
+            enchant = random.choice(ENCHANT_EFFECTS)
+            player.data.setdefault("enchantments", {})[target_item] = enchant["name"]
+            got_enchant = f"\n\n✨ Получено зачарование <b>{enchant['name']}</b> на предмет!"
+            player.save()
+    
+    text = f"""
+<b>🌍 ИВЕНТ</b>
+<b>{ev.get('name', '')}</b>
+📝 {ev.get('description', '')}
+🎁 Награда: {ev.get('reward', 0)}💰
+⏰ Начался: {ev.get('started_at', '')[:16]}
+"""
+    if got_enchant:
+        text += got_enchant
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🎁 Забрать награду", callback_data="event_claim"))
+    markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="back_to_world"))
+    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data == "event_claim")
+def event_claim(call):
+    user_id = call.from_user.id
+    player = Player(user_id)
+    ev = events.get("current", {})
+    uid = str(user_id)
+    
+    if uid not in ev.get("claimed", []):
+        reward = ev.get("reward", 500)
+        player.data["money"] += reward
+        player.save()
+        ev.setdefault("claimed", []).append(uid)
+        events["current"] = ev
+        save_json(DATA_FILES['events'], events)
+        bot.answer_callback_query(call.id, f"✅ +{reward}💰!")
+    else:
+        bot.answer_callback_query(call.id, "❌ Уже получено!")
+    
+    world_events(call)
+
+# ==================== ТОП ====================
 @bot.callback_query_handler(func=lambda call: call.data == "world_top")
 def world_top(call):
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -2378,7 +2355,6 @@ def world_top(call):
 @bot.callback_query_handler(func=lambda call: call.data.startswith("top_"))
 def show_top(call):
     cat = call.data.split("_")[1]
-    
     if cat == "level":
         su = sorted(users.items(), key=lambda x: (x[1].get("level", 1), x[1].get("exp", 0)), reverse=True)[:10]
         t = "⭐ УРОВЕНЬ"
@@ -2393,10 +2369,8 @@ def show_top(call):
         t = "🏆 РЕЙТИНГ"
     else:
         return
-    
     medals = ["🥇", "🥈", "🥉"] + [f"{i}️⃣" for i in range(4, 11)]
     text = f"<b>{t}</b>\n\n"
-    
     for i, (uid, data) in enumerate(su):
         if cat == "level":
             val = f"Ур.{data.get('level', 1)}"
@@ -2406,47 +2380,21 @@ def show_top(call):
             val = f"{data.get('money', 0)}💰"
         else:
             val = f"{data.get('pvp_rating', 1000)}"
-        
         text += f"{medals[i]} {data.get('first_name', 'Игрок')}: {val}\n"
-    
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="world_top"))
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data == "world_events")
-def world_events(call):
-    if not events.get("current"):
-        events["current"] = {
-            "name": "🌍 Нашествие", "description": "Выиграйте 5 дуэлей!",
-            "target": 5, "progress": {}, "reward": 1000,
-            "expires": (datetime.now() + timedelta(hours=24)).isoformat()
-        }
-        save_json(DATA_FILES['events'], events)
-    
-    ev = events["current"]
-    uid = str(call.from_user.id)
-    prog = ev.get("progress", {}).get(uid, 0)
-    
-    text = f"""
-<b>🌍 СОБЫТИЕ</b>
-
-<b>{ev['name']}</b>
-📝 {ev['description']}
-🎁 {ev['reward']}💰
-📊 {prog}/{ev['target']}
-"""
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("◀ Назад", callback_data="back_to_world"))
-    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
-
+# ==================== ПОМОЩЬ ====================
 @bot.callback_query_handler(func=lambda call: call.data == "world_help")
 def world_help(call):
     text = """
 <b>ℹ ПОМОЩЬ</b>
 
-<b>Дуэли:</b> /duel, /ranked, /hardcore, /survival, /sparring
+<b>Дуэли:</b> /duel, /ranked, /hardcore
 <b>Магазин:</b> /shop
 <b>Продать:</b> /sell [№] [цена]
+<b>Передать:</b> /transfer [№] @user
 <b>Клан:</b> /createclan, /joinclan
 
 <b>Бой:</b>
@@ -2460,49 +2408,15 @@ def world_help(call):
 def back_to_world(call):
     world_section(call.message)
 
-# ==================== РАБОТА ====================
-@bot.callback_query_handler(func=lambda call: call.data == "trade_work")
-def work_action(call):
-    user_id = call.from_user.id
-    player = Player(user_id)
-    
-    now = datetime.now()
-    if player.data.get("last_work"):
-        last = datetime.fromisoformat(player.data["last_work"])
-        if (now - last) < timedelta(hours=1):
-            r = timedelta(hours=1) - (now - last)
-            bot.answer_callback_query(call.id, f"⏰ {r.seconds//60} мин.")
-            return
-    
-    jobs = ["Охота", "Защита", "Сбор трав", "Тренировка", "Руины", "Охрана"]
-    reward = random.randint(80, 250) + player.data["level"] * 10
-    exp = random.randint(30, 100) + player.data["level"] * 5
-    
-    player.data["money"] += reward
-    player.data["exp"] += exp
-    player.data["total_exp"] += exp
-    player.data["last_work"] = now.isoformat()
-    
-    old = player.data["level"]
-    check_level_up(player)
-    player.save()
-    
-    text = f"<b>💼 {random.choice(jobs)}</b>\n💰 +{reward}\n✨ +{exp}"
-    if player.data["level"] > old:
-        text += f"\n🎉 УРОВЕНЬ <b>{player.data['level']}</b>!"
-    
-    bot.edit_message_text(text, call.message.chat.id, call.message.message_id)
-
+# ==================== КУРС ====================
 @bot.callback_query_handler(func=lambda call: call.data == "trade_exchange")
 def exchange_info(call):
-    bot.edit_message_text("<b>📊 КУРС</b>\n1 ур. = 100 EXP\n/sell [№] [цена]", 
-                          call.message.chat.id, call.message.message_id)
+    bot.edit_message_text("<b>📊 КУРС</b>\n1 ур. = 100 EXP\n/sell [№] [цена]\n/transfer [№] @user", call.message.chat.id, call.message.message_id)
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 def check_level_up(player):
     level = player.data["level"]
     exp_needed = int(100 * (1.5 ** (level - 1)))
-    
     leveled = False
     while player.data["exp"] >= exp_needed:
         player.data["exp"] -= exp_needed
@@ -2512,27 +2426,20 @@ def check_level_up(player):
         player.data["max_mana"] += 8
         player.data["hp"] = player.data["max_hp"]
         player.data["mana"] = player.data["max_mana"]
-        
-        titles = {5: "Боец", 10: "Воитель", 15: "Рыцарь", 20: "Ветеран",
-                  25: "Мастер", 30: "Грандмастер", 40: "Герой", 50: "Легенда",
-                  60: "Мифический воин", 75: "Полубог", 100: "Божество"}
-        
+        titles = {5: "Боец", 10: "Воитель", 15: "Рыцарь", 20: "Ветеран", 25: "Мастер", 30: "Грандмастер", 40: "Герой", 50: "Легенда", 60: "Мифический воин", 75: "Полубог", 100: "Божество"}
         for req, title in titles.items():
             if player.data["level"] >= req and title not in player.data["titles_collected"]:
                 player.data["titles_collected"].append(title)
                 player.data["title"] = title
-        
         level = player.data["level"]
         exp_needed = int(100 * (1.5 ** (level - 1)))
         leveled = True
-    
     return leveled
 
 @bot.message_handler(commands=['sell'])
 def sell_cmd(message):
     user_id = message.from_user.id
     player = Player(user_id)
-    
     try:
         parts = message.text.split()
         idx = int(parts[1]) - 1
@@ -2540,41 +2447,27 @@ def sell_cmd(message):
     except:
         bot.send_message(message.chat.id, "❌ /sell [номер] [цена]")
         return
-    
     if idx < 0 or idx >= len(player.data["inventory"]):
         bot.send_message(message.chat.id, "❌ Неверный номер!")
         return
-    
     ik = player.data["inventory"][idx]
     item = items.get(ik) or limited_items.get(ik)
-    
     player.data["inventory"].pop(idx)
     player.save()
-    
     lid = f"{user_id}_{int(time.time())}"
-    market_listings[lid] = {
-        "seller_id": user_id,
-        "seller_name": message.from_user.first_name,
-        "item_key": ik,
-        "price": price,
-        "created_at": datetime.now().isoformat()
-    }
+    market_listings[lid] = {"seller_id": user_id, "seller_name": message.from_user.first_name, "item_key": ik, "price": price, "created_at": datetime.now().isoformat()}
     save_json(DATA_FILES['market'], market_listings)
-    
     bot.send_message(message.chat.id, f"✅ {item.get('name', ik)} за {price}💰!")
 
-@bot.message_handler(commands=['shop', 'inventory', 'daily', 'work', 'stats'])
+@bot.message_handler(commands=['shop', 'inventory', 'daily', 'stats'])
 def quick_commands(message):
     cmd = message.text.split()[0].replace('/', '')
-    
     if cmd == "shop":
         shop_menu(message)
     elif cmd == "inventory":
         hero_inventory(message)
     elif cmd == "daily":
         daily_bonus(message)
-    elif cmd == "work":
-        work_action(message)
     elif cmd == "stats":
         hero_stats(message)
 
@@ -2583,7 +2476,6 @@ def quick_commands(message):
 def admin_panel(message):
     if message.from_user.id != ADMIN_ID:
         return
-    
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton("📊 Статистика", callback_data="admin_stats"),
@@ -2593,19 +2485,17 @@ def admin_panel(message):
         types.InlineKeyboardButton("📢 Рассылка", callback_data="admin_broadcast"),
         types.InlineKeyboardButton("🔄 Сброс", callback_data="admin_reset"),
         types.InlineKeyboardButton("👁 Инфо", callback_data="admin_info"),
-        types.InlineKeyboardButton("✅ Разбан", callback_data="admin_unban")
+        types.InlineKeyboardButton("✅ Разбан", callback_data="admin_unban"),
+        types.InlineKeyboardButton("✨ Зачарование", callback_data="admin_enchant")
     )
-    
     bot.send_message(message.chat.id, "<b>🔧 АДМИН</b>", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data == "admin_stats")
 def admin_stats(call):
     if call.from_user.id != ADMIN_ID:
         return
-    
     text = f"""
 <b>📊 СТАТИСТИКА</b>
-
 👥 Игроков: {len(users)}
 💰 Монет: {sum(u.get('money', 0) for u in users.values())}
 ⚔ Дуэлей: {sum(u.get('total_duels', 0) for u in users.values())}
@@ -2732,7 +2622,6 @@ def reset_daily_cmd(message):
         p = Player(tid)
         p.data["last_daily"] = None
         p.data["last_dungeon"] = None
-        p.data["last_work"] = None
         p.save()
         bot.send_message(message.chat.id, f"✅ Сброс {tid}")
     except:
@@ -2752,23 +2641,37 @@ def user_info_cmd(message):
         tid = str(message.text.split()[1])
         p = Player(tid)
         d = p.data
-        text = f"""
-<b>👤 {tid}</b>
-Имя: {d['first_name']}
-Ур.: {d['level']} | 💰 {d['money']}
-Рейтинг: {d['pvp_rating']}
-Побед: {d['wins']} | Поражений: {d['losses']}
-Клан: {d.get('clan', 'Нет')}
-Предметов: {len(d['inventory'])}
-"""
+        text = f"<b>👤 {tid}</b>\nИмя: {d['first_name']}\nУр.: {d['level']} | 💰 {d['money']}\nРейтинг: {d['pvp_rating']}\nПобед: {d['wins']} | Поражений: {d['losses']}\nКлан: {d.get('clan', 'Нет')}\nПредметов: {len(d['inventory'])}"
         bot.send_message(message.chat.id, text)
     except:
         bot.send_message(message.chat.id, "❌ /userinfo [ID]")
 
+@bot.callback_query_handler(func=lambda call: call.data == "admin_enchant")
+def admin_enchant_prompt(call):
+    if call.from_user.id != ADMIN_ID:
+        return
+    bot.send_message(call.message.chat.id, "✨ /enchant [ID] [item_key] [enchant_name]")
+
+@bot.message_handler(commands=['enchant'])
+def enchant_cmd(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    try:
+        parts = message.text.split(maxsplit=3)
+        tid = str(parts[1])
+        ik = parts[2]
+        ench_name = " ".join(parts[3:]) if len(parts) > 3 else "🔥 Огненный"
+        p = Player(tid)
+        p.data.setdefault("enchantments", {})[ik] = ench_name
+        p.save()
+        bot.send_message(message.chat.id, f"✅ {ik} зачарован: {ench_name}")
+    except:
+        bot.send_message(message.chat.id, "❌ /enchant [ID] [item_key] [enchant_name]")
+
 # ==================== ЗАПУСК ====================
 def main():
     print("=" * 60)
-    print("⚔️ ДУЭЛЬ БОТ v8.0 FINAL ⚔️")
+    print("⚔️ ДУЭЛЬ БОТ v9.0 FINAL ⚔️")
     print("=" * 60)
     print(f"🕒 {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
     print(f"👑 Админ: {ADMIN_ID}")
@@ -2777,13 +2680,19 @@ def main():
     print(f"💎 Лимиток: {len(limited_items)}")
     print(f"🛡 Кланов: {len(clans)}")
     print(f"🏟 Турниров: {len(tournaments)}")
+    print(f"🌍 Ивентов: {1 if events.get('current') else 0}")
     print(f"📦 Лотов: {len(market_listings)}")
     print("=" * 60)
     print("✅ ВСЕ СИСТЕМЫ АКТИВНЫ!")
-    print("✅ КНОПКА ОБНОВИТЬ БОЛЬШЕ НЕ СБРАСЫВАЕТ ДУЭЛЬ!")
-    print("✅ ПОШАГОВЫЕ ДУЭЛИ С ВЫБОРОМ ЧАСТЕЙ ТЕЛА!")
-    print("✅ ДАНЖИ С ПОШАГОВЫМИ БОЯМИ!")
-    print("✅ НОЛЬ ЗАГЛУШЕК!")
+    print("✅ ПОШАГОВЫЕ ДУЭЛИ: ЗАЩИТА → ЦЕЛЬ → НАВЫК")
+    print("✅ БОТ ПОКАЗЫВАЕТ КУДА БЬЁТ И КАКОЙ УРОН")
+    print("✅ ЗАЩИТА БЛОКИРУЕТ УРОН ПОЛНОСТЬЮ")
+    print("✅ ЗАЧАРОВАНИЯ ПРЕДМЕТОВ")
+    print("✅ ИВЕНТЫ КАЖДЫЕ 10 МИНУТ")
+    print("✅ ПЕРЕДАЧА ПРЕДМЕТОВ ИГРОКАМ")
+    print("✅ ЭКИПИРОВКА С ПРОСМОТРОМ И СНЯТИЕМ")
+    print("✅ ТУРНИРЫ С ПОШАГОВЫМИ БОЯМИ")
+    print("✅ ДАНЖИ С БОССАМИ")
     print("=" * 60)
     
     while True:

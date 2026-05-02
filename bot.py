@@ -10,7 +10,7 @@ import copy
 import uuid
 
 # ==================== КОНФИГУРАЦИЯ ====================
-TOKEN = '8670879387:AAGz1v65wqhThDmwGNzCaEY9SY24XDJYLFE'
+TOKEN = '8670879387:AAH70T6P0ZEn-rvPhQo7rhrNMl9wUKDkILI'
 ADMIN_ID = 5356400377
 bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
 

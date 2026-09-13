@@ -33,7 +33,7 @@ from aiogram.types import (
 )
 
 # ─────────────────────────── НАСТРОЙКИ ───────────────────────────
-BOT_TOKEN = os.getenv("8996813076:AAGq74gyRRW5fMxvHaIE190_B-tmzXk8aNA")
+BOT_TOKEN = "8996813076:AAGq74gyRRW5fMxvHaIE190_B-tmzXk8aNA"
 DB_PATH = os.getenv("DB_PATH", "farm.db")
 
 START_COINS = 100          # стартовый капитал

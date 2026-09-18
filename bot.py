@@ -1055,7 +1055,7 @@ async def cmd_profile(m: Message):
                   f"Баланс: <b>{fmt(row['balance'])}{CUR}</b> · Банк: {fmt(row['bank'])}{CUR}\n"
                   f"Игры: {row['games']} · Победы: {row['wins']} · Оборот: {fmt(row['bet_sum'])}{CUR}\n"
                   f"🐾 Питомец: {(row['pet'] + f' (ур. {row[\"pet_lvl\"]})') if row['pet'] else '—'}\n"
-                  f"🛡 Клан: {clan or '—'} · 🔥 Стрик: {row['streak']} дн.")
+                  f"🛡 Клан: {clan or '—'} · 🔥 Стрик: {row['streak']} дн."
 
 
 # 3 ── daily

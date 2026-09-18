@@ -1043,20 +1043,42 @@ async def cmd_help(m: Message):
 @rt.message(Command("profile", "me"))
 async def cmd_profile(m: Message):
     await ensure(m.from_user)
+
     t = m.reply_to_message.from_user if m.reply_to_message else m.from_user
     row = u(t.id)
     if not row:
         return await m.reply("Игрок ещё не начинал — пусть напишет /start.")
+
+    # ── уровень и прогресс-бар ──
     lv = lvl(row["xp"])
     pr = row["xp"] - (lv - 1) * 150
-    bar = "█" * int(pr / 15) + "░" * (10 - int(pr / 15))
-    clan = sc("SELECT name FROM clans WHERE clan_id=?", (row["clan"],))
-    await m.reply f"👤 <b>{t.full_name}</b>\nУровень <b>{lv}</b> [{bar}] {pr}/150 XP\n"
-                  f"Баланс: <b>{fmt(row['balance'])}{CUR}</b> · Банк: {fmt(row['bank'])}{CUR}\n"
-                  f"Игры: {row['games']} · Победы: {row['wins']} · Оборот: {fmt(row['bet_sum'])}{CUR}\n"
-                  f"🐾 Питомец: {(row['pet'] + f' (ур. {row[\"pet_lvl\"]})') if row['pet'] else '—'}\n"
-                  f"🛡 Клан: {clan or '—'} · 🔥 Стрик: {row['streak']} дн."
+    filled = min(10, max(0, int(pr / 15)))          # защита от выхода за границы
+    bar = "█" * filled + "░" * (10 - filled)
 
+    # ── клан ──
+    clan_row = sc("SELECT name FROM clans WHERE clan_id=?", (row["clan"],))
+    clan = clan_row["name"] if clan_row else None
+
+    # ── питомец ──
+    if row["pet"]:
+        pet = f"{escape(row['pet'])} (ур. {row['pet_lvl']})"
+    else:
+        pet = "—"
+
+    # ── экранирование для HTML ──
+    name = escape(t.full_name or "—")
+    clan_safe = escape(clan) if clan else "—"
+
+    text = (
+        f"👤 <b>{name}</b>\n"
+        f"Уровень <b>{lv}</b> [{bar}] {pr}/150 XP\n"
+        f"Баланс: <b>{fmt(row['balance'])}{CUR}</b> · Банк: {fmt(row['bank'])}{CUR}\n"
+        f"Игры: {row['games']} · Победы: {row['wins']} · Оборот: {fmt(row['bet_sum'])}{CUR}\n"
+        f"🐾 Питомец: {pet}\n"
+        f"🛡 Клан: {clan_safe} · 🔥 Стрик: {row['streak']} дн."
+    )
+
+    await m.reply(text)
 
 # 3 ── daily
 @rt.message(Command("daily", "bonus"))

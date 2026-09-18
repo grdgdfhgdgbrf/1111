@@ -1051,7 +1051,7 @@ async def cmd_profile(m: Message):
     pr = row["xp"] - (lv - 1) * 150
     bar = "█" * int(pr / 15) + "░" * (10 - int(pr / 15))
     clan = sc("SELECT name FROM clans WHERE clan_id=?", (row["clan"],))
-    await m.reply(f"👤 <b>{t.full_name}</b>\nУровень <b>{lv}</b> [{bar}] {pr}/150 XP\n"
+    await m.reply f"👤 <b>{t.full_name}</b>\nУровень <b>{lv}</b> [{bar}] {pr}/150 XP\n"
                   f"Баланс: <b>{fmt(row['balance'])}{CUR}</b> · Банк: {fmt(row['bank'])}{CUR}\n"
                   f"Игры: {row['games']} · Победы: {row['wins']} · Оборот: {fmt(row['bet_sum'])}{CUR}\n"
                   f"🐾 Питомец: {(row['pet'] + f' (ур. {row[\"pet_lvl\"]})') if row['pet'] else '—'}\n"

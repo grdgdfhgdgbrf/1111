@@ -1,7 +1,6 @@
 # ============================================================
 #  GameHub — Telegram-бот: 4 игры + админка
 #  Python 3.11+ | aiogram 3.x | SQLite
-#  Один файл. Запуск: python main.py
 # ============================================================
 
 import asyncio
@@ -28,10 +27,11 @@ from aiogram.types import (
 )
 
 # ============================================================
-#  КОНФИГ
+#  КОНФИГ  (жёстко прописан)
 # ============================================================
 BOT_TOKEN = "8996813076:AAGq74gyRRW5fMxvHaIE190_B-tmzXk8aNA"
-ADMIN_IDS = "5356400377"
+ADMIN_IDS = [5356400377]
+DB_PATH = "bot.db"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -318,9 +318,10 @@ def bot_hard(board: list) -> int:
 
 
 # ============================================================
-#  РОУТЕР
+#  РОУТЕР + BOT
 # ============================================================
 router = Router()
+bot: Bot = None
 
 
 # ---------- СТАРТ / МЕНЮ ----------
@@ -460,6 +461,12 @@ async def pvp_cancel(cb: CallbackQuery):
     await cb.answer()
 
 
+@router.callback_query(F.data == "pvp:join_info")
+async def pvp_join_info(cb: CallbackQuery):
+    await cb.message.edit_text("🔗 Отправь в чат: <code>/join КОД</code>", reply_markup=kb_back())
+    await cb.answer()
+
+
 @router.message(Command("join"))
 async def pvp_join(msg: Message):
     parts = msg.text.split()
@@ -539,7 +546,6 @@ async def pvp_move(cb: CallbackQuery):
         ])
     else:
         db("UPDATE games_pvp SET board=?, turn=? WHERE code=?", ("".join(board), 2 if game["turn"]==1 else 1, code))
-        next_uid = game["player2_id"] if game["turn"] == 1 else game["player1_id"]
         next_sym = game["symbol2"] if game["turn"] == 1 else game["symbol1"]
         txt = f"Ход: {next_sym}\n\n{render_board(board)}"
         kb = kb_board(board, prefix=f"pvp:{code}")
@@ -613,8 +619,9 @@ async def bot_new(cb: CallbackQuery, state: FSMContext):
     diff = cb.data.split(":")[2]
     board = ["⬜"]*9
     await state.update_data(diff=diff, board=board)
+    names = {'easy':'🟢 Легко','medium':'🟡 Средне','hard':'🔴 Сложно'}
     await cb.message.edit_text(
-        f"🤖 Сложность: <b>{ {'easy':'🟢 Легко','medium':'🟡 Средне','hard':'🔴 Сложно'}[diff] }</b>\n"
+        f"🤖 Сложность: <b>{names[diff]}</b>\n"
         f"Ты — ❌, ходишь первым.\n\n{render_board(board)}",
         reply_markup=kb_board(board, prefix=f"bot:{diff}"),
     )
@@ -624,7 +631,7 @@ async def bot_new(cb: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("bot:") & F.data.contains(":move:"))
 async def bot_move(cb: CallbackQuery, state: FSMContext):
     parts = cb.data.split(":")
-    diff, _, idx = parts[1], parts[2], int(parts[3])
+    diff, idx = parts[1], int(parts[3])
     data = await state.get_data()
     board = data.get("board")
     if not board:
@@ -730,6 +737,12 @@ async def dice_bet_input(msg: Message, state: FSMContext):
     )
 
 
+@router.callback_query(F.data == "dice:join_info")
+async def dice_join_info(cb: CallbackQuery):
+    await cb.message.edit_text("🔗 Отправь команду <code>/dice_join КОД</code> в этот чат.", reply_markup=kb_back())
+    await cb.answer()
+
+
 @router.message(Command("dice_join"))
 async def dice_join(msg: Message):
     parts = msg.text.split()
@@ -749,7 +762,7 @@ async def dice_join(msg: Message):
 
     db("UPDATE games_dice SET player2_id=?, status='playing' WHERE code=?", (msg.from_user.id, code))
 
-    await msg.answer(f"🎲 Бросаем кубики...")
+    await msg.answer("🎲 Бросаем кубики...")
     try:
         await bot.send_message(game["player1_id"], "🎲 Бросаем кубики...")
     except TelegramForbiddenError:
@@ -783,12 +796,6 @@ async def dice_join(msg: Message):
             await bot.send_message(pid, txt, reply_markup=kb_back())
         except TelegramForbiddenError:
             pass
-
-
-@router.callback_query(F.data == "dice:join_info")
-async def dice_join_info(cb: CallbackQuery):
-    await cb.message.edit_text("🔗 Отправь команду <code>/dice_join КОД</code> в этот чат.", reply_markup=kb_back())
-    await cb.answer()
 
 
 # ============================================================

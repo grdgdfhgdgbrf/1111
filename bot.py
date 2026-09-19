@@ -4,7 +4,7 @@ import logging
 from typing import Dict, Any, Optional, Tuple
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -95,11 +95,12 @@ async def get_player(user_id: int) -> Optional[Dict[str, Any]]:
             return dict(row) if row else None
 
 async def create_player(user_id: int, username: str):
+    name = username if username else f"Боец_{user_id}"
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("""
             INSERT OR IGNORE INTO players (user_id, username) 
             VALUES (?, ?)
-        """, (user_id, username or f"Боец_{user_id}"))
+        """, (user_id, name))
         await db.commit()
 
 async def update_player(user_id: int, **kwargs):
@@ -111,20 +112,20 @@ async def update_player(user_id: int, **kwargs):
 
 # ==================== ВЫЧИСЛЕНИЯ СТАТИСТИКИ ====================
 def calculate_stats(player: Dict[str, Any]) -> Dict[str, Any]:
-    armor = ARMORS.get(player['armor'], ARMORS['none'])
-    max_hp = player['base_hp'] + armor['hp_bonus']
-    total_def = player['base_def'] + armor['def_bonus']
+    armor = ARMORS.get(player.get('armor', 'none'), ARMORS['none'])
+    max_hp = player.get('base_hp', 100) + armor['hp_bonus']
+    total_def = player.get('base_def', 2) + armor['def_bonus']
     return {
-        "name": player['username'] or f"Игрок #{player['user_id']}",
+        "name": player.get('username') or f"Игрок #{player.get('user_id', 0)}",
         "max_hp": max_hp,
         "hp": max_hp,
-        "atk": player['base_atk'],
+        "atk": player.get('base_atk', 12),
         "def": total_def,
-        "speed": player['speed'],
-        "crit": player['crit'],
-        "weapon": player['weapon'],
-        "armor": player['armor'],
-        "user_id": player['user_id']
+        "speed": player.get('speed', 10),
+        "crit": player.get('crit', 10),
+        "weapon": player.get('weapon', 'dagger'),
+        "armor": player.get('armor', 'none'),
+        "user_id": player.get('user_id', 0)
     }
 
 def add_exp_and_level_up(player: Dict[str, Any], exp_gained: int) -> Tuple[Dict[str, Any], bool]:
@@ -148,15 +149,13 @@ def add_exp_and_level_up(player: Dict[str, Any], exp_gained: int) -> Tuple[Dict[
 
 def get_hp_bar(current: int, max_hp: int) -> str:
     current = max(0, current)
-    percent = int((current / max_hp) * 10)
+    percent = int((current / max_hp) * 10) if max_hp > 0 else 0
     bar = "█" * percent + "░" * (10 - percent)
     return f"[{bar}] {current}/{max_hp} HP"
 
 # ==================== СОСТОЯНИЯ FSM ====================
 class GameStates(StatesGroup):
     in_fight = State()
-    casino_bet = State()
-    admin_give_chips = State()
 
 # ==================== КЛАВИАТУРЫ ====================
 def main_menu_kb(user_id: int):
@@ -176,21 +175,25 @@ def back_to_menu_kb():
     ])
 
 def fight_attack_kb():
-    buttons = []
     keys = list(BODY_PARTS.keys())
-    buttons.append([InlineKeyboardButton(text=BODY_PARTS[keys[0]], callback_data=f"attack_{keys[0]}"),
-                    InlineKeyboardButton(text=BODY_PARTS[keys[1]], callback_data=f"attack_{keys[1]}")])
-    buttons.append([InlineKeyboardButton(text=BODY_PARTS[keys[2]], callback_data=f"attack_{keys[2]}"),
-                    InlineKeyboardButton(text=BODY_PARTS[keys[3]], callback_data=f"attack_{keys[3]}")])
+    buttons = [
+        [InlineKeyboardButton(text=f"💥 Атака: {BODY_PARTS[keys[0]]}", callback_data=f"attack_{keys[0]}"),
+         InlineKeyboardButton(text=f"💥 Атака: {BODY_PARTS[keys[1]]}", callback_data=f"attack_{keys[1]}")],
+        [InlineKeyboardButton(text=f"💥 Атака: {BODY_PARTS[keys[2]]}", callback_data=f"attack_{keys[2]}"),
+         InlineKeyboardButton(text=f"💥 Атака: {BODY_PARTS[keys[3]]}", callback_data=f"attack_{keys[3]}")],
+        [InlineKeyboardButton(text="🏳️ Сдаться", callback_data="menu_main")]
+    ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def fight_defend_kb(attack_part: str):
-    buttons = []
     keys = list(BODY_PARTS.keys())
-    buttons.append([InlineKeyboardButton(text=BODY_PARTS[keys[0]], callback_data=f"defend_{attack_part}_{keys[0]}"),
-                    InlineKeyboardButton(text=BODY_PARTS[keys[1]], callback_data=f"defend_{attack_part}_{keys[1]}")])
-    buttons.append([InlineKeyboardButton(text=BODY_PARTS[keys[2]], callback_data=f"defend_{attack_part}_{keys[2]}"),
-                    InlineKeyboardButton(text=BODY_PARTS[keys[3]], callback_data=f"defend_{attack_part}_{keys[3]}")])
+    buttons = [
+        [InlineKeyboardButton(text=f"🛡 Защита: {BODY_PARTS[keys[0]]}", callback_data=f"defend_{attack_part}_{keys[0]}"),
+         InlineKeyboardButton(text=f"🛡 Защита: {BODY_PARTS[keys[1]]}", callback_data=f"defend_{attack_part}_{keys[1]}")],
+        [InlineKeyboardButton(text=f"🛡 Защита: {BODY_PARTS[keys[2]]}", callback_data=f"defend_{attack_part}_{keys[2]}"),
+         InlineKeyboardButton(text=f"🛡 Защита: {BODY_PARTS[keys[3]]}", callback_data=f"defend_{attack_part}_{keys[3]}")],
+        [InlineKeyboardButton(text="🏳️ Сдаться", callback_data="menu_main")]
+    ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # ==================== ДВИЖОК ИНТЕРАКТИВНОГО БОЯ ====================
@@ -207,11 +210,11 @@ def calculate_turn(p_stat: Dict, e_stat: Dict, p_attack: str, p_defend: str) -> 
     
     if is_e_blocked:
         p_dmg = max(1, int((raw_p_dmg - e_stat['def']) * 0.3))
-        log.append(f"🎯 Вы атаковали в **{BODY_PARTS[p_attack]}**, но враг **ЗАБЛОКИРОВАЛ** урон! (-{p_dmg} HP)")
+        log.append(f"🎯 Вы бьёте в **{BODY_PARTS[p_attack]}**, но противник **ЗАБЛОКИРОВАЛ** удар! (-{p_dmg} HP)")
     else:
         p_dmg = max(1, int(raw_p_dmg - e_stat['def']))
         crit_str = " 💥 **КРИТ!**" if p_crit else ""
-        log.append(f"⚔️ Вы успешно ударили в **{BODY_PARTS[p_attack]}**{crit_str}! (-{p_dmg} HP)")
+        log.append(f"⚔️ Вы успешно попали в **{BODY_PARTS[p_attack]}**{crit_str}! (-{p_dmg} HP)")
 
     # 2. Атака Врага
     is_p_blocked = (e_attack == p_defend)
@@ -220,11 +223,11 @@ def calculate_turn(p_stat: Dict, e_stat: Dict, p_attack: str, p_defend: str) -> 
     
     if is_p_blocked:
         e_dmg = max(1, int((raw_e_dmg - p_stat['def']) * 0.3))
-        log.append(f"🛡 Враг бился в **{BODY_PARTS[e_attack]}**, но вы **ЗАБЛОКИРОВАЛИ** удар! (-{e_dmg} HP)")
+        log.append(f"🛡 Враг целит в **{BODY_PARTS[e_attack]}**, но вы **ЗАБЛОКИРОВАЛИ** урон! (-{e_dmg} HP)")
     else:
         e_dmg = max(1, int(raw_e_dmg - p_stat['def']))
         crit_str = " 💥 **КРИТ!**" if e_crit else ""
-        log.append(f"🩸 Враг попал вам в **{BODY_PARTS[e_attack]}**{crit_str}! (-{e_dmg} HP)")
+        log.append(f"🩸 Враг пробил защиту в **{BODY_PARTS[e_attack]}**{crit_str}! (-{e_dmg} HP)")
 
     return p_dmg, e_dmg, "\n".join(log)
 
@@ -236,8 +239,8 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     await create_player(message.from_user.id, message.from_user.full_name)
     await message.answer(
-        "⚔️ **Арена ДуэлянтовПриветствует тебя, Воин!**\n\n"
-        "🔥 Настраивай билды, сражайся в асинхронном и интерактивном PvP, побеждай монстров и эпических Боссов, проходи подземелья и попытай удачу в Казино!",
+        "⚔️ **Арена Дуэлянтов приветствует тебя, Воин!**\n\n"
+        "🔥 Настраивай билды, сражайся в PvP, побеждай монстров и эпических Боссов, проходи Подземелья и исправь удачу в Казино!",
         reply_markup=main_menu_kb(message.from_user.id),
         parse_mode="Markdown"
     )
@@ -255,6 +258,10 @@ async def cb_main_menu(call: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "menu_profile")
 async def cb_profile(call: CallbackQuery):
     p = await get_player(call.from_user.id)
+    if not p:
+        await create_player(call.from_user.id, call.from_user.full_name)
+        p = await get_player(call.from_user.id)
+        
     stats = calculate_stats(p)
     w_info = WEAPONS.get(p['weapon'], WEAPONS['dagger'])
     a_info = ARMORS.get(p['armor'], ARMORS['none'])
@@ -288,13 +295,13 @@ async def cb_inventory(call: CallbackQuery):
     
     buttons = [[InlineKeyboardButton(text="--- 🗡 Сменить Оружие ---", callback_data="ignore")]]
     for w_key in inv_w:
-        w = WEAPONS[w_key]
+        w = WEAPONS.get(w_key, WEAPONS['dagger'])
         status = " (Экипировано)" if p['weapon'] == w_key else ""
         buttons.append([InlineKeyboardButton(text=f"{w['name']}{status}", callback_data=f"equip_w_{w_key}")])
         
     buttons.append([InlineKeyboardButton(text="--- 🛡 Сменить Броню ---", callback_data="ignore")])
     for a_key in inv_a:
-        a = ARMORS[a_key]
+        a = ARMORS.get(a_key, ARMORS['none'])
         status = " (Экипировано)" if p['armor'] == a_key else ""
         buttons.append([InlineKeyboardButton(text=f"{a['name']}{status}", callback_data=f"equip_a_{a_key}")])
         
@@ -391,7 +398,7 @@ async def cb_bosses_select(call: CallbackQuery):
 @router.callback_query(F.data == "menu_pvp")
 async def cb_pvp_start(call: CallbackQuery, state: FSMContext):
     await call.message.edit_text("🔎 **Поиск соперника для PvP...**\nПодождите пару секунд.")
-    await asyncio.sleep(2)
+    await asyncio.sleep(1.5)
     
     async with aiosqlite.connect(DB_NAME) as db:
         db.row_factory = aiosqlite.Row
@@ -402,7 +409,6 @@ async def cb_pvp_start(call: CallbackQuery, state: FSMContext):
         opp_dict = dict(opponent)
         enemy_stat = calculate_stats(opp_dict)
     else:
-        # Если игроков нет — генерируем сильного PvP-бота
         enemy_stat = {
             "name": "🤖 PvP-Бот Бронзового Ранга",
             "max_hp": 120, "hp": 120, "atk": 18, "def": 5,
@@ -422,7 +428,6 @@ async def cb_pvp_start(call: CallbackQuery, state: FSMContext):
     
     await state.set_state(GameStates.in_fight)
     await state.update_data(fight_data=fight_data)
-    
     await render_fight_step(call.message, fight_data, "⚔️ **PvP Бой Начался! Выберите зону для атаки:**")
 
 @router.callback_query(F.data.startswith("start_fight_pve_"))
@@ -484,7 +489,11 @@ async def render_fight_step(message: Message, fight_data: Dict, comment: str, kb
 async def cb_fight_attack(call: CallbackQuery, state: FSMContext):
     attack_part = call.data.split("_")[1]
     data = await state.get_data()
-    fight_data = data['fight_data']
+    fight_data = data.get('fight_data')
+    if not fight_data:
+        await state.clear()
+        await cb_main_menu(call, state)
+        return
     
     await render_fight_step(
         call.message, 
@@ -495,9 +504,16 @@ async def cb_fight_attack(call: CallbackQuery, state: FSMContext):
 
 @router.callback_query(GameStates.in_fight, F.data.startswith("defend_"))
 async def cb_fight_defend(call: CallbackQuery, state: FSMContext):
-    _, attack_part, defend_part = call.data.split("_")
+    parts = call.data.split("_")
+    attack_part = parts[1]
+    defend_part = parts[2]
+    
     data = await state.get_data()
-    fight_data = data['fight_data']
+    fight_data = data.get('fight_data')
+    if not fight_data:
+        await state.clear()
+        await cb_main_menu(call, state)
+        return
     
     p_stat = fight_data['p_stat']
     e_stat = fight_data['e_stat']
@@ -566,11 +582,9 @@ async def cb_enter_dungeon(call: CallbackQuery):
     
     success = True
     for r in range(1, dungeon['rooms'] + 1):
-        m_hp = int(35 * (1 + r * 0.25) * dungeon['mult'])
         m_atk = int(8 * (1 + r * 0.2) * dungeon['mult'])
-        
-        # Упрощенная симуляция комнат
         c_hp -= max(5, m_atk - p_stat['def'])
+        
         if c_hp <= 0:
             log.append(f"💀 Вы погибли в комнате {r}...")
             success = False
@@ -676,7 +690,8 @@ async def cb_top(call: CallbackQuery):
             
     text = "🏆 **ТОП-10 БОЙЦОВ АРЕНЫ**\n\n"
     for i, pl in enumerate(players, 1):
-        text += f"{i}. **{pl['username']}** — Lvl {pl['level']} | ⚔️ {pl['wins']} Побед\n"
+        name = pl['username'] if pl['username'] else "Боец"
+        text += f"{i}. **{name}** — Lvl {pl['level']} | ⚔️ {pl['wins']} Побед\n"
         
     await call.message.edit_text(text, reply_markup=back_to_menu_kb(), parse_mode="Markdown")
 
@@ -697,8 +712,9 @@ async def cb_admin_add_chips(call: CallbackQuery):
     if call.from_user.id != ADMIN_ID:
         return
     p = await get_player(ADMIN_ID)
-    await update_player(ADMIN_ID, chips=p['chips'] + 5000)
-    await call.answer("💰 Выдано 5000 фишек!", show_alert=True)
+    if p:
+        await update_player(ADMIN_ID, chips=p['chips'] + 5000)
+        await call.answer("💰 Выдано 5000 фишек!", show_alert=True)
     await cb_admin_panel(call)
 
 # ==================== ЗАПУСК ====================

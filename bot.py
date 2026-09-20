@@ -1,731 +1,1264 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+⚔️ Арена Дуэлянтов — PvP-онли
+Только PvP. Если соперник не найден — подставляется замаскированный бот,
+неотличимый от обычного игрока (человеческий ник, обычный профиль, ответные бои).
+"""
+
 import asyncio
-import random
+import html
 import logging
-from typing import Dict, Any, Optional, Tuple
+import os
+import random
+import sqlite3
+import time
+from dataclasses import dataclass, field
+from typing import Optional
+
 from aiogram import Bot, Dispatcher, F, Router
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import CommandStart
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-import aiosqlite
+from aiogram.types import (
+    BotCommand,
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+)
 
-# ==================== НАСТРОЙКИ И КОНФИГУРАЦИЯ ====================
-BOT_TOKEN = "8996813076:AAGcvKnpHgpDAYcHw7NUWGtqI31pxllzWp4"
+# ════════════════════════════════════════════════════════════════════
+#  КОНФИГ
+# ════════════════════════════════════════════════════════════════════
+
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8996813076:AAGcvKnpHgpDAYcHw7NUWGtqI31pxllzWp4")
+DB_PATH = os.getenv("DB_PATH", "arena.db")
 ADMIN_ID = 5356400377
-DB_NAME = "arena_duels.db"
 
-logging.basicConfig(level=logging.INFO)
+START_CHIPS = 150
+START_POINTS = 5
+POINTS_PER_LEVEL = 2
+BASE_STATS = {"hp": 100, "atk": 12, "defense": 4, "spd": 10, "crit": 5}
+LEVEL_BONUS = {"hp": 10, "atk": 2, "defense": 1}
+POINT_VALUE = {"hp": 10, "atk": 2, "defense": 2, "spd": 1, "crit": 1}
 
-# ==================== ДАННЫЕ И МЕХАНИКИ ====================
+CRIT_CAP = 60
+DEF_FACTOR = 0.7
+BASE_SPEC_CD = 3
+MAX_ROUNDS = 40
+PVP_COOLDOWN = 8
+PVP_FARM_LIMIT = 3
+
+BODY_ZONES = {
+    "head":  dict(name="Голова",  emoji="🧠", dmg=1.6, crit=2.2, miss=0.30, hp=0.20),
+    "torso": dict(name="Торс",    emoji="🫀", dmg=1.0, crit=1.0, miss=0.08, hp=0.45),
+    "arms":  dict(name="Руки",    emoji="💪", dmg=0.8, crit=0.8, miss=0.12, hp=0.20),
+    "legs":  dict(name="Ноги",    emoji="🦵", dmg=0.9, crit=0.9, miss=0.15, hp=0.15),
+}
+
+
+def xp_need(level: int) -> int:
+    return 40 + 20 * level
+
+
 WEAPONS = {
-    "dagger": {"name": "🗡 Кинжал", "price": 0, "spec_name": "Тысяча порезов", "type": "dagger"},
-    "sword": {"name": "⚔️ Меч", "price": 300, "spec_name": "Казнь", "type": "sword"},
-    "axe": {"name": "🪓 Топор", "price": 600, "spec_name": "Кровопускание", "type": "axe"},
-    "bow": {"name": "🏹 Лук", "price": 800, "spec_name": "Снайперский выстрел", "type": "bow"},
-    "staff": {"name": "🔥 Посох", "price": 1200, "spec_name": "Огненный шторм", "type": "staff"},
-    "hammer": {"name": "🔨 Молот", "price": 1500, "spec_name": "Землетрясение", "type": "hammer"}
+    "dagger": dict(emoji="🗡", name="Кинжал", spec="Тысяча порезов",
+                   desc="3 удара по 40% урона", price=0, chance=25),
+    "sword": dict(emoji="⚔️", name="Меч", spec="Казнь",
+                  desc="добивает цель с HP < 30% (урон ×3)", price=300, chance=25),
+    "axe": dict(emoji="🪓", name="Топор", spec="Кровопускание",
+                desc="кровотечение: 5% макс. HP цели, 3 раунда", price=600, chance=20),
+    "bow": dict(emoji="🏹", name="Лук", spec="Снайперский выстрел",
+                desc="100% крит, игнорирует защиту", price=800, chance=20),
+    "staff": dict(emoji="🔥", name="Посох", spec="Огненный шторм",
+                  desc="горение: 30% урона удара, 3 раунда", price=1200, chance=20),
+    "hammer": dict(emoji="🔨", name="Молот", spec="Землетрясение",
+                   desc="150% урона + оглушение", price=1500, chance=15),
 }
 
 ARMORS = {
-    "none": {"name": "👕 Без брони", "def_bonus": 0, "hp_bonus": 0, "price": 0, "type": "none"},
-    "light": {"name": "🥋 Лёгкая", "def_bonus": 3, "hp_bonus": 10, "price": 200, "type": "light"},
-    "medium": {"name": "🛡 Средняя", "def_bonus": 6, "hp_bonus": 25, "price": 500, "type": "medium"},
-    "heavy": {"name": "🏋️ Тяжёлая", "def_bonus": 10, "hp_bonus": 50, "price": 1000, "type": "heavy"},
-    "legendary": {"name": "✨ Легендарная", "def_bonus": 15, "hp_bonus": 80, "price": 3000, "type": "legendary"}
+    "none":   dict(emoji="👕", name="Без брони",   df=0,  hp=0,  price=0,    chance=0,  cd=0, dmg=0,  desc="—"),
+    "light":  dict(emoji="🥋", name="Лёгкая",      df=3,  hp=10, price=200,  chance=10, cd=0, dmg=0,  desc="+10% шанс спец-атаки"),
+    "medium": dict(emoji="🛡", name="Средняя",     df=6,  hp=25, price=500,  chance=0,  cd=1, dmg=0,  desc="−1 к откату спец-атаки"),
+    "heavy":  dict(emoji="🏋️", name="Тяжёлая",     df=10, hp=50, price=1000, chance=0,  cd=0, dmg=20, desc="+20% урон спец-атаки"),
+    "legend": dict(emoji="✨", name="Легендарная", df=15, hp=80, price=3000, chance=15, cd=0, dmg=30, desc="+15% шанс, +30% урон спец-атаки"),
 }
 
-PVE_BOTS = [
-    {"name": "🤖 Тренировочный Манекен", "level": 1, "hp": 50, "atk": 8, "def": 1, "speed": 5, "crit": 5, "weapon": "dagger", "armor": "none", "reward_chips": 30, "reward_exp": 25},
-    {"name": "🐀 Гигантская Крыса", "level": 2, "hp": 75, "atk": 13, "def": 3, "speed": 12, "crit": 10, "weapon": "dagger", "armor": "none", "reward_chips": 60, "reward_exp": 50},
-    {"name": "🧌 Гоблин-Налётчик", "level": 3, "hp": 110, "atk": 20, "def": 6, "speed": 15, "crit": 12, "weapon": "axe", "armor": "light", "reward_chips": 120, "reward_exp": 100},
-    {"name": "🦁 Пещерный Лев", "level": 4, "hp": 160, "atk": 30, "def": 10, "speed": 22, "crit": 18, "weapon": "bow", "armor": "medium", "reward_chips": 220, "reward_exp": 180},
-    {"name": "👹 Древний Огр", "level": 5, "hp": 240, "atk": 42, "def": 16, "speed": 8, "crit": 15, "weapon": "hammer", "armor": "heavy", "reward_chips": 400, "reward_exp": 320}
+# ── Человеческие ники для замаскированных соперников ────────────────
+HUMAN_NAMES = [
+    "Максим", "Артём", "Данил", "Кирилл", "Егор", "Иван", "Никита", "Рома",
+    "Саня", "Дима", "Влад", "Серёга", "Паша", "Толя", "Женя", "Костя",
+    "Лёха", "Миша", "Гриша", "Стас", "Олег", "Ден", "Марк", "Тимур",
+    "Алина", "Катя", "Настя", "Даша", "Лера", "Соня", "Вика", "Полина",
+    "Крис", "Милана", "Аня", "Юля", "Оля", "Маша", "Ксюша", "Ника",
 ]
 
-BOSSES = [
-    {"id": "dragon", "name": "🐉 Древний Дракон", "hp": 500, "atk": 65, "def": 25, "speed": 20, "crit": 25, "weapon": "staff", "armor": "legendary", "reward_chips": 1500, "reward_exp": 1000},
-    {"id": "necromancer", "name": "🔮 Некромант Тьмы", "hp": 750, "atk": 90, "def": 35, "speed": 30, "crit": 30, "weapon": "staff", "armor": "legendary", "reward_chips": 3000, "reward_exp": 2000},
-    {"id": "titan", "name": "🗿 Каменный Титан", "hp": 1200, "atk": 120, "def": 50, "speed": 10, "crit": 20, "weapon": "hammer", "armor": "legendary", "reward_chips": 6000, "reward_exp": 4000}
-]
+HUMAN_TITLES = ["", "", "", "xd", "pro", "god", "tvoy", "real", "top", "_", "1", "007"]
 
-DUNGEONS = {
-    "crypt": {"name": "🏚 Склеп", "rooms": 3, "fee": 50, "final": 250, "mult": 1.0},
-    "cave": {"name": "🕳 Пещера", "rooms": 5, "fee": 150, "final": 750, "mult": 1.3},
-    "castle": {"name": "🏰 Крепость", "rooms": 7, "fee": 400, "final": 2000, "mult": 1.6}
-}
+# ── Меню ────────────────────────────────────────────────────────────
+BTN_PVP = "🤺 PvP (игроки)"
+BTN_CHAR = "🎒 Персонаж"
+BTN_SHOP = "🏪 Магазин"
+BTN_TOP = "🏆 Топ"
+MENU_TEXTS = {BTN_PVP, BTN_CHAR, BTN_SHOP, BTN_TOP}
 
-BODY_PARTS = {
-    "head": "💥 Голова",
-    "chest": "🛡 Грудь",
-    "belly": "🩸 Живот",
-    "legs": "🦵 Ноги"
-}
+MENU_KB = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text=BTN_PVP)],
+        [KeyboardButton(text=BTN_CHAR), KeyboardButton(text=BTN_SHOP)],
+        [KeyboardButton(text=BTN_TOP)],
+    ],
+    resize_keyboard=True,
+)
 
-# ==================== БАЗА ДАННЫХ ====================
-async def init_db():
-    async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS players (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                level INTEGER DEFAULT 1,
-                exp INTEGER DEFAULT 0,
-                chips INTEGER DEFAULT 150,
-                wins INTEGER DEFAULT 0,
-                losses INTEGER DEFAULT 0,
-                base_hp INTEGER DEFAULT 100,
-                base_atk INTEGER DEFAULT 12,
-                base_def INTEGER DEFAULT 2,
-                speed INTEGER DEFAULT 10,
-                crit INTEGER DEFAULT 10,
-                weapon TEXT DEFAULT 'dagger',
-                armor TEXT DEFAULT 'none',
-                inventory_weapons TEXT DEFAULT 'dagger',
-                inventory_armors TEXT DEFAULT 'none'
-            )
-        """)
-        await db.commit()
+esc = html.escape
 
-async def get_player(user_id: int) -> Optional[Dict[str, Any]]:
-    async with aiosqlite.connect(DB_NAME) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM players WHERE user_id = ?", (user_id,)) as cursor:
-            row = await cursor.fetchone()
-            return dict(row) if row else None
 
-async def create_player(user_id: int, username: str):
-    name = username if username else f"Боец_{user_id}"
-    async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute("""
-            INSERT OR IGNORE INTO players (user_id, username) 
-            VALUES (?, ?)
-        """, (user_id, name))
-        await db.commit()
+# ════════════════════════════════════════════════════════════════════
+#  UI
+# ════════════════════════════════════════════════════════════════════
 
-async def update_player(user_id: int, **kwargs):
-    async with aiosqlite.connect(DB_NAME) as db:
-        set_clause = ", ".join([f"{k} = ?" for k in kwargs.keys()])
-        values = list(kwargs.values()) + [user_id]
-        await db.execute(f"UPDATE players SET {set_clause} WHERE user_id = ?", values)
-        await db.commit()
+def btn(text: str, data: str, style: Optional[str] = None) -> InlineKeyboardButton:
+    try:
+        return InlineKeyboardButton(text=text, callback_data=data, style=style)
+    except TypeError:
+        return InlineKeyboardButton(text=text, callback_data=data)
 
-# ==================== ВЫЧИСЛЕНИЯ СТАТИСТИКИ ====================
-def calculate_stats(player: Dict[str, Any]) -> Dict[str, Any]:
-    armor = ARMORS.get(player.get('armor', 'none'), ARMORS['none'])
-    max_hp = player.get('base_hp', 100) + armor['hp_bonus']
-    total_def = player.get('base_def', 2) + armor['def_bonus']
-    return {
-        "name": player.get('username') or f"Игрок #{player.get('user_id', 0)}",
-        "max_hp": max_hp,
-        "hp": max_hp,
-        "atk": player.get('base_atk', 12),
-        "def": total_def,
-        "speed": player.get('speed', 10),
-        "crit": player.get('crit', 10),
-        "weapon": player.get('weapon', 'dagger'),
-        "armor": player.get('armor', 'none'),
-        "user_id": player.get('user_id', 0)
-    }
 
-def add_exp_and_level_up(player: Dict[str, Any], exp_gained: int) -> Tuple[Dict[str, Any], bool]:
-    new_exp = player['exp'] + exp_gained
-    new_level = player['level']
-    leveled_up = False
-    
-    exp_needed = new_level * 100
-    while new_exp >= exp_needed:
-        new_exp -= exp_needed
-        new_level += 1
-        player['base_hp'] += 15
-        player['base_atk'] += 3
-        player['base_def'] += 1
-        leveled_up = True
-        exp_needed = new_level * 100
-        
-    player['exp'] = new_exp
-    player['level'] = new_level
-    return player, leveled_up
+def ikb(*rows) -> InlineKeyboardMarkup:
+    keyboard = []
+    for row in rows:
+        line = []
+        for item in row:
+            if len(item) == 3:
+                line.append(btn(item[0], item[1], item[2]))
+            else:
+                line.append(btn(item[0], item[1]))
+        keyboard.append(line)
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-def get_hp_bar(current: int, max_hp: int) -> str:
-    current = max(0, current)
-    percent = int((current / max_hp) * 10) if max_hp > 0 else 0
-    bar = "█" * percent + "░" * (10 - percent)
-    return f"[{bar}] {current}/{max_hp} HP"
 
-# ==================== СОСТОЯНИЯ FSM ====================
-class GameStates(StatesGroup):
-    in_fight = State()
+# ════════════════════════════════════════════════════════════════════
+#  БОЕВОЙ ДВИЖОК
+# ════════════════════════════════════════════════════════════════════
 
-# ==================== КЛАВИАТУРЫ ====================
-def main_menu_kb(user_id: int):
-    kb = [
-        [InlineKeyboardButton(text="⚔️ PvE (Боты)", callback_data="menu_pve"), InlineKeyboardButton(text="🤺 PvP (Игроки)", callback_data="menu_pvp")],
-        [InlineKeyboardButton(text="👾 Боссы", callback_data="menu_bosses"), InlineKeyboardButton(text="🏚 Данжи", callback_data="menu_dungeons")],
-        [InlineKeyboardButton(text="🎒 Персонаж", callback_data="menu_profile"), InlineKeyboardButton(text="🏪 Магазин", callback_data="menu_shop")],
-        [InlineKeyboardButton(text="🎰 Казино", callback_data="menu_casino"), InlineKeyboardButton(text="🏆 Топ игроков", callback_data="menu_top")]
-    ]
-    if user_id == ADMIN_ID:
-        kb.append([InlineKeyboardButton(text="👑 Админ Панель", callback_data="admin_panel")])
-    return InlineKeyboardMarkup(inline_keyboard=kb)
+@dataclass
+class Fighter:
+    name: str
+    max_hp: int
+    hp: int
+    atk: int
+    df: int
+    spd: int
+    crit: int
+    weapon: str = "dagger"
+    armor: str = "none"
+    cd: int = 0
+    stun: bool = False
+    dots: list = field(default_factory=list)
+    zone_hp: dict = field(default_factory=dict)
 
-def back_to_menu_kb():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 В главное меню", callback_data="menu_main")]
-    ])
+    def __post_init__(self):
+        w, a = WEAPONS[self.weapon], ARMORS[self.armor]
+        self.spec_chance = min(w["chance"] + a["chance"], 70)
+        self.spec_mult = 1 + a["dmg"] / 100
+        self.spec_cd = max(0, BASE_SPEC_CD - a["cd"])
+        if not self.zone_hp:
+            self.zone_hp = {k: max(1, round(self.max_hp * z["hp"])) for k, z in BODY_ZONES.items()}
+        self.max_zone = dict(self.zone_hp)
 
-def fight_attack_kb():
-    keys = list(BODY_PARTS.keys())
-    buttons = [
-        [InlineKeyboardButton(text=f"💥 Атака: {BODY_PARTS[keys[0]]}", callback_data=f"attack_{keys[0]}"),
-         InlineKeyboardButton(text=f"💥 Атака: {BODY_PARTS[keys[1]]}", callback_data=f"attack_{keys[1]}")],
-        [InlineKeyboardButton(text=f"💥 Атака: {BODY_PARTS[keys[2]]}", callback_data=f"attack_{keys[2]}"),
-         InlineKeyboardButton(text=f"💥 Атака: {BODY_PARTS[keys[3]]}", callback_data=f"attack_{keys[3]}")],
-        [InlineKeyboardButton(text="🏳️ Сдаться", callback_data="menu_main")]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    def alive_zones(self):
+        return [k for k, v in self.zone_hp.items() if v > 0]
 
-def fight_defend_kb(attack_part: str):
-    keys = list(BODY_PARTS.keys())
-    buttons = [
-        [InlineKeyboardButton(text=f"🛡 Защита: {BODY_PARTS[keys[0]]}", callback_data=f"defend_{attack_part}_{keys[0]}"),
-         InlineKeyboardButton(text=f"🛡 Защита: {BODY_PARTS[keys[1]]}", callback_data=f"defend_{attack_part}_{keys[1]}")],
-        [InlineKeyboardButton(text=f"🛡 Защита: {BODY_PARTS[keys[2]]}", callback_data=f"defend_{attack_part}_{keys[2]}"),
-         InlineKeyboardButton(text=f"🛡 Защита: {BODY_PARTS[keys[3]]}", callback_data=f"defend_{attack_part}_{keys[3]}")],
-        [InlineKeyboardButton(text="🏳️ Сдаться", callback_data="menu_main")]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    def is_dead(self) -> bool:
+        return self.hp <= 0 or not self.alive_zones()
 
-# ==================== ДВИЖОК ИНТЕРАКТИВНОГО БОЯ ====================
-def calculate_turn(p_stat: Dict, e_stat: Dict, p_attack: str, p_defend: str) -> Tuple[int, int, str]:
-    e_attack = random.choice(list(BODY_PARTS.keys()))
-    e_defend = random.choice(list(BODY_PARTS.keys()))
-    
-    log = []
-    
-    # 1. Атака Игрока
-    is_e_blocked = (p_attack == e_defend)
-    p_crit = random.randint(1, 100) <= p_stat['crit']
-    raw_p_dmg = p_stat['atk'] * (2.0 if p_crit else 1.0)
-    
-    if is_e_blocked:
-        p_dmg = max(1, int((raw_p_dmg - e_stat['def']) * 0.3))
-        log.append(f"🎯 Вы бьёте в **{BODY_PARTS[p_attack]}**, но противник **ЗАБЛОКИРОВАЛ** удар! (-{p_dmg} HP)")
+
+def zones_status(f: Fighter) -> str:
+    parts = []
+    for k in ("head", "torso", "arms", "legs"):
+        cur = max(0, f.zone_hp[k])
+        bar = "🟩" if cur > f.max_zone[k] * 0.5 else ("🟨" if cur > 0 else "🟥")
+        parts.append(f"{bar}{BODY_ZONES[k]['emoji']}{cur}")
+    return " ".join(parts)
+
+
+def hit_damage(att, dfn, zone, mult=1.0, ignore_def=False):
+    z = BODY_ZONES[zone]
+    base = att.atk * random.uniform(0.85, 1.15) * z["dmg"]
+    reduction = 0 if ignore_def else dfn.df * DEF_FACTOR
+    return max(1, round((base - reduction) * mult))
+
+
+def apply_damage(f, zone, dmg):
+    f.zone_hp[zone] = max(0, f.zone_hp[zone] - dmg)
+    f.hp = max(0, f.hp - dmg)
+    if f.zone_hp[zone] == 0:
+        return f" 💥 {BODY_ZONES[zone]['name']} выведена из строя!"
+    return ""
+
+
+def _add_dot(target, name, dmg, rounds):
+    target.dots = [d for d in target.dots if d["name"] != name]
+    target.dots.append({"name": name, "dmg": dmg, "left": rounds})
+
+
+def use_special(att, dfn, zone):
+    w = att.weapon
+    m = att.spec_mult
+    info = WEAPONS[w]
+    head = f"{info['emoji']} <b>{info['spec']}!</b> "
+
+    if w == "dagger":
+        hits = [hit_damage(att, dfn, zone, 0.4 * m) for _ in range(3)]
+        total = sum(hits)
+        note = apply_damage(dfn, zone, total)
+        return head + f"{att.name}: {' + '.join(map(str, hits))} = <b>−{total}</b>{note}"
+    if w == "sword":
+        dmg = hit_damage(att, dfn, zone, 3 * m)
+        note = apply_damage(dfn, zone, dmg)
+        return head + f"{att.name} добивает {dfn.name} в {BODY_ZONES[zone]['name']}: <b>−{dmg}</b>{note}"
+    if w == "axe":
+        dmg = hit_damage(att, dfn, zone, m)
+        note = apply_damage(dfn, zone, dmg)
+        bleed = max(1, round(dfn.max_hp * 0.05 * m))
+        _add_dot(dfn, "🩸 Кровотечение", bleed, 3)
+        return head + f"{att.name} → {dfn.name}: <b>−{dmg}</b>{note}, кровь по <b>{bleed}</b> ×3"
+    if w == "bow":
+        dmg = hit_damage(att, dfn, zone, 2 * m, ignore_def=True)
+        note = apply_damage(dfn, zone, dmg)
+        return head + f"{att.name} → {dfn.name}: крит сквозь броню <b>−{dmg}</b>{note}"
+    if w == "staff":
+        dmg = hit_damage(att, dfn, zone, m)
+        note = apply_damage(dfn, zone, dmg)
+        burn = max(1, round(dmg * 0.3))
+        _add_dot(dfn, "🔥 Горение", burn, 3)
+        return head + f"{att.name} → {dfn.name}: <b>−{dmg}</b>{note}, огонь по <b>{burn}</b> ×3"
+    if w == "hammer":
+        dmg = hit_damage(att, dfn, zone, 1.5 * m)
+        note = apply_damage(dfn, zone, dmg)
+        dfn.stun = True
+        return head + f"{att.name} → {dfn.name}: <b>−{dmg}</b>{note}, цель оглушена"
+    raise ValueError(w)
+
+
+def take_turn(att, dfn, out, zone=None):
+    for d in list(att.dots):
+        att.hp = max(0, att.hp - d["dmg"])
+        out.append(f"{d['name']}: {att.name} −{d['dmg']}")
+        d["left"] -= 1
+        if d["left"] <= 0:
+            att.dots.remove(d)
+        if att.hp == 0:
+            out.append(f"☠️ {att.name} гибнет от эффектов")
+            return
+
+    if att.stun:
+        att.stun = False
+        if att.cd > 0:
+            att.cd -= 1
+        out.append(f"💫 {att.name} оглушён и пропускает ход")
+        return
+
+    ready = att.cd == 0
+    if att.cd > 0:
+        att.cd -= 1
+
+    target_zone = zone if zone in dfn.alive_zones() else random.choice(dfn.alive_zones() or ["torso"])
+    z = BODY_ZONES[target_zone]
+
+    can_special = ready and not (att.weapon == "sword" and dfn.hp > dfn.max_hp * 0.3)
+    if can_special and random.random() * 100 < att.spec_chance:
+        out.append(use_special(att, dfn, target_zone))
+        att.cd = att.spec_cd
+        return
+
+    if random.random() < z["miss"]:
+        out.append(f"🌀 {att.name} промахнулся по «{z['name']}»")
+        return
+
+    dmg = hit_damage(att, dfn, target_zone)
+    is_crit = random.random() * 100 < att.crit * z["crit"]
+    if is_crit:
+        dmg *= 2
+    note = apply_damage(dfn, target_zone, dmg)
+    out.append(
+        f"{'💥 Крит!' if is_crit else '👊'} {att.name} → {dfn.name} [{z['emoji']} {z['name']}]: <b>−{dmg}</b>{note}"
+    )
+
+
+def choose_ai_zone(dfn):
+    alive = dfn.alive_zones()
+    if not alive:
+        return "torso"
+    if random.random() < 0.4:
+        return random.choice(alive)
+    return min(alive, key=lambda k: dfn.zone_hp[k])
+
+
+def simulate(a, b, player_zone=None, player_is_a=True):
+    blocks = []
+    timed_out = False
+    for rnd in range(1, MAX_ROUNDS + 1):
+        if a.spd > b.spd or (a.spd == b.spd and random.random() < 0.5):
+            order = [a, b]
+        else:
+            order = [b, a]
+        lines = [f"<b>Раунд {rnd}</b>"]
+        for att in order:
+            dfn = b if att is a else a
+            if att.is_dead() or dfn.is_dead():
+                break
+            zone = None
+            if att is a and player_is_a:
+                zone = player_zone if rnd == 1 else None
+            else:
+                zone = choose_ai_zone(dfn)
+            take_turn(att, dfn, lines, zone)
+            if att.is_dead() or dfn.is_dead():
+                break
+        lines.append(
+            f"❤️ {a.name} {a.hp}/{a.max_hp} · {b.name} {b.hp}/{b.max_hp}\n"
+            f"   {a.name}: {zones_status(a)}\n   {b.name}: {zones_status(b)}"
+        )
+        blocks.append("\n".join(lines))
+        if a.is_dead() or b.is_dead():
+            break
     else:
-        p_dmg = max(1, int(raw_p_dmg - e_stat['def']))
-        crit_str = " 💥 **КРИТ!**" if p_crit else ""
-        log.append(f"⚔️ Вы успешно попали в **{BODY_PARTS[p_attack]}**{crit_str}! (-{p_dmg} HP)")
+        timed_out = True
 
-    # 2. Атака Врага
-    is_p_blocked = (e_attack == p_defend)
-    e_crit = random.randint(1, 100) <= e_stat['crit']
-    raw_e_dmg = e_stat['atk'] * (2.0 if e_crit else 1.0)
-    
-    if is_p_blocked:
-        e_dmg = max(1, int((raw_e_dmg - p_stat['def']) * 0.3))
-        log.append(f"🛡 Враг целит в **{BODY_PARTS[e_attack]}**, но вы **ЗАБЛОКИРОВАЛИ** урон! (-{e_dmg} HP)")
+    if a.is_dead() and b.is_dead():
+        winner = a if a.hp >= b.hp else b
+    elif a.is_dead():
+        winner = b
+    elif b.is_dead():
+        winner = a
     else:
-        e_dmg = max(1, int(raw_e_dmg - p_stat['def']))
-        crit_str = " 💥 **КРИТ!**" if e_crit else ""
-        log.append(f"🩸 Враг пробил защиту в **{BODY_PARTS[e_attack]}**{crit_str}! (-{e_dmg} HP)")
+        ra = a.hp / a.max_hp + 0.5 * (len(a.alive_zones()) / 4)
+        rb = b.hp / b.max_hp + 0.5 * (len(b.alive_zones()) / 4)
+        winner = a if ra > rb else b if rb > ra else random.choice([a, b])
+    if timed_out:
+        blocks.append("⏱ Бой затянулся — победа по остатку HP.")
+    return winner, blocks
 
-    return p_dmg, e_dmg, "\n".join(log)
 
-# ==================== ХЕНДЛЕРЫ ====================
+def render_battle(blocks, head, foot, limit=3900):
+    budget = limit - len(head) - len(foot) - 80
+    picked, total = [], 0
+    for blk in reversed(blocks):
+        if total + len(blk) + 2 > budget:
+            break
+        picked.append(blk)
+        total += len(blk) + 2
+    picked.reverse()
+    skipped = len(blocks) - len(picked)
+    body = "\n\n".join(picked)
+    if skipped:
+        body = f"<i>… скрыто раундов: {skipped}</i>\n\n{body}"
+    return f"{head}\n\n{body}\n\n{foot}"
+
+
+def zone_keyboard(prefix, back_data=None):
+    rows = []
+    for key, z in BODY_ZONES.items():
+        rows.append([(f"{z['emoji']} {z['name']} (×{z['dmg']:.1f})", f"{prefix}:{key}", "primary")])
+    if back_data:
+        rows.append([("⬅️ Назад", back_data, "success")])
+    return ikb(*rows)
+
+
+# ════════════════════════════════════════════════════════════════════
+#  БАЗА
+# ════════════════════════════════════════════════════════════════════
+
+_db = sqlite3.connect(DB_PATH, check_same_thread=False)
+_db.row_factory = sqlite3.Row
+
+
+def init_db():
+    _db.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS players (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            name TEXT NOT NULL,
+            level INTEGER NOT NULL DEFAULT 1,
+            xp INTEGER NOT NULL DEFAULT 0,
+            chips INTEGER NOT NULL DEFAULT 0,
+            points INTEGER NOT NULL DEFAULT 0,
+            hp INTEGER NOT NULL,
+            atk INTEGER NOT NULL,
+            defense INTEGER NOT NULL,
+            spd INTEGER NOT NULL,
+            crit INTEGER NOT NULL,
+            weapon TEXT NOT NULL DEFAULT 'dagger',
+            armor TEXT NOT NULL DEFAULT 'none',
+            weapons_owned TEXT NOT NULL DEFAULT 'dagger',
+            armors_owned TEXT NOT NULL DEFAULT 'none',
+            wins INTEGER NOT NULL DEFAULT 0,
+            losses INTEGER NOT NULL DEFAULT 0,
+            pvp_wins INTEGER NOT NULL DEFAULT 0,
+            last_pvp REAL NOT NULL DEFAULT 0,
+            banned INTEGER NOT NULL DEFAULT 0,
+            is_bot INTEGER NOT NULL DEFAULT 0,
+            created REAL NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            ts REAL NOT NULL,
+            seen INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS ix_notif ON notifications(user_id, seen);
+        CREATE TABLE IF NOT EXISTS pvp_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            attacker INTEGER NOT NULL,
+            defender INTEGER NOT NULL,
+            ts REAL NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_pvp ON pvp_log(attacker, defender, ts);
+        """
+    )
+    _db.commit()
+
+
+def q1(sql, args=()):
+    return _db.execute(sql, args).fetchone()
+
+
+def qa(sql, args=()):
+    return _db.execute(sql, args).fetchall()
+
+
+def ex(sql, args=()):
+    cur = _db.execute(sql, args)
+    _db.commit()
+    return cur
+
+
+def get_player(uid):
+    return q1("SELECT * FROM players WHERE user_id=?", (uid,))
+
+
+def create_player(uid, username, name):
+    s = BASE_STATS
+    ex(
+        "INSERT OR IGNORE INTO players (user_id, username, name, chips, points, hp, atk, defense, spd, crit, created) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (uid, username, name, START_CHIPS, START_POINTS,
+         s["hp"], s["atk"], s["defense"], s["spd"], s["crit"], time.time()),
+    )
+
+
+def notify(uid, text):
+    ex("INSERT INTO notifications (user_id, text, ts) VALUES (?,?,?)", (uid, text, time.time()))
+
+
+def apply_result(uid, *, chips=0, xp=0, win=None, pvp=False):
+    p = get_player(uid)
+    if not p:
+        return 1, 0
+    lvl, cur = p["level"], p["xp"] + xp
+    hp, atk, df, pts = p["hp"], p["atk"], p["defense"], p["points"]
+    ups = 0
+    while cur >= xp_need(lvl):
+        cur -= xp_need(lvl)
+        lvl += 1
+        ups += 1
+        hp += LEVEL_BONUS["hp"]
+        atk += LEVEL_BONUS["atk"]
+        df += LEVEL_BONUS["defense"]
+        pts += POINTS_PER_LEVEL
+    ex(
+        "UPDATE players SET level=?, xp=?, chips=chips+?, points=?, hp=?, atk=?, defense=?, "
+        "wins=wins+?, losses=losses+?, pvp_wins=pvp_wins+? WHERE user_id=?",
+        (lvl, cur, chips, pts, hp, atk, df,
+         int(win is True), int(win is False), int(win is True and pvp), uid),
+    )
+    return lvl, ups
+
+
+def lvl_text(lvl, ups):
+    if not ups:
+        return ""
+    return (
+        f"\n🎉 <b>Новый уровень: {lvl}!</b> "
+        f"+{ups * LEVEL_BONUS['hp']} HP, +{ups * LEVEL_BONUS['atk']} ATK, "
+        f"+{ups * LEVEL_BONUS['defense']} DEF, +{ups * POINTS_PER_LEVEL} очк. прокачки"
+    )
+
+
+# ── Замаскированные боты ────────────────────────────────────────────
+
+def _random_bot_name(existing: set) -> str:
+    for _ in range(200):
+        base = random.choice(HUMAN_NAMES)
+        title = random.choice(HUMAN_TITLES)
+        suffix = str(random.randint(1, 99)) if random.random() < 0.35 else ""
+        name = f"{base}{title}{suffix}"
+        if name.lower() not in existing and len(name) <= 16:
+            existing.add(name.lower())
+            return name
+    return f"Игрок{random.randint(1000, 9999)}"
+
+
+def ensure_masked_bots(count: int = 12):
+    """Создаёт пул замаскированных ботов с человеческими никами."""
+    existing = {r["name"].lower() for r in qa("SELECT name FROM players")}
+    bots = qa("SELECT user_id FROM players WHERE is_bot=1")
+    need = max(0, count - len(bots))
+    for _ in range(need):
+        name = _random_bot_name(existing)
+        uid = -random.randint(10_000_000, 99_999_999)   # отрицательные id — не пересекаются с людьми
+        lvl = random.randint(1, 12)
+        s = BASE_STATS
+        hp = s["hp"] + LEVEL_BONUS["hp"] * (lvl - 1) + random.randint(-10, 30)
+        atk = s["atk"] + LEVEL_BONUS["atk"] * (lvl - 1) + random.randint(-2, 4)
+        df = s["defense"] + LEVEL_BONUS["defense"] * (lvl - 1) + random.randint(-1, 3)
+        spd = s["spd"] + random.randint(-2, 6)
+        crit = min(CRIT_CAP, s["crit"] + random.randint(0, 15))
+        weapon = random.choice(list(WEAPONS.keys()))
+        armor = random.choice(list(ARMORS.keys()))
+        wins = random.randint(lvl * 2, lvl * 9)
+        losses = random.randint(lvl, lvl * 5)
+        pvp_wins = random.randint(lvl, wins)
+        ex(
+            "INSERT INTO players (user_id, username, name, level, xp, chips, points, hp, atk, defense, spd, crit, "
+            "weapon, armor, weapons_owned, armors_owned, wins, losses, pvp_wins, is_bot, created) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (uid, None, name, lvl, random.randint(0, xp_need(lvl) - 1),
+             random.randint(50, 800), 0, hp, atk, df, spd, crit,
+             weapon, armor, weapon, armor, wins, losses, pvp_wins, 1, time.time()),
+        )
+
+
+# ════════════════════════════════════════════════════════════════════
+#  ФАБРИКИ
+# ════════════════════════════════════════════════════════════════════
+
+def player_fighter(p, hp=None):
+    arm = ARMORS[p["armor"]]
+    max_hp = p["hp"] + arm["hp"]
+    return Fighter(
+        name=esc(p["name"]),
+        max_hp=max_hp,
+        hp=max_hp if hp is None else max(1, min(hp, max_hp)),
+        atk=p["atk"],
+        df=p["defense"] + arm["df"],
+        spd=p["spd"],
+        crit=min(p["crit"], CRIT_CAP),
+        weapon=p["weapon"],
+        armor=p["armor"],
+    )
+
+
+def stats_line(f):
+    return f"❤️{f.max_hp} ⚔️{f.atk} 🛡{f.df} 💨{f.spd} 🎯{f.crit}%"
+
+
+# ════════════════════════════════════════════════════════════════════
+#  ЭКРАНЫ
+# ════════════════════════════════════════════════════════════════════
+
+async def safe_edit(cb, text, markup=None):
+    try:
+        await cb.message.edit_text(text[:4090], reply_markup=markup)
+    except TelegramBadRequest as e:
+        if "not modified" not in str(e):
+            await cb.message.answer(text[:4090], reply_markup=markup)
+
+
+def char_screen(uid):
+    p = get_player(uid)
+    w, a = WEAPONS[p["weapon"]], ARMORS[p["armor"]]
+    f = player_fighter(p)
+    lines = [
+        f"🎒 <b>{esc(p['name'])}</b> · ур. {p['level']}",
+        f"✨ Опыт: {p['xp']}/{xp_need(p['level'])}   💰 Фишки: <b>{p['chips']}</b>",
+        f"🏆 Победы: {p['wins']} (PvP: {p['pvp_wins']}) · 💀 Поражения: {p['losses']}",
+        "",
+        f"❤️ HP: <b>{f.max_hp}</b>" + (f" (броня +{a['hp']})" if a["hp"] else ""),
+        f"⚔️ Атака: <b>{f.atk}</b>",
+        f"🛡 Защита: <b>{f.df}</b>" + (f" (броня +{a['df']})" if a["df"] else ""),
+        f"💨 Скорость: <b>{f.spd}</b>",
+        f"🎯 Крит: <b>{f.crit}%</b>",
+        "",
+        f"{w['emoji']} Оружие: <b>{w['name']}</b> — {w['spec']}",
+        f"    {w['desc']}",
+        f"    шанс {f.spec_chance}% · урон ×{f.spec_mult:.1f} · откат {f.spec_cd}",
+        f"{a['emoji']} Броня: <b>{a['name']}</b> — {a['desc']}",
+        "",
+        f"<b>Зоны тела:</b>",
+        zones_status(f),
+    ]
+    rows = []
+    if p["points"] > 0:
+        lines.append(f"\n🎯 Свободных очков: <b>{p['points']}</b>")
+        rows = [
+            [(f"❤️ HP +{POINT_VALUE['hp']}", "up:hp", "success"),
+             (f"⚔️ ATK +{POINT_VALUE['atk']}", "up:atk", "success")],
+            [(f"🛡 DEF +{POINT_VALUE['defense']}", "up:defense", "success"),
+             (f"💨 SPD +{POINT_VALUE['spd']}", "up:spd", "success")],
+            [(f"🎯 Крит +{POINT_VALUE['crit']}%", "up:crit", "success")],
+        ]
+    return "\n".join(lines), (ikb(*rows) if rows else None)
+
+
+def shop_screen(uid, page="w"):
+    p = get_player(uid)
+    is_w = page == "w"
+    table = WEAPONS if is_w else ARMORS
+    owned = set(p["weapons_owned" if is_w else "armors_owned"].split(","))
+    equipped = p["weapon" if is_w else "armor"]
+
+    lines = [f"🏪 <b>Магазин — {'оружие' if is_w else 'броня'}</b>",
+             f"💰 Фишки: <b>{p['chips']}</b>", ""]
+    rows = [[("⚔️ Оружие" + (" •" if is_w else ""), "shop:w", "primary"),
+             ("🛡 Броня" + ("" if is_w else " •"), "shop:a", "primary")]]
+    for key, it in table.items():
+        if is_w:
+            lines.append(f"{it['emoji']} <b>{it['name']}</b> — {it['spec']} (шанс {it['chance']}%)\n    {it['desc']}")
+        else:
+            lines.append(f"{it['emoji']} <b>{it['name']}</b> — DEF +{it['df']}, HP +{it['hp']}\n    {it['desc']}")
+        if key == equipped:
+            label, style = "✅ надето", "success"
+        elif key in owned:
+            label, style = "🎒 надеть", "primary"
+        else:
+            label, style = f"{it['price']}💰", "danger"
+        rows.append([(f"{it['emoji']} {it['name']} · {label}", f"buy:{page}:{key}", style)])
+    return "\n".join(lines), ikb(*rows)
+
+
+def top_screen(uid):
+    rows = qa("SELECT user_id, name, level, wins, pvp_wins FROM players "
+              "ORDER BY wins DESC, level DESC, user_id LIMIT 10")
+    medals = ["🥇", "🥈", "🥉"]
+    lines = ["🏆 <b>Топ бойцов</b>", ""]
+    for i, r in enumerate(rows):
+        mark = medals[i] if i < 3 else f"{i + 1}."
+        you = " ← ты" if r["user_id"] == uid else ""
+        lines.append(f"{mark} <b>{esc(r['name'])}</b> — {r['wins']} поб. (PvP: {r['pvp_wins']}) · ур. {r['level']}{you}")
+    me = get_player(uid)
+    if me and all(r["user_id"] != uid for r in rows):
+        rank = q1("SELECT COUNT(*) AS c FROM players WHERE wins > ?", (me["wins"],))["c"] + 1
+        lines += ["…", f"{rank}. <b>{esc(me['name'])}</b> — {me['wins']} поб. · ур. {me['level']} ← ты"]
+    return "\n".join(lines)
+
+
+def pvp_screen():
+    text = ("🤺 <b>PvP — арена игроков</b>\n\n"
+            "Бой считается сразу по текущим билдам обоих.\n"
+            "Соперник узнает результат, когда зайдёт в бота.\n\n"
+            "🏆 Победа: фишки и опыт\n💀 Поражение: небольшой опыт")
+    kb = ikb(
+        [("🎲 Случайный соперник", "pvp:rand", "success")],
+        [("📋 Список соперников", "pvp:list", "primary")],
+        [("🔎 Вызвать по нику / ID", "pvp:find", "primary")],
+    )
+    return text, kb
+
+
+def pvp_list_screen(uid):
+    me = get_player(uid)
+    rows = qa("SELECT user_id, name, level, wins FROM players WHERE user_id != ? AND banned=0 "
+              "ORDER BY ABS(level - ?), RANDOM() LIMIT 8", (uid, me["level"]))
+    if not rows:
+        return "Сейчас никого нет в сети.", ikb([("⬅️ Назад", "pvp:menu", "primary")])
+    kb_rows = [[(f"{r['name'][:18]} · ур.{r['level']} · 🏆{r['wins']}",
+                 f"pvp:f:{r['user_id']}", "primary")] for r in rows]
+    kb_rows.append([("⬅️ Назад", "pvp:menu", "primary")])
+    return "📋 <b>Соперники:</b>", ikb(*kb_rows)
+
+
+def pick_opponent(uid, level):
+    """Возвращает user_id соперника. Если людей рядом нет — гарантированно даёт бота."""
+    rows = qa("SELECT user_id FROM players WHERE user_id != ? AND banned=0 AND is_bot=0 "
+              "ORDER BY ABS(level - ?), RANDOM() LIMIT 6", (uid, level))
+    pool = [r["user_id"] for r in rows]
+    bots = qa("SELECT user_id FROM players WHERE is_bot=1 AND banned=0 "
+              "ORDER BY ABS(level - ?), RANDOM() LIMIT 6", (level,))
+    bot_pool = [r["user_id"] for r in bots]
+    # 55% шанс подсунуть бота, если рядом есть живые — чтобы соперники всегда находились
+    if pool and bot_pool:
+        return random.choice(bot_pool if random.random() < 0.55 else pool)
+    if pool:
+        return random.choice(pool)
+    if bot_pool:
+        return random.choice(bot_pool)
+    ensure_masked_bots(6)
+    rows = qa("SELECT user_id FROM players WHERE is_bot=1 ORDER BY RANDOM() LIMIT 1")
+    return rows[0]["user_id"] if rows else None
+
+
+def _bot_auto_weapon(p):
+    """Замаскированный бот «экипируется» под уровень соперника — незаметно."""
+    return p
+
+
+def run_pvp(aid, did, first_zone: Optional[str] = None):
+    back = ikb([("🎲 Ещё раз", "pvp:rand", "success"), ("🤺 В меню PvP", "pvp:menu", "primary")])
+    a, d = get_player(aid), get_player(did)
+    if not a:
+        return "Профиль не найден.", back
+    if not d:
+        return "Соперник уже недоступен.", back
+    if aid == did:
+        return "🤨 Нельзя драться с самим собой.", back
+
+    now = time.time()
+    wait = PVP_COOLDOWN - (now - a["last_pvp"])
+    if wait > 0:
+        return f"⏳ Отдышись: следующий бой через {int(wait) + 1} с.", back
+    ex("UPDATE players SET last_pvp=? WHERE user_id=?", (now, aid))
+
+    fa, fd = player_fighter(a), player_fighter(d)
+    winner, blocks = simulate(fa, fd, player_zone=first_zone, player_is_a=True)
+
+    recent = q1("SELECT COUNT(*) AS c FROM pvp_log WHERE attacker=? AND defender=? AND ts>?",
+                (aid, did, now - 3600))["c"]
+    ex("INSERT INTO pvp_log (attacker, defender, ts) VALUES (?,?,?)", (aid, did, now))
+    scale = 1.0 if recent < PVP_FARM_LIMIT else 0.25
+    if d["level"] <= a["level"] - 5:
+        scale *= 0.5
+
+    head = f"🤺 <b>{fa.name}</b> (ур. {a['level']}) vs <b>{fd.name}</b> (ур. {d['level']})"
+    an = esc(a["name"])
+
+    if winner is fa:
+        chips = int((30 + 8 * d["level"]) * scale)
+        xp = int((30 + 5 * d["level"]) * scale)
+        lvl, ups = apply_result(aid, chips=chips, xp=xp, win=True, pvp=True)
+        foot = f"🏆 <b>Победа!</b> +{chips}💰 +{xp} XP" + lvl_text(lvl, ups)
+        if scale < 1:
+            foot += "\n<i>Награда снижена: фарм или слишком слабый соперник.</i>"
+        # ответная реакция соперника — как будто он «получил уведомление»
+        dl, du = apply_result(did, xp=5, win=False)
+        notify(did, f"🤺 <b>{an}</b> (ур. {a['level']}) напал на тебя — ты проиграл 💀 (+5 XP)"
+               + lvl_text(dl, du))
+    else:
+        lvl, ups = apply_result(aid, xp=10, win=False)
+        foot = f"💀 <b>Поражение.</b> +10 XP" + lvl_text(lvl, ups)
+        dl, du = apply_result(did, chips=15, xp=15, win=True, pvp=True)
+        notify(did, f"🤺 <b>{an}</b> (ур. {a['level']}) напал на тебя — ты отбился! 🏆 +15💰 +15 XP"
+               + lvl_text(dl, du))
+    return render_battle(blocks, head, foot), back
+
+
+# ════════════════════════════════════════════════════════════════════
+#  ХЕНДЛЕРЫ
+# ════════════════════════════════════════════════════════════════════
+
 router = Router()
+router.message.filter(F.chat.type == "private")
+
+
+class Reg(StatesGroup):
+    name = State()
+
+
+class PvpFind(StatesGroup):
+    target = State()
+
+
+class AdminBroadcast(StatesGroup):
+    text = State()
+
+
+HELP_TEXT = (
+    "⚔️ <b>Арена Дуэлянтов</b>\n\n"
+    "• <b>PvP</b> — бои с игроками\n"
+    "• <b>Магазин</b> — оружие и броня\n"
+    "• <b>Персонаж</b> — прокачка\n"
+    "• <b>Топ</b> — рейтинг\n\n"
+    "Перед боем выбираешь <b>зону удара</b>: голова — больно, но легко промахнуться.\n"
+    "Команды: /start, /menu, /help"
+)
+
+
+async def flush_notifications(m: Message):
+    rows = qa("SELECT id, text FROM notifications WHERE user_id=? AND seen=0 ORDER BY id LIMIT 15",
+              (m.from_user.id,))
+    if not rows:
+        return
+    ids = [r["id"] for r in rows]
+    ex(f"UPDATE notifications SET seen=1 WHERE id IN ({','.join('?' * len(ids))})", tuple(ids))
+    await m.answer("📬 <b>Пока тебя не было:</b>\n\n" + "\n\n".join(r["text"] for r in rows))
+
+
+def touch_username(m):
+    ex("UPDATE players SET username=? WHERE user_id=?", (m.from_user.username, m.from_user.id))
+
+
+def is_banned(uid):
+    p = get_player(uid)
+    return bool(p and p["banned"])
+
+
+# ── /start, /help, /menu ───────────────────────────────────────────
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext):
+async def cmd_start(m: Message, state: FSMContext):
     await state.clear()
-    await create_player(message.from_user.id, message.from_user.full_name)
-    await message.answer(
-        "⚔️ **Арена Дуэлянтов приветствует тебя, Воин!**\n\n"
-        "🔥 Настраивай билды, сражайся в PvP, побеждай монстров и эпических Боссов, проходи Подземелья и исправь удачу в Казино!",
-        reply_markup=main_menu_kb(message.from_user.id),
-        parse_mode="Markdown"
-    )
-
-@router.callback_query(F.data == "menu_main")
-async def cb_main_menu(call: CallbackQuery, state: FSMContext):
-    await state.clear()
-    await call.message.edit_text(
-        "⚔️ **Главное меню Арены**\nВыбери желаемый режим:",
-        reply_markup=main_menu_kb(call.from_user.id),
-        parse_mode="Markdown"
-    )
-
-# -------------------- ПРОФИЛЬ --------------------
-@router.callback_query(F.data == "menu_profile")
-async def cb_profile(call: CallbackQuery):
-    p = await get_player(call.from_user.id)
-    if not p:
-        await create_player(call.from_user.id, call.from_user.full_name)
-        p = await get_player(call.from_user.id)
-        
-    stats = calculate_stats(p)
-    w_info = WEAPONS.get(p['weapon'], WEAPONS['dagger'])
-    a_info = ARMORS.get(p['armor'], ARMORS['none'])
-    
-    text = (
-        f"🎒 **ПРОФИЛЬ БОЙЦА**: {stats['name']}\n"
-        f"🆔 ID: `{p['user_id']}`\n"
-        f"🏆 Уровень: {p['level']} (EXP: {p['exp']}/{p['level']*100})\n"
-        f"💰 Фишки: **{p['chips']}**\n"
-        f"📊 Статистика: {p['wins']} Побед / {p['losses']} Поражений\n\n"
-        f"❤️ **HP**: {stats['max_hp']}\n"
-        f"⚔️ **Атака**: {stats['atk']}\n"
-        f"🛡 **Защита**: {stats['def']}\n"
-        f"⚡️ **Скорость**: {stats['speed']}\n"
-        f"💥 **Крит**: {stats['crit']}%\n\n"
-        f"🗡 **Оружие**: {w_info['name']}\n"
-        f"🛡 **Броня**: {a_info['name']}"
-    )
-    
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎒 Инвентарь", callback_data="menu_inventory")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="menu_main")]
-    ])
-    await call.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
-
-@router.callback_query(F.data == "menu_inventory")
-async def cb_inventory(call: CallbackQuery):
-    p = await get_player(call.from_user.id)
-    inv_w = p['inventory_weapons'].split(",")
-    inv_a = p['inventory_armors'].split(",")
-    
-    buttons = [[InlineKeyboardButton(text="--- 🗡 Сменить Оружие ---", callback_data="ignore")]]
-    for w_key in inv_w:
-        w = WEAPONS.get(w_key, WEAPONS['dagger'])
-        status = " (Экипировано)" if p['weapon'] == w_key else ""
-        buttons.append([InlineKeyboardButton(text=f"{w['name']}{status}", callback_data=f"equip_w_{w_key}")])
-        
-    buttons.append([InlineKeyboardButton(text="--- 🛡 Сменить Броню ---", callback_data="ignore")])
-    for a_key in inv_a:
-        a = ARMORS.get(a_key, ARMORS['none'])
-        status = " (Экипировано)" if p['armor'] == a_key else ""
-        buttons.append([InlineKeyboardButton(text=f"{a['name']}{status}", callback_data=f"equip_a_{a_key}")])
-        
-    buttons.append([InlineKeyboardButton(text="🔙 В профиль", callback_data="menu_profile")])
-    await call.message.edit_text("🎒 **Ваш Инвентарь**:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
-
-@router.callback_query(F.data.startswith("equip_w_"))
-async def cb_equip_w(call: CallbackQuery):
-    w_key = call.data.split("_")[2]
-    await update_player(call.from_user.id, weapon=w_key)
-    await call.answer("🗡 Оружие успешно сменено!")
-    await cb_inventory(call)
-
-@router.callback_query(F.data.startswith("equip_a_"))
-async def cb_equip_a(call: CallbackQuery):
-    a_key = call.data.split("_")[2]
-    await update_player(call.from_user.id, armor=a_key)
-    await call.answer("🛡 Броня успешно сменена!")
-    await cb_inventory(call)
-
-# -------------------- МАГАЗИН --------------------
-@router.callback_query(F.data == "menu_shop")
-async def cb_shop(call: CallbackQuery):
-    p = await get_player(call.from_user.id)
-    inv_w = p['inventory_weapons'].split(",")
-    inv_a = p['inventory_armors'].split(",")
-    
-    text = f"🏪 **Магазин Снаряжения**\nБаланс: **{p['chips']}** 💰\n"
-    buttons = [[InlineKeyboardButton(text="--- 🗡 Оружие ---", callback_data="ignore")]]
-    
-    for k, w in WEAPONS.items():
-        if k not in inv_w:
-            buttons.append([InlineKeyboardButton(text=f"{w['name']} — {w['price']}💰", callback_data=f"buy_w_{k}")])
-            
-    buttons.append([InlineKeyboardButton(text="--- 🛡 Броня ---", callback_data="ignore")])
-    for k, a in ARMORS.items():
-        if k not in inv_a:
-            buttons.append([InlineKeyboardButton(text=f"{a['name']} — {a['price']}💰", callback_data=f"buy_a_{k}")])
-            
-    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu_main")])
-    await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
-
-@router.callback_query(F.data.startswith("buy_w_"))
-async def cb_buy_w(call: CallbackQuery):
-    w_key = call.data.split("_")[2]
-    w = WEAPONS[w_key]
-    p = await get_player(call.from_user.id)
-    
-    if p['chips'] < w['price']:
-        await call.answer("❌ Недостаточно фишек!", show_alert=True)
-        return
-        
-    inv_w = p['inventory_weapons'].split(",")
-    inv_w.append(w_key)
-    await update_player(call.from_user.id, chips=p['chips'] - w['price'], inventory_weapons=",".join(inv_w), weapon=w_key)
-    await call.answer(f"✅ Куплено: {w['name']}!")
-    await cb_shop(call)
-
-@router.callback_query(F.data.startswith("buy_a_"))
-async def cb_buy_a(call: CallbackQuery):
-    a_key = call.data.split("_")[2]
-    a = ARMORS[a_key]
-    p = await get_player(call.from_user.id)
-    
-    if p['chips'] < a['price']:
-        await call.answer("❌ Недостаточно фишек!", show_alert=True)
-        return
-        
-    inv_a = p['inventory_armors'].split(",")
-    inv_a.append(a_key)
-    await update_player(call.from_user.id, chips=p['chips'] - a['price'], inventory_armors=",".join(inv_a), armor=a_key)
-    await call.answer(f"✅ Куплено: {a['name']}!")
-    await cb_shop(call)
-
-# -------------------- СИСТЕМА БОЯ (PVE / PVP / БОССЫ) --------------------
-@router.callback_query(F.data == "menu_pve")
-async def cb_pve_select(call: CallbackQuery):
-    text = "⚔️ **PvE Арена**\nВыберите соперника для дуэли:"
-    buttons = []
-    for idx, b in enumerate(PVE_BOTS):
-        buttons.append([InlineKeyboardButton(text=f"{b['name']} (Lvl {b['level']})", callback_data=f"start_fight_pve_{idx}")])
-    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu_main")])
-    await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
-
-@router.callback_query(F.data == "menu_bosses")
-async def cb_bosses_select(call: CallbackQuery):
-    text = "👾 **Рейдовые Боссы**\nМощные противники с огромными наградами!"
-    buttons = []
-    for b in BOSSES:
-        buttons.append([InlineKeyboardButton(text=f"{b['name']} — Награда: {b['reward_chips']}💰", callback_data=f"start_fight_boss_{b['id']}")])
-    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu_main")])
-    await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
-
-@router.callback_query(F.data == "menu_pvp")
-async def cb_pvp_start(call: CallbackQuery, state: FSMContext):
-    await call.message.edit_text("🔎 **Поиск соперника для PvP...**\nПодождите пару секунд.")
-    await asyncio.sleep(1.5)
-    
-    async with aiosqlite.connect(DB_NAME) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM players WHERE user_id != ? ORDER BY RANDOM() LIMIT 1", (call.from_user.id,)) as cursor:
-            opponent = await cursor.fetchone()
-            
-    if opponent:
-        opp_dict = dict(opponent)
-        enemy_stat = calculate_stats(opp_dict)
-    else:
-        enemy_stat = {
-            "name": "🤖 PvP-Бот Бронзового Ранга",
-            "max_hp": 120, "hp": 120, "atk": 18, "def": 5,
-            "speed": 12, "crit": 12, "weapon": "sword", "armor": "light", "user_id": 0
-        }
-        
-    p = await get_player(call.from_user.id)
-    p_stat = calculate_stats(p)
-    
-    fight_data = {
-        "p_stat": p_stat,
-        "e_stat": enemy_stat,
-        "type": "pvp",
-        "reward_chips": 100,
-        "reward_exp": 80
-    }
-    
-    await state.set_state(GameStates.in_fight)
-    await state.update_data(fight_data=fight_data)
-    await render_fight_step(call.message, fight_data, "⚔️ **PvP Бой Начался! Выберите зону для атаки:**")
-
-@router.callback_query(F.data.startswith("start_fight_pve_"))
-async def cb_start_pve(call: CallbackQuery, state: FSMContext):
-    idx = int(call.data.split("_")[3])
-    bot = PVE_BOTS[idx]
-    p = await get_player(call.from_user.id)
-    
-    p_stat = calculate_stats(p)
-    e_stat = {
-        "name": bot['name'], "max_hp": bot['hp'], "hp": bot['hp'],
-        "atk": bot['atk'], "def": bot['def'], "speed": bot['speed'],
-        "crit": bot['crit'], "weapon": bot['weapon'], "armor": bot['armor'], "user_id": 0
-    }
-    
-    fight_data = {
-        "p_stat": p_stat, "e_stat": e_stat, "type": "pve",
-        "reward_chips": bot['reward_chips'], "reward_exp": bot['reward_exp']
-    }
-    await state.set_state(GameStates.in_fight)
-    await state.update_data(fight_data=fight_data)
-    await render_fight_step(call.message, fight_data, f"⚔️ **Бой с {bot['name']}! Выберите зону атаки:**")
-
-@router.callback_query(F.data.startswith("start_fight_boss_"))
-async def cb_start_boss(call: CallbackQuery, state: FSMContext):
-    b_id = call.data.split("_")[3]
-    boss = next(b for b in BOSSES if b['id'] == b_id)
-    p = await get_player(call.from_user.id)
-    
-    p_stat = calculate_stats(p)
-    e_stat = {
-        "name": boss['name'], "max_hp": boss['hp'], "hp": boss['hp'],
-        "atk": boss['atk'], "def": boss['def'], "speed": boss['speed'],
-        "crit": boss['crit'], "weapon": boss['weapon'], "armor": boss['armor'], "user_id": 0
-    }
-    
-    fight_data = {
-        "p_stat": p_stat, "e_stat": e_stat, "type": "boss",
-        "reward_chips": boss['reward_chips'], "reward_exp": boss['reward_exp']
-    }
-    await state.set_state(GameStates.in_fight)
-    await state.update_data(fight_data=fight_data)
-    await render_fight_step(call.message, fight_data, f"👾 **РЕЙД НА БОССА: {boss['name']}! Выберите зону атаки:**")
-
-async def render_fight_step(message: Message, fight_data: Dict, comment: str, kb=None):
-    p = fight_data['p_stat']
-    e = fight_data['e_stat']
-    
-    text = (
-        f"🔴 **{p['name']}**: {get_hp_bar(p['hp'], p['max_hp'])}\n"
-        f"🔵 **{e['name']}**: {get_hp_bar(e['hp'], e['max_hp'])}\n\n"
-        f"{comment}"
-    )
-    if kb is None:
-        kb = fight_attack_kb()
-    await message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
-
-@router.callback_query(GameStates.in_fight, F.data.startswith("attack_"))
-async def cb_fight_attack(call: CallbackQuery, state: FSMContext):
-    attack_part = call.data.split("_")[1]
-    data = await state.get_data()
-    fight_data = data.get('fight_data')
-    if not fight_data:
-        await state.clear()
-        await cb_main_menu(call, state)
-        return
-    
-    await render_fight_step(
-        call.message, 
-        fight_data, 
-        f"🎯 Атака выбрана: **{BODY_PARTS[attack_part]}**.\n Теперь выберите **зону ЗАЩИТЫ**:", 
-        kb=fight_defend_kb(attack_part)
-    )
-
-@router.callback_query(GameStates.in_fight, F.data.startswith("defend_"))
-async def cb_fight_defend(call: CallbackQuery, state: FSMContext):
-    parts = call.data.split("_")
-    attack_part = parts[1]
-    defend_part = parts[2]
-    
-    data = await state.get_data()
-    fight_data = data.get('fight_data')
-    if not fight_data:
-        await state.clear()
-        await cb_main_menu(call, state)
-        return
-    
-    p_stat = fight_data['p_stat']
-    e_stat = fight_data['e_stat']
-    
-    p_dmg, e_dmg, turn_log = calculate_turn(p_stat, e_stat, attack_part, defend_part)
-    
-    p_stat['hp'] -= e_dmg
-    e_stat['hp'] -= p_dmg
-    
-    if p_stat['hp'] <= 0 or e_stat['hp'] <= 0:
-        await state.clear()
-        p_win = p_stat['hp'] > 0
-        p_db = await get_player(call.from_user.id)
-        
-        if p_win:
-            p_db, lvl_up = add_exp_and_level_up(p_db, fight_data['reward_exp'])
-            p_db['chips'] += fight_data['reward_chips']
-            p_db['wins'] += 1
-            await update_player(call.from_user.id, **p_db)
-            
-            res_text = (
-                f"🎉 **ПОБЕДА!**\n\n{turn_log}\n\n"
-                f"🏆 Награда: **+{fight_data['reward_chips']}** 💰 | **+{fight_data['reward_exp']}** EXP!"
-            )
-            if lvl_up:
-                res_text += f"\n🎊 **НОВЫЙ УРОВЕНЬ: {p_db['level']}!**"
-        else:
-            p_db['losses'] += 1
-            await update_player(call.from_user.id, losses=p_db['losses'])
-            res_text = f"💀 **ПОРАЖЕНИЕ!**\n\n{turn_log}\n\nУлучшите бронирование и оружие!"
-            
-        await call.message.edit_text(res_text, reply_markup=back_to_menu_kb(), parse_mode="Markdown")
-    else:
-        await state.update_data(fight_data=fight_data)
-        await render_fight_step(call.message, fight_data, f"📝 **Результат раунда:**\n{turn_log}\n\nВыберите следующую атаку:")
-
-# -------------------- ДАНЖИ --------------------
-@router.callback_query(F.data == "menu_dungeons")
-async def cb_dungeons(call: CallbackQuery):
-    text = (
-        "🏚 **ПОДЗЕМЕЛЬЯ**\n\n"
-        "Пройдите комнаты без восстановления HP! Рискните всем ради куша."
-    )
-    buttons = []
-    for k, d in DUNGEONS.items():
-        buttons.append([InlineKeyboardButton(text=f"{d['name']} ({d['rooms']} комн.) — {d['final']}💰", callback_data=f"enter_dungeon_{k}")])
-    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu_main")])
-    await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
-
-@router.callback_query(F.data.startswith("enter_dungeon_"))
-async def cb_enter_dungeon(call: CallbackQuery):
-    d_key = call.data.split("_")[2]
-    dungeon = DUNGEONS[d_key]
-    p = await get_player(call.from_user.id)
-    
-    if p['chips'] < dungeon['fee']:
-        await call.answer("❌ Недостаточно фишек для входа!", show_alert=True)
-        return
-        
-    p['chips'] -= dungeon['fee']
-    await update_player(p['user_id'], chips=p['chips'])
-    
-    p_stat = calculate_stats(p)
-    c_hp = p_stat['max_hp']
-    log = [f"🏚 **ПОХОД В {dungeon['name'].upper()}**"]
-    
-    success = True
-    for r in range(1, dungeon['rooms'] + 1):
-        m_atk = int(8 * (1 + r * 0.2) * dungeon['mult'])
-        c_hp -= max(5, m_atk - p_stat['def'])
-        
-        if c_hp <= 0:
-            log.append(f"💀 Вы погибли в комнате {r}...")
-            success = False
-            break
-        else:
-            log.append(f"✅ Комната {r} очищена! (Ост. HP: {c_hp}/{p_stat['max_hp']})")
-
-    if success:
-        p, lvl_up = add_exp_and_level_up(p, dungeon['rooms'] * 60)
-        p['chips'] += dungeon['final']
-        await update_player(p['user_id'], **p)
-        log.append(f"\n🎉 **ДАНЖ ПРОЙДЕН!** Получено **+{dungeon['final']}** 💰!")
-    else:
-        log.append(f"\n⚰️ Поход провален!")
-
-    await call.message.edit_text("\n".join(log), reply_markup=back_to_menu_kb(), parse_mode="Markdown")
-
-# -------------------- КАЗИНО --------------------
-@router.callback_query(F.data == "menu_casino")
-async def cb_casino(call: CallbackQuery):
-    text = "🎰 **КАЗИНО АРЕНЫ**\nИспытайте свою удачу и удвойте фишки!"
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎰 Слот-Машина (100💰)", callback_data="casino_slots")],
-        [InlineKeyboardButton(text="🎲 Кости (50💰)", callback_data="casino_dice")],
-        [InlineKeyboardButton(text="🪙 Монетка (50💰)", callback_data="casino_coin")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="menu_main")]
-    ])
-    await call.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
-
-@router.callback_query(F.data == "casino_slots")
-async def cb_casino_slots(call: CallbackQuery):
-    p = await get_player(call.from_user.id)
-    if p['chips'] < 100:
-        await call.answer("❌ Нужно минимум 100 💰!", show_alert=True)
-        return
-        
-    p['chips'] -= 100
-    icons = ["🍎", "🍋", "7️⃣", "💎"]
-    res = [random.choice(icons) for _ in range(3)]
-    res_str = " | ".join(res)
-    
-    if res[0] == res[1] == res[2]:
-        win = 500
-        p['chips'] += win
-        msg = f"🎰 **[{res_str}]**\n🔥 **ДЖЕКПОТ!** Вы выиграли **+{win}** 💰!"
-    elif res[0] == res[1] or res[1] == res[2] or res[0] == res[2]:
-        win = 150
-        p['chips'] += win
-        msg = f"🎰 **[{res_str}]**\n🎉 **Совпадение!** Вы выиграли **+{win}** 💰!"
-    else:
-        msg = f"🎰 **[{res_str}]**\n❌ Поражение! Удача улыбнётся в следующий раз."
-        
-    await update_player(call.from_user.id, chips=p['chips'])
-    await call.message.edit_text(msg, reply_markup=back_to_menu_kb(), parse_mode="Markdown")
-
-@router.callback_query(F.data == "casino_dice")
-async def cb_casino_dice(call: CallbackQuery):
-    p = await get_player(call.from_user.id)
-    if p['chips'] < 50:
-        await call.answer("❌ Нужно 50 💰!", show_alert=True)
-        return
-        
-    p['chips'] -= 50
-    p_d = random.randint(1, 6)
-    b_d = random.randint(1, 6)
-    
-    if p_d > b_d:
-        p['chips'] += 100
-        msg = f"🎲 Ваш бросок: **{p_d}** | Дилер: **{b_d}**\n🎉 Вы победили и получили **+100** 💰!"
-    elif p_d == b_d:
-        p['chips'] += 50
-        msg = f"🎲 Ваши кости: **{p_d}** | Дилер: **{b_d}**\n🤝 Ничья! Ставка возвращена."
-    else:
-        msg = f"🎲 Ваш бросок: **{p_d}** | Дилер: **{b_d}**\n❌ Вы проиграли 50 💰!"
-
-    await update_player(call.from_user.id, chips=p['chips'])
-    await call.message.edit_text(msg, reply_markup=back_to_menu_kb(), parse_mode="Markdown")
-
-@router.callback_query(F.data == "casino_coin")
-async def cb_casino_coin(call: CallbackQuery):
-    p = await get_player(call.from_user.id)
-    if p['chips'] < 50:
-        await call.answer("❌ Нужно 50 💰!", show_alert=True)
-        return
-        
-    p['chips'] -= 50
-    if random.choice([True, False]):
-        p['chips'] += 100
-        msg = "🪙 Выпал **Орёл**! Вы удвоили ставку: **+100** 💰!"
-    else:
-        msg = "🪙 Выпала **Решка**! Ставка проиграна."
-        
-    await update_player(call.from_user.id, chips=p['chips'])
-    await call.message.edit_text(msg, reply_markup=back_to_menu_kb(), parse_mode="Markdown")
-
-# -------------------- ТОП --------------------
-@router.callback_query(F.data == "menu_top")
-async def cb_top(call: CallbackQuery):
-    async with aiosqlite.connect(DB_NAME) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT username, level, wins FROM players ORDER BY wins DESC LIMIT 10") as cursor:
-            players = await cursor.fetchall()
-            
-    text = "🏆 **ТОП-10 БОЙЦОВ АРЕНЫ**\n\n"
-    for i, pl in enumerate(players, 1):
-        name = pl['username'] if pl['username'] else "Боец"
-        text += f"{i}. **{name}** — Lvl {pl['level']} | ⚔️ {pl['wins']} Побед\n"
-        
-    await call.message.edit_text(text, reply_markup=back_to_menu_kb(), parse_mode="Markdown")
-
-# -------------------- АДМИН ПАНЕЛЬ --------------------
-@router.callback_query(F.data == "admin_panel")
-async def cb_admin_panel(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        return
-        
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💰 Выдать фишки себе (+5000)", callback_data="admin_add_chips")],
-        [InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")]
-    ])
-    await call.message.edit_text("👑 **Административная панель**", reply_markup=kb, parse_mode="Markdown")
-
-@router.callback_query(F.data == "admin_add_chips")
-async def cb_admin_add_chips(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        return
-    p = await get_player(ADMIN_ID)
+    if is_banned(m.from_user.id):
+        return await m.answer("🚫 Доступ закрыт.")
+    ensure_masked_bots(12)
+    p = get_player(m.from_user.id)
     if p:
-        await update_player(ADMIN_ID, chips=p['chips'] + 5000)
-        await call.answer("💰 Выдано 5000 фишек!", show_alert=True)
-    await cb_admin_panel(call)
+        touch_username(m)
+        await m.answer(f"С возвращением, <b>{esc(p['name'])}</b>! Арена ждёт 👇", reply_markup=MENU_KB)
+        await flush_notifications(m)
+        return
+    await state.set_state(Reg.name)
+    await m.answer(
+        "⚔️ <b>Добро пожаловать на Арену Дуэлянтов!</b>\n\n"
+        "Создай бойца, прокачай его, купи снарягу и побеждай на арене.\n\n"
+        "Как зовут твоего бойца? (2–16 символов)",
+        reply_markup=ReplyKeyboardRemove(),
+    )
 
-# ==================== ЗАПУСК ====================
+
+@router.message(Command("help"))
+async def cmd_help(m: Message):
+    await m.answer(HELP_TEXT, reply_markup=MENU_KB if get_player(m.from_user.id) else None)
+
+
+@router.message(Command("menu"))
+async def cmd_menu(m: Message, state: FSMContext):
+    await state.clear()
+    if is_banned(m.from_user.id):
+        return await m.answer("🚫 Доступ закрыт.")
+    if not get_player(m.from_user.id):
+        return await m.answer("Сначала отправь /start.")
+    await m.answer("Главное меню 👇", reply_markup=MENU_KB)
+    await flush_notifications(m)
+
+
+@router.message(Reg.name, F.text)
+async def reg_name(m: Message, state: FSMContext):
+    name = " ".join(m.text.split())
+    if not 2 <= len(name) <= 16 or name.startswith("/"):
+        return await m.answer("Имя должно быть от 2 до 16 символов. Попробуй ещё раз:")
+    existing = q1("SELECT 1 FROM players WHERE LOWER(name)=LOWER(?)", (name,))
+    if existing:
+        name = f"{name}{random.randint(1, 99)}"
+    create_player(m.from_user.id, m.from_user.username, name)
+    ensure_masked_bots(12)
+    await state.clear()
+    await m.answer(
+        f"Боец <b>{esc(name)}</b> создан! 🎉\n\n"
+        f"Тебе выдано {START_CHIPS}💰 и {START_POINTS} очков прокачки.",
+        reply_markup=MENU_KB,
+    )
+
+
+# ── PvP find ───────────────────────────────────────────────────────
+
+@router.message(PvpFind.target, F.text)
+async def pvp_target(m: Message, state: FSMContext):
+    if m.text in MENU_TEXTS:
+        return await menu_dispatch(m, state)
+    await state.clear()
+    key = m.text.strip().lstrip("@")
+    row = None
+    if key.isdigit():
+        row = q1("SELECT user_id FROM players WHERE user_id=? AND banned=0", (int(key),))
+    if not row:
+        row = q1("SELECT user_id FROM players WHERE (LOWER(username)=LOWER(?) OR LOWER(name)=LOWER(?)) "
+                 "AND banned=0 LIMIT 1", (key, key))
+    if not row:
+        # соперник «не найден» — подставляем замаскированного бота с похожим ником
+        target = pick_opponent(m.from_user.id, get_player(m.from_user.id)["level"])
+        if not target:
+            return await m.answer("Не удалось подобрать соперника, попробуй ещё раз.")
+        text, kb = run_pvp(m.from_user.id, target)
+        return await m.answer(text, reply_markup=kb)
+    text, kb = run_pvp(m.from_user.id, row["user_id"])
+    await m.answer(text, reply_markup=kb)
+
+
+# ── Меню ───────────────────────────────────────────────────────────
+
+async def show_pvp(m):
+    t, k = pvp_screen()
+    await m.answer(t, reply_markup=k)
+
+
+async def show_char(m):
+    t, k = char_screen(m.from_user.id)
+    await m.answer(t, reply_markup=k)
+
+
+async def show_shop(m):
+    t, k = shop_screen(m.from_user.id, "w")
+    await m.answer(t, reply_markup=k)
+
+
+async def show_top(m):
+    await m.answer(top_screen(m.from_user.id))
+
+
+MENU_HANDLERS = {
+    BTN_PVP: show_pvp,
+    BTN_CHAR: show_char,
+    BTN_SHOP: show_shop,
+    BTN_TOP: show_top,
+}
+
+
+async def menu_dispatch(m, state):
+    await state.clear()
+    if is_banned(m.from_user.id):
+        return await m.answer("🚫 Доступ закрыт.")
+    if not get_player(m.from_user.id):
+        return await m.answer("Сначала отправь /start.")
+    touch_username(m)
+    await flush_notifications(m)
+    await MENU_HANDLERS[m.text](m)
+
+
+@router.message(F.text.in_(MENU_TEXTS))
+async def on_menu(m: Message, state: FSMContext):
+    await menu_dispatch(m, state)
+
+
+# ── Callback helpers ───────────────────────────────────────────────
+
+async def require_player(cb: CallbackQuery):
+    if is_banned(cb.from_user.id):
+        await cb.answer("🚫 Доступ закрыт.", show_alert=True)
+        return None
+    p = get_player(cb.from_user.id)
+    if not p:
+        await cb.answer("Сначала /start", show_alert=True)
+        return None
+    return p
+
+
+# ── Прокачка ──────────────────────────────────────────────────────
+
+@router.callback_query(F.data.regexp(r"^up:(hp|atk|defense|spd|crit)$"))
+async def cb_upgrade(cb: CallbackQuery):
+    p = await require_player(cb)
+    if not p:
+        return
+    stat = cb.data.split(":")[1]
+    if p["points"] <= 0:
+        return await cb.answer("Нет свободных очков", show_alert=True)
+    if stat == "crit" and p["crit"] >= CRIT_CAP:
+        return await cb.answer(f"Крит уже на максимуме ({CRIT_CAP}%)", show_alert=True)
+    ex(f"UPDATE players SET {stat}={stat}+?, points=points-1 WHERE user_id=?",
+       (POINT_VALUE[stat], cb.from_user.id))
+    t, k = char_screen(cb.from_user.id)
+    await safe_edit(cb, t, k)
+    await cb.answer("Прокачано!")
+
+
+# ── Магазин ───────────────────────────────────────────────────────
+
+@router.callback_query(F.data.regexp(r"^shop:[wa]$"))
+async def cb_shop_page(cb: CallbackQuery):
+    if not await require_player(cb):
+        return
+    t, k = shop_screen(cb.from_user.id, cb.data.split(":")[1])
+    await safe_edit(cb, t, k)
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^buy:[wa]:\w+$"))
+async def cb_buy(cb: CallbackQuery):
+    p = await require_player(cb)
+    if not p:
+        return
+    _, kind, key = cb.data.split(":")
+    table = WEAPONS if kind == "w" else ARMORS
+    if key not in table:
+        return await cb.answer()
+    owned_col = "weapons_owned" if kind == "w" else "armors_owned"
+    eq_col = "weapon" if kind == "w" else "armor"
+    owned = p[owned_col].split(",")
+    item = table[key]
+    if key in owned:
+        ex(f"UPDATE players SET {eq_col}=? WHERE user_id=?", (key, cb.from_user.id))
+        toast = f"Надето: {item['name']}"
+    elif p["chips"] >= item["price"]:
+        ex(f"UPDATE players SET chips=chips-?, {owned_col}=?, {eq_col}=? WHERE user_id=?",
+           (item["price"], ",".join(owned + [key]), key, cb.from_user.id))
+        toast = f"Куплено: {item['name']}"
+    else:
+        return await cb.answer(f"Не хватает: нужно {item['price']}💰", show_alert=True)
+    t, k = shop_screen(cb.from_user.id, kind)
+    await safe_edit(cb, t, k)
+    await cb.answer(toast)
+
+
+# ── PvP ───────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "pvp:menu")
+async def cb_pvp_menu(cb: CallbackQuery, state: FSMContext):
+    await state.clear()
+    if not await require_player(cb):
+        return
+    t, k = pvp_screen()
+    await safe_edit(cb, t, k)
+    await cb.answer()
+
+
+@router.callback_query(F.data == "pvp:list")
+async def cb_pvp_list(cb: CallbackQuery):
+    if not await require_player(cb):
+        return
+    t, k = pvp_list_screen(cb.from_user.id)
+    await safe_edit(cb, t, k)
+    await cb.answer()
+
+
+@router.callback_query(F.data == "pvp:find")
+async def cb_pvp_find(cb: CallbackQuery, state: FSMContext):
+    if not await require_player(cb):
+        return
+    await state.set_state(PvpFind.target)
+    await cb.message.answer("🔎 Отправь @username, ID или имя бойца.")
+    await cb.answer()
+
+
+@router.callback_query(F.data == "pvp:rand")
+async def cb_pvp_rand(cb: CallbackQuery):
+    p = await require_player(cb)
+    if not p:
+        return
+    oid = pick_opponent(cb.from_user.id, p["level"])
+    if oid is None:
+        return await cb.answer("Не удалось подобрать соперника.", show_alert=True)
+    d = get_player(oid)
+    text = (f"⚔️ <b>Соперник найден</b>\n\n"
+            f"<b>{esc(d['name'])}</b> · ур. {d['level']} · 🏆 {d['wins']}\n"
+            f"{stats_line(player_fighter(d))}\n\n"
+            f"Выбери, куда бить первым:")
+    await safe_edit(cb, text, zone_keyboard(f"pvprand:{oid}", back_data="pvp:menu"))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^pvprand:-?\d+:(head|torso|arms|legs)$"))
+async def cb_pvp_rand_fight(cb: CallbackQuery):
+    if not await require_player(cb):
+        return
+    _, oid_s, zone = cb.data.split(":")
+    oid = int(oid_s)
+    text, kb = run_pvp(cb.from_user.id, oid, first_zone=zone)
+    await safe_edit(cb, text, kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^pvp:f:-?\d+$"))
+async def cb_pvp_fight(cb: CallbackQuery):
+    p = await require_player(cb)
+    if not p:
+        return
+    target = int(cb.data.split(":")[2])
+    d = get_player(target)
+    if not d:
+        return await cb.answer("Соперник недоступен.", show_alert=True)
+    text = (f"⚔️ <b>Вызов</b>\n\n"
+            f"<b>{esc(d['name'])}</b> · ур. {d['level']} · 🏆 {d['wins']}\n"
+            f"{stats_line(player_fighter(d))}\n\n"
+            f"Выбери зону удара:")
+    await safe_edit(cb, text, zone_keyboard(f"pvpfight:{target}", back_data="pvp:list"))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^pvpfight:-?\d+:(head|torso|arms|legs)$"))
+async def cb_pvp_fight_zone(cb: CallbackQuery):
+    if not await require_player(cb):
+        return
+    _, tid_s, zone = cb.data.split(":")
+    tid = int(tid_s)
+    text, kb = run_pvp(cb.from_user.id, tid, first_zone=zone)
+    await safe_edit(cb, text, kb)
+    await cb.answer()
+
+
+# ── Админка ───────────────────────────────────────────────────────
+
+def admin_only(uid):
+    return uid == ADMIN_ID
+
+
+@router.message(Command("admin"))
+async def cmd_admin(m: Message):
+    if not admin_only(m.from_user.id):
+        return
+    await m.answer(
+        "🛠 <b>Админ-панель</b>\n\n"
+        "/give &lt;user_id&gt; &lt;chips&gt;\n"
+        "/givepoints &lt;user_id&gt; &lt;n&gt;\n"
+        "/setlevel &lt;user_id&gt; &lt;lvl&gt;\n"
+        "/ban &lt;user_id&gt;\n"
+        "/unban &lt;user_id&gt;\n"
+        "/broadcast — рассылка\n"
+        "/stats — статистика\n"
+        "/addbots &lt;n&gt; — добавить замаскированных соперников"
+    )
+
+
+@router.message(Command("stats"))
+async def cmd_stats(m: Message):
+    if not admin_only(m.from_user.id):
+        return
+    total = q1("SELECT COUNT(*) c FROM players WHERE is_bot=0")["c"]
+    bots = q1("SELECT COUNT(*) c FROM players WHERE is_bot=1")["c"]
+    banned = q1("SELECT COUNT(*) c FROM players WHERE banned=1")["c"]
+    await m.answer(f"📊 Игроков: {total}\n🤖 Соперников (скрытых): {bots}\n🚫 Забанено: {banned}")
+
+
+@router.message(Command("addbots"))
+async def cmd_addbots(m: Message):
+    if not admin_only(m.from_user.id):
+        return
+    parts = m.text.split()
+    n = int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else 6
+    before = q1("SELECT COUNT(*) c FROM players WHERE is_bot=1")["c"]
+    ensure_masked_bots(before + n)
+    after = q1("SELECT COUNT(*) c FROM players WHERE is_bot=1")["c"]
+    await m.answer(f"✅ Добавлено соперников: {after - before}")
+
+
+@router.message(Command("give"))
+async def cmd_give(m: Message):
+    if not admin_only(m.from_user.id):
+        return
+    parts = m.text.split()
+    if len(parts) != 3 or not parts[1].lstrip("-").isdigit() or not parts[2].lstrip("-").isdigit():
+        return await m.answer("Использование: /give <user_id> <chips>")
+    uid, amount = int(parts[1]), int(parts[2])
+    if not get_player(uid):
+        return await m.answer("Игрок не найден.")
+    ex("UPDATE players SET chips=chips+? WHERE user_id=?", (amount, uid))
+    await m.answer(f"✅ Выдано {amount}💰 игроку {uid}")
+    if uid > 0:
+        notify(uid, f"🎁 Тебе начислено {amount}💰")
+
+
+@router.message(Command("givepoints"))
+async def cmd_givepoints(m: Message):
+    if not admin_only(m.from_user.id):
+        return
+    parts = m.text.split()
+    if len(parts) != 3 or not parts[1].lstrip("-").isdigit() or not parts[2].isdigit():
+        return await m.answer("Использование: /givepoints <user_id> <n>")
+    uid, n = int(parts[1]), int(parts[2])
+    if not get_player(uid):
+        return await m.answer("Игрок не найден.")
+    ex("UPDATE players SET points=points+? WHERE user_id=?", (n, uid))
+    await m.answer(f"✅ Выдано {n} очков игроку {uid}")
+    if uid > 0:
+        notify(uid, f"🎁 Тебе начислено {n} очков прокачки")
+
+
+@router.message(Command("setlevel"))
+async def cmd_setlevel(m: Message):
+    if not admin_only(m.from_user.id):
+        return
+    parts = m.text.split()
+    if len(parts) != 3 or not parts[1].lstrip("-").isdigit() or not parts[2].isdigit():
+        return await m.answer("Использование: /setlevel <user_id> <lvl>")
+    uid, lvl = int(parts[1]), int(parts[2])
+    if not get_player(uid):
+        return await m.answer("Игрок не найден.")
+    ex("UPDATE players SET level=?, xp=0 WHERE user_id=?", (lvl, uid))
+    await m.answer(f"✅ Уровень {lvl} установлен игроку {uid}")
+
+
+@router.message(Command("ban"))
+async def cmd_ban(m: Message):
+    if not admin_only(m.from_user.id):
+        return
+    parts = m.text.split()
+    if len(parts) != 2 or not parts[1].isdigit():
+        return await m.answer("Использование: /ban <user_id>")
+    uid = int(parts[1])
+    ex("UPDATE players SET banned=1 WHERE user_id=?", (uid,))
+    await m.answer(f"🚫 Игрок {uid} забанен.")
+
+
+@router.message(Command("unban"))
+async def cmd_unban(m: Message):
+    if not admin_only(m.from_user.id):
+        return
+    parts = m.text.split()
+    if len(parts) != 2 or not parts[1].isdigit():
+        return await m.answer("Использование: /unban <user_id>")
+    uid = int(parts[1])
+    ex("UPDATE players SET banned=0 WHERE user_id=?", (uid,))
+    await m.answer(f"✅ Игрок {uid} разбанен.")
+
+
+@router.message(Command("broadcast"))
+async def cmd_broadcast(m: Message, state: FSMContext):
+    if not admin_only(m.from_user.id):
+        return
+    await state.set_state(AdminBroadcast.text)
+    await m.answer("📢 Отправь текст рассылки. /cancel — отмена.")
+
+
+@router.message(AdminBroadcast.text, F.text)
+async def broadcast_send(m: Message, state: FSMContext, bot: Bot):
+    if m.text == "/cancel":
+        await state.clear()
+        return await m.answer("Отменено.")
+    await state.clear()
+    rows = qa("SELECT user_id FROM players WHERE banned=0 AND is_bot=0")
+    ok = 0
+    for r in rows:
+        try:
+            await bot.send_message(r["user_id"], f"📢 <b>Сообщение:</b>\n\n{m.text}")
+            ok += 1
+        except Exception:
+            pass
+    await m.answer(f"✅ Отправлено {ok} игрокам.")
+
+
+# ── Fallback ──────────────────────────────────────────────────────
+
+@router.message()
+async def fallback(m: Message):
+    if not get_player(m.from_user.id):
+        return await m.answer("Отправь /start, чтобы создать бойца ⚔️")
+    if is_banned(m.from_user.id):
+        return await m.answer("🚫 Доступ закрыт.")
+    await m.answer("Пользуйся меню внизу 👇", reply_markup=MENU_KB)
+
+
+# ════════════════════════════════════════════════════════════════════
+#  ЗАПУСК
+# ════════════════════════════════════════════════════════════════════
+
 async def main():
-    await init_db()
-    bot = Bot(token=BOT_TOKEN)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    if not BOT_TOKEN:
+        raise SystemExit("Задай BOT_TOKEN.")
+    init_db()
+    ensure_masked_bots(12)
+    bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
-    
-    print("⚔️ Бот «Арена Дуэлянтов» запущен!")
+    await bot.set_my_commands([
+        BotCommand(command="start", description="Начать / вернуться"),
+        BotCommand(command="menu", description="Главное меню"),
+        BotCommand(command="help", description="Правила"),
+    ])
+    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

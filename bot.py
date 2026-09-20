@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-⚔️ Арена Дуэлянтов — PvP-онли, пошаговый бой по зонам.
-Атакующий выбирает зону удара → Защищающийся выбирает зону защиты.
-Совпало → блок. Не совпало → урон = оружие - защита_зоны.
-Прогресс = победы. Поражение −1 победа. 3 арены. Боты скрыты, в топ не входят.
+⚔️ Арена Дуэлянтов — PvP-онли, пошаговый бой по зонам + таймер 5 сек.
+Правила раунда:
+  • Атакующий выбирает зону удара (таймер 5с)
+  • Защищающийся выбирает зону защиты (таймер 5с)
+  • Совпало → блок. Не совпало → урон = оружие - броня зоны
+  • Роли меняются каждый раунд
+Просрочка таймера = авто-поражение.
+Боты решают мгновенно, без таймера.
 """
 
 import asyncio
@@ -46,6 +50,7 @@ ADMIN_ID = 5356400377
 
 START_CHIPS = 200
 MAX_ROUNDS = 80
+TURN_TIMEOUT = 5          # секунд на ход реального игрока
 
 # ── Зоны тела ───────────────────────────────────────────────────────
 ZONES = ["head", "torso", "arms", "legs"]
@@ -56,7 +61,7 @@ ZONE_INFO = {
     "legs":  dict(name="Ноги",   emoji="🦵", mult=0.9),
 }
 
-# ── Оружие: урон, спец-атака ────────────────────────────────────────
+# ── Оружие ──────────────────────────────────────────────────────────
 WEAPONS = {
     "fists":  dict(emoji="👊", name="Кулаки",  dmg=10, spec="Серия ударов",
                    desc="3 быстрых удара по 50% урона", price=0, chance=25),
@@ -74,8 +79,7 @@ WEAPONS = {
                    desc="×2 урона и оглушение", price=1600, chance=18),
 }
 
-# ── Броня: защита по каждой зоне ────────────────────────────────────
-# armor_def = {head, torso, arms, legs}
+# ── Броня ───────────────────────────────────────────────────────────
 ARMORS = {
     "none": dict(
         emoji="👕", name="Без брони", hp=0, price=0, chance=0, dmg_bonus=0,
@@ -123,7 +127,7 @@ def arena_of(wins: int) -> str:
     return "gold"
 
 
-# ── Человеческие ники для скрытых соперников ────────────────────────
+# ── Ники для скрытых ботов ──────────────────────────────────────────
 HUMAN_NAMES = [
     "Максим", "Артём", "Данил", "Кирилл", "Егор", "Иван", "Никита", "Рома",
     "Саня", "Дима", "Влад", "Серёга", "Паша", "Толя", "Женя", "Костя",
@@ -225,17 +229,39 @@ def fighter_card(f: Fighter) -> str:
     )
 
 
+def profile_text(p) -> str:
+    """Профиль игрока с пояснением."""
+    w = WEAPONS[p["weapon"]]
+    a = ARMORS[p["armor"]]
+    ad = a["armor_def"]
+    arena = ARENAS[arena_of(p["wins"])]
+    f = fighter_from_row(p)
+    return (
+        f"👤 <b>Профиль: {esc(p['name'])}</b>\n\n"
+        f"🏆 Победы: <b>{p['wins']}</b>  ·  💀 Поражения: <b>{p['losses']}</b>\n"
+        f"📍 {arena['emoji']} <b>{arena['name']}</b>\n\n"
+        f"{fighter_card(f)}\n\n"
+        f"<b>Снаряжение:</b>\n"
+        f"{w['emoji']} <b>{w['name']}</b> — базовый урон <b>{w['dmg']}</b>\n"
+        f"   Спец-атака: <i>{w['spec']}</i> ({w['chance']}% шанс)\n"
+        f"   {w['desc']}\n\n"
+        f"{a['emoji']} <b>{a['name']}</b> — {a['desc']}\n"
+        f"   🛡 Защита по зонам: 🧠{ad['head']} 🫀{ad['torso']} 💪{ad['arms']} 🦵{ad['legs']}\n\n"
+        f"<b>Как играть:</b>\n"
+        f"• Атакующий выбирает зону удара — у него <b>{TURN_TIMEOUT} сек</b>\n"
+        f"• Защищающийся выбирает зону защиты — тоже <b>{TURN_TIMEOUT} сек</b>\n"
+        f"• Совпало → блок (0 урона). Не совпало → <i>урон оружия − защита брони</i>\n"
+        f"• Роли меняются каждый раунд\n"
+        f"• Не успел за {TURN_TIMEOUT} сек → <b>авто-поражение</b>"
+    )
+
+
 # ════════════════════════════════════════════════════════════════════
 #  РАСЧЁТ УРОНА
 # ════════════════════════════════════════════════════════════════════
 
 def compute_damage(att: Fighter, dfn: Fighter, atk_zone: str, def_zone: Optional[str],
                    ignore_armor: bool = False, extra_mult: float = 1.0) -> tuple[int, str]:
-    """
-    Возвращает (урон, описание).
-    Если atk_zone == def_zone → полный блок, урон 0.
-    Иначе урон = оружие_зоны - защита_зоны. Минимум 1.
-    """
     if def_zone == atk_zone:
         return 0, "🛡 <b>Заблокировано!</b>"
     weapon_dmg = att.weapon_of_zone(atk_zone)
@@ -266,15 +292,14 @@ def _add_dot(target: Fighter, name: str, dmg: int, rounds: int):
 
 def apply_special(att: Fighter, dfn: Fighter, atk_zone: str, def_zone: Optional[str],
                   log: list) -> bool:
-    """Возвращает True, если спец-атака сработала (и урон уже нанесён)."""
     w = WEAPONS[att.weapon]
     spec_name = w["spec"]
 
     if def_zone == atk_zone:
         log.append(f"🛡 {dfn.name} заблокировал <b>{spec_name}</b>!")
-        return True  # спец-атака «состоялась», но была заблокирована
+        return True
 
-    if att.weapon == "fists" or att.weapon == "dagger":
+    if att.weapon in ("fists", "dagger"):
         hits = []
         total = 0
         for _ in range(3):
@@ -329,20 +354,15 @@ def apply_special(att: Fighter, dfn: Fighter, atk_zone: str, def_zone: Optional[
 
 def resolve_attack(att: Fighter, dfn: Fighter, atk_zone: str, def_zone: Optional[str],
                    log: list) -> None:
-    """
-    Один ход атакующего. Учитывает оглушение, спец-атаку, блок, обычный удар.
-    """
     if att.stun:
         att.stun = False
         log.append(f"💫 {att.name} оглушён и пропускает ход")
         return
 
-    # спец-атака
     if random.random() * 100 < att.spec_chance:
         if apply_special(att, dfn, atk_zone, def_zone, log):
             return
 
-    # обычный удар
     dmg, note = compute_damage(att, dfn, atk_zone, def_zone)
     if note:
         log.append(f"{ZONE_INFO[atk_zone]['emoji']} {att.name} бьёт в «{ZONE_INFO[atk_zone]['name']}» — {note}")
@@ -356,7 +376,7 @@ def resolve_attack(att: Fighter, dfn: Fighter, atk_zone: str, def_zone: Optional
 
 
 # ════════════════════════════════════════════════════════════════════
-#  ДУЭЛЬ (пошаговая, через память)
+#  ДУЭЛЬ
 # ════════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -365,12 +385,17 @@ class Duel:
     b_id: int
     a: Fighter
     b: Fighter
-    phase: str               # "a_attack" | "b_defend" | "b_attack" | "a_defend" | "done"
-    round_no: int = 1
-    atk_zone: Optional[str] = None       # выбранная атакующим зона (ждёт защиту)
     attacker_is_a: bool = True
+    round_no: int = 1
+    atk_zone: Optional[str] = None          # выбранная атакующим зона
     log: list = field(default_factory=list)
     started: float = field(default_factory=time.time)
+
+    # Таймеры
+    timer_task: Optional[asyncio.Task] = None
+    timer_deadline: float = 0.0
+    timer_for: Optional[int] = None         # user_id, чей таймер идёт
+    timer_role: Optional[str] = None        # "attacker" | "defender"
 
     def me(self, uid: int) -> Optional[Fighter]:
         if uid == self.a_id:
@@ -387,44 +412,61 @@ class Duel:
         return None
 
     def state_for(self, uid: int) -> str:
-        """Кто этот игрок сейчас: 'attacker' | 'defender' | 'none'."""
         if uid == self.a_id:
             return "attacker" if self.attacker_is_a else "defender"
         if uid == self.b_id:
             return "defender" if self.attacker_is_a else "attacker"
         return "none"
 
+    def attacker(self) -> Fighter:
+        return self.a if self.attacker_is_a else self.b
+
+    def defender(self) -> Fighter:
+        return self.b if self.attacker_is_a else self.a
+
+    def attacker_id(self) -> int:
+        return self.a_id if self.attacker_is_a else self.b_id
+
+    def defender_id(self) -> int:
+        return self.b_id if self.attacker_is_a else self.a_id
+
 
 DUELS: dict[int, Duel] = {}
 
 
-def start_duel(aid: int, bid: int) -> Duel:
+def start_duel(aid: int, bid: int, bot: Bot) -> Duel:
     a_row = get_player(aid)
     b_row = get_player(bid)
     fa = fighter_from_row(a_row)
     fb = fighter_from_row(b_row)
     attacker_is_a = random.random() < 0.5
-    duel = Duel(
-        a_id=aid, b_id=bid, a=fa, b=fb,
-        phase="a_attack" if attacker_is_a else "b_attack",
-        attacker_is_a=attacker_is_a,
-    )
-    first = duel.a.name if attacker_is_a else duel.b.name
-    duel.log.append(f"🤺 Бой начался! Первым атакует <b>{first}</b>.")
+    duel = Duel(a_id=aid, b_id=bid, a=fa, b=fb, attacker_is_a=attacker_is_a)
+    first_name = fa.name if attacker_is_a else fb.name
+    duel.log.append(f"🤺 Бой начался! Первым атакует <b>{first_name}</b>.")
     DUELS[aid] = duel
     if bid > 0:
         DUELS[bid] = duel
     return duel
 
 
+def stop_timer(duel: Duel):
+    if duel.timer_task and not duel.timer_task.done():
+        duel.timer_task.cancel()
+    duel.timer_task = None
+    duel.timer_deadline = 0.0
+    duel.timer_for = None
+    duel.timer_role = None
+
+
 def end_duel(duel: Duel):
+    stop_timer(duel)
     DUELS.pop(duel.a_id, None)
     if duel.b_id > 0:
         DUELS.pop(duel.b_id, None)
 
 
 # ════════════════════════════════════════════════════════════════════
-#  КЛАВИАТУРЫ БОЯ
+#  КЛАВИАТУРЫ
 # ════════════════════════════════════════════════════════════════════
 
 def attack_zone_kb() -> InlineKeyboardMarkup:
@@ -455,18 +497,20 @@ def defend_zone_kb() -> InlineKeyboardMarkup:
     return ikb(*rows)
 
 
-def duel_status_text(duel: Duel, for_uid: int, extra: str = "") -> str:
+def duel_status_text(duel: Duel, for_uid: int, extra: str = "", timer_left: Optional[int] = None) -> str:
     role = duel.state_for(for_uid)
     a, b = duel.a, duel.b
-    atk_name = a.name if duel.attacker_is_a else b.name
-    def_name = b.name if duel.attacker_is_a else a.name
+    atk_name = duel.attacker().name
 
     if role == "attacker":
-        prompt = "🎯 <b>Твой ход — выбирай, куда бить</b>"
+        prompt = "🎯 <b>Твой ход — выбери, куда бить</b>"
     elif role == "defender":
-        prompt = f"🛡 <b>{atk_name} атакует — выбирай, что защищать</b>"
+        prompt = f"🛡 <b>{atk_name} атакует — выбери, что защищать</b>"
     else:
         prompt = "⏳ Бой идёт…"
+
+    if timer_left is not None and role in ("attacker", "defender"):
+        prompt += f"\n⏱ Осталось: <b>{timer_left} сек</b>"
 
     body = "\n".join(duel.log[-14:]) if duel.log else "<i>Бой начинается…</i>"
     return (
@@ -479,8 +523,49 @@ def duel_status_text(duel: Duel, for_uid: int, extra: str = "") -> str:
     )
 
 
-def duel_status_short(duel: Duel, for_uid: int) -> str:
-    return duel_status_text(duel, for_uid)
+# ════════════════════════════════════════════════════════════════════
+#  ТАЙМЕР
+# ════════════════════════════════════════════════════════════════════
+
+def start_timer(duel: Duel, uid: int, role: str, bot: Bot):
+    """
+    Запускает таймер на TURN_TIMEOUT секунд для игрока uid.
+    По истечении — авто-поражение игрока uid.
+    """
+    stop_timer(duel)
+    duel.timer_for = uid
+    duel.timer_role = role
+    duel.timer_deadline = time.time() + TURN_TIMEOUT
+    duel.timer_task = asyncio.create_task(_timer_runner(duel, uid, role, bot))
+
+
+async def _timer_runner(duel: Duel, uid: int, role: str, bot: Bot):
+    try:
+        while True:
+            left = int(round(duel.timer_deadline - time.time()))
+            if left <= 0:
+                break
+            await asyncio.sleep(1)
+        # Время вышло — авто-поражение, если ход всё ещё за этим игроком
+        if duel.timer_for != uid:
+            return
+        if duel.state_for(uid) != role:
+            return
+        if duel not in DUELS.values():
+            return
+        await _auto_lose(duel, uid, bot)
+    except asyncio.CancelledError:
+        return
+    except Exception as e:
+        logging.warning(f"timer error: {e}")
+
+
+async def _auto_lose(duel: Duel, loser_uid: int, bot: Bot):
+    loser = duel.me(loser_uid)
+    winner_name = duel.opponent(loser_uid).name if loser else "?"
+    duel.log.append(f"⏱ <b>{loser.name if loser else '?'} не успел за {TURN_TIMEOUT} сек — авто-поражение!</b>")
+    winner_is_a = not (loser_uid == duel.a_id)
+    await _finish_duel(duel, winner_is_a=winner_is_a, bot=bot, reason="timeout")
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -604,7 +689,6 @@ def ensure_masked_bots(count: int = 24):
             weights=[5, 4, 2],
         )[0]
         losses = random.randint(max(0, wins // 2), wins * 2 + 3)
-        # экипировка по «уровню» арены
         key = arena_of(wins)
         if key == "bronze":
             weapon = random.choice(["fists", "dagger", "sword"])
@@ -734,11 +818,12 @@ def arena_menu_screen(uid):
         f"🥈 Серебро — 10–29 побед\n"
         f"🥇 Золото — 30+ побед\n\n"
         f"<b>Правила боя:</b>\n"
-        f"• Атакующий выбирает зону удара\n"
-        f"• Защищающийся выбирает зону защиты\n"
+        f"• Атакующий выбирает зону удара — <b>{TURN_TIMEOUT} сек</b>\n"
+        f"• Защищающийся выбирает зону защиты — <b>{TURN_TIMEOUT} сек</b>\n"
         f"• Совпало → урон не проходит\n"
         f"• Не совпало → урон = оружие − броня\n"
-        f"• На следующем раунде роли меняются"
+        f"• Роли меняются каждый раунд\n"
+        f"• ⏱ Не успел за {TURN_TIMEOUT} сек → авто-поражение"
     )
     kb = ikb(
         [("🎲 Найти соперника", "arena:find", "success")],
@@ -797,11 +882,10 @@ def pick_opponent(uid, wins):
 
 
 # ════════════════════════════════════════════════════════════════════
-#  БОТ-ЛОГИКА (выбор зон)
+#  БОТ-ЛОГИКА
 # ════════════════════════════════════════════════════════════════════
 
 def bot_pick_attack_zone(opponent: Fighter) -> str:
-    # бот бьёт туда, где у соперника слабее броня
     scored = sorted(ZONES, key=lambda z: opponent.armor_of(z))
     if random.random() < 0.5:
         return scored[0]
@@ -809,7 +893,6 @@ def bot_pick_attack_zone(opponent: Fighter) -> str:
 
 
 def bot_pick_defend_zone(attacker: Fighter) -> str:
-    # бот защищает самую «сильную» зону оружия атакующего
     scored = sorted(ZONES, key=lambda z: attacker.weapon_of_zone(z), reverse=True)
     if random.random() < 0.5:
         return scored[0]
@@ -843,10 +926,11 @@ HELP_TEXT = (
     "🥈 Серебро — 10–29 🏆\n"
     "🥇 Золото — 30+ 🏆\n\n"
     "<b>Как идёт бой:</b>\n"
-    "1. Один игрок выбирает, <b>куда бить</b>.\n"
-    "2. Второй выбирает, <b>что защищать</b>.\n"
-    "3. Совпало — урон не проходит. Не совпало — урон = оружие − броня зоны.\n"
-    "4. На следующем раунде роли меняются.\n\n"
+    "1. Атакующий выбирает, куда бить — <b>5 секунд</b>\n"
+    "2. Защищающийся выбирает, что защищать — <b>5 секунд</b>\n"
+    "3. Совпало — блок. Не совпало — урон = оружие − броня зоны\n"
+    "4. На следующем раунде роли меняются\n\n"
+    "⏱ Не успел за 5 секунд → авто-поражение.\n"
     "Победа: +1 🏆. Поражение: −1 🏆.\n\n"
     "Команды: /start, /menu, /help"
 )
@@ -888,7 +972,8 @@ async def cmd_start(m: Message, state: FSMContext):
     await state.set_state(Reg.name)
     await m.answer(
         "⚔️ <b>Добро пожаловать на Арену Дуэлянтов!</b>\n\n"
-        "Только PvP, без прокачки — только победы и снаряжение.\n\n"
+        "Только PvP, без прокачки — только победы и снаряжение.\n"
+        f"На каждый ход даётся <b>{TURN_TIMEOUT} сек</b>.\n\n"
         "Как зовут твоего бойца? (2–16 символов)",
         reply_markup=ReplyKeyboardRemove(),
     )
@@ -928,10 +1013,10 @@ async def reg_name(m: Message, state: FSMContext):
     )
 
 
-# ── Поиск по нику/ID ──────────────────────────────────────────────
+# ── Поиск по нику ─────────────────────────────────────────────────
 
 @router.message(DuelFind.target, F.text)
-async def duel_find_target(m: Message, state: FSMContext):
+async def duel_find_target(m: Message, state: FSMContext, bot: Bot):
     if m.text in MENU_TEXTS:
         return await menu_dispatch(m, state)
     await state.clear()
@@ -950,8 +1035,8 @@ async def duel_find_target(m: Message, state: FSMContext):
         target = pick_opponent(m.from_user.id, p["wins"])
         if not target:
             return await m.answer("Не удалось подобрать соперника.")
-        return await begin_duel_msg(m.from_user.id, target, m)
-    await begin_duel_msg(m.from_user.id, row["user_id"], m)
+        return await begin_duel_msg(m.from_user.id, target, m, bot)
+    await begin_duel_msg(m.from_user.id, row["user_id"], m, bot)
 
 
 # ── Меню ───────────────────────────────────────────────────────────
@@ -997,27 +1082,39 @@ async def on_menu(m: Message, state: FSMContext):
 
 # ── Начало боя ─────────────────────────────────────────────────────
 
-async def begin_duel_msg(aid: int, bid: int, m: Message):
+async def begin_duel_msg(aid: int, bid: int, m: Message, bot: Bot):
     if bid == aid:
         return await m.answer("🤨 Нельзя драться с самим собой.")
     if aid in DUELS:
         return await m.answer("У тебя уже идёт бой.")
-    duel = start_duel(aid, bid)
-    # кому первому атаковать — тому и приходит приглашение
-    text = duel_status_text(duel, aid)
+    duel = start_duel(aid, bid, bot)
     role = duel.state_for(aid)
+
+    # если игрок — атакующий, ставим таймер и показываем кнопки удара
     if role == "attacker":
-        kb = attack_zone_kb()
+        text = duel_status_text(duel, aid, timer_left=TURN_TIMEOUT)
+        await m.answer(text, reply_markup=attack_zone_kb())
+        start_timer(duel, aid, "attacker", bot)
     else:
-        kb = ikb([("▶️ Готов защищаться", "duel:ready_def", "primary")])
-    await m.answer(text, reply_markup=kb)
-    # уведомим реального соперника, если он существует
+        # игрок — защитник, но атакующий (бот) уже выбрал зону
+        other_uid = duel.attacker_id()
+        if other_uid < 0:
+            duel.atk_zone = bot_pick_attack_zone(duel.opponent(aid))
+            text = duel_status_text(duel, aid, extra="⚔️ Соперник уже выбрал удар.", timer_left=TURN_TIMEOUT)
+            await m.answer(text, reply_markup=defend_zone_kb())
+            start_timer(duel, aid, "defender", bot)
+        else:
+            text = duel_status_text(duel, aid,
+                                    extra="⏳ Соперник выбирает удар… Нажми «Обновить», когда он выберет.")
+            await m.answer(text, reply_markup=ikb([("🔄 Обновить", "duel:refresh", "primary")]))
+
+    # уведомим реального соперника
     if bid > 0:
         notify(bid, f"⚔️ <b>{esc(get_player(aid)['name'])}</b> вызвал тебя на арену. "
                     f"Зайди в «⚔️ Арена», чтобы принять бой.")
 
 
-# ── Callback: старт боя ───────────────────────────────────────────
+# ── Arena callbacks ───────────────────────────────────────────────
 
 @router.callback_query(F.data == "arena:menu")
 async def cb_arena_menu(cb: CallbackQuery, state: FSMContext):
@@ -1030,7 +1127,7 @@ async def cb_arena_menu(cb: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data == "arena:find")
-async def cb_arena_find(cb: CallbackQuery):
+async def cb_arena_find(cb: CallbackQuery, bot: Bot):
     p = get_player(cb.from_user.id)
     if not p:
         return await cb.answer("Сначала /start", show_alert=True)
@@ -1039,11 +1136,25 @@ async def cb_arena_find(cb: CallbackQuery):
     oid = pick_opponent(cb.from_user.id, p["wins"])
     if not oid:
         return await cb.answer("Не удалось подобрать соперника.", show_alert=True)
-    duel = start_duel(cb.from_user.id, oid)
-    text = duel_status_text(duel, cb.from_user.id)
+    duel = start_duel(cb.from_user.id, oid, bot)
     role = duel.state_for(cb.from_user.id)
-    kb = attack_zone_kb() if role == "attacker" else ikb([("▶️ Готов защищаться", "duel:ready_def", "primary")])
-    await safe_edit(cb, text, kb)
+
+    if role == "attacker":
+        text = duel_status_text(duel, cb.from_user.id, timer_left=TURN_TIMEOUT)
+        await safe_edit(cb, text, attack_zone_kb())
+        start_timer(duel, cb.from_user.id, "attacker", bot)
+    else:
+        other_uid = duel.attacker_id()
+        if other_uid < 0:
+            duel.atk_zone = bot_pick_attack_zone(duel.opponent(cb.from_user.id))
+            text = duel_status_text(duel, cb.from_user.id,
+                                    extra="⚔️ Соперник уже выбрал удар.", timer_left=TURN_TIMEOUT)
+            await safe_edit(cb, text, defend_zone_kb())
+            start_timer(duel, cb.from_user.id, "defender", bot)
+        else:
+            text = duel_status_text(duel, cb.from_user.id,
+                                    extra="⏳ Соперник выбирает удар…")
+            await safe_edit(cb, text, ikb([("🔄 Обновить", "duel:refresh", "primary")]))
     await cb.answer()
 
 
@@ -1066,7 +1177,7 @@ async def cb_arena_find_name(cb: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data.regexp(r"^duel:pick:-?\d+$"))
-async def cb_duel_pick(cb: CallbackQuery):
+async def cb_duel_pick(cb: CallbackQuery, bot: Bot):
     p = get_player(cb.from_user.id)
     if not p:
         return await cb.answer("Сначала /start", show_alert=True)
@@ -1075,10 +1186,49 @@ async def cb_duel_pick(cb: CallbackQuery):
     tid = int(cb.data.split(":")[2])
     if tid == cb.from_user.id:
         return await cb.answer("Нельзя драться с собой.", show_alert=True)
-    duel = start_duel(cb.from_user.id, tid)
-    text = duel_status_text(duel, cb.from_user.id)
+    duel = start_duel(cb.from_user.id, tid, bot)
     role = duel.state_for(cb.from_user.id)
-    kb = attack_zone_kb() if role == "attacker" else ikb([("▶️ Готов защищаться", "duel:ready_def", "primary")])
+    if role == "attacker":
+        text = duel_status_text(duel, cb.from_user.id, timer_left=TURN_TIMEOUT)
+        await safe_edit(cb, text, attack_zone_kb())
+        start_timer(duel, cb.from_user.id, "attacker", bot)
+    else:
+        other_uid = duel.attacker_id()
+        if other_uid < 0:
+            duel.atk_zone = bot_pick_attack_zone(duel.opponent(cb.from_user.id))
+            text = duel_status_text(duel, cb.from_user.id,
+                                    extra="⚔️ Соперник уже выбрал удар.", timer_left=TURN_TIMEOUT)
+            await safe_edit(cb, text, defend_zone_kb())
+            start_timer(duel, cb.from_user.id, "defender", bot)
+        else:
+            text = duel_status_text(duel, cb.from_user.id,
+                                    extra="⏳ Соперник выбирает удар…")
+            await safe_edit(cb, text, ikb([("🔄 Обновить", "duel:refresh", "primary")]))
+    await cb.answer()
+
+
+# ── Профиль соперника ─────────────────────────────────────────────
+
+@router.callback_query(F.data.regexp(r"^duel:profile:-?\d+$"))
+async def cb_duel_profile(cb: CallbackQuery):
+    tid = int(cb.data.split(":")[2])
+    row = get_player(tid)
+    if not row:
+        return await cb.answer("Игрок не найден.", show_alert=True)
+    text = profile_text(row)
+    kb = ikb([("⬅️ Назад", "arena:list", "success")],
+             [("⚔️ Вызвать на бой", f"duel:pick:{tid}", "danger")])
+    await safe_edit(cb, text, kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data == "duel:myprofile")
+async def cb_my_profile(cb: CallbackQuery):
+    row = get_player(cb.from_user.id)
+    if not row:
+        return await cb.answer("Сначала /start", show_alert=True)
+    text = profile_text(row)
+    kb = ikb([("⬅️ Назад", "arena:menu", "success")])
     await safe_edit(cb, text, kb)
     await cb.answer()
 
@@ -1086,48 +1236,48 @@ async def cb_duel_pick(cb: CallbackQuery):
 # ── ДУЭЛЬ: АТАКА ───────────────────────────────────────────────────
 
 @router.callback_query(F.data.regexp(r"^duel:atk:(head|torso|arms|legs)$"))
-async def cb_duel_attack(cb: CallbackQuery):
+async def cb_duel_attack(cb: CallbackQuery, bot: Bot):
     duel = DUELS.get(cb.from_user.id)
     if not duel:
         return await cb.answer("Бой не найден.", show_alert=True)
     if duel.state_for(cb.from_user.id) != "attacker":
         return await cb.answer("Сейчас не твой ход атаковать.", show_alert=True)
+    if duel.timer_for != cb.from_user.id:
+        # таймер уже истёк или ход уже сделан
+        return await cb.answer("Время вышло или ход уже сделан.", show_alert=True)
+
+    stop_timer(duel)
     atk_zone = cb.data.split(":")[2]
     duel.atk_zone = atk_zone
 
-    if cb.from_user.id == duel.a_id:
-        # атакует A → ход защиты переходит к B (если он человек), иначе бот сам защищается
-        if duel.b_id > 0:
-            # человек-B — ждём его выбора
-            text_b = duel_status_text(duel, duel.b_id,
-                                      extra=f"⚔️ {duel.a.name} выбрал зону удара и ждёт твою защиту!")
-            kb_b = defend_zone_kb()
-            try:
-                await cb.bot.send_message(duel.b_id, text_b, reply_markup=kb_b)
-            except Exception:
-                pass
-            # игрок A видит «ожидание»
-            text_a = duel_status_text(duel, duel.a_id, extra="⏳ Ждём защиту соперника…")
-            kb_a = ikb([("🔄 Обновить", "duel:refresh", "primary")])
-            await safe_edit(cb, text_a, kb_a)
-            return await cb.answer("Удар выбран. Ждём защиту.")
-        else:
-            # соперник — бот, он сам выбирает защиту
-            def_zone = bot_pick_defend_zone(duel.a)
-            return await _resolve_and_advance(cb, duel, atk_zone, def_zone)
+    # Ход переходит к защитнику
+    defender_id = duel.defender_id()
+    if defender_id < 0:
+        # защитник — бот: мгновенно выбирает зону и раунд разрешается
+        def_zone = bot_pick_defend_zone(duel.attacker())
+        await _resolve_round(duel, bot, cb=cb, atk_zone=atk_zone, def_zone=def_zone)
     else:
-        # атакует B → ход защиты к A (человек)
-        text_a = duel_status_text(duel, duel.a_id,
-                                  extra=f"⚔️ {duel.b.name} выбрал зону удара и ждёт твою защиту!")
-        kb_a = defend_zone_kb()
-        await safe_edit(cb, text_a, kb_a)
-        return await cb.answer("Удар выбран. Теперь защищается соперник.")
+        # защитник — человек: отправим ему экран защиты с таймером
+        attacker_name = duel.attacker().name
+        text_b = duel_status_text(duel, defender_id,
+                                  extra=f"⚔️ {attacker_name} выбрал зону удара!", timer_left=TURN_TIMEOUT)
+        try:
+            await bot.send_message(defender_id, text_b, reply_markup=defend_zone_kb())
+        except Exception:
+            pass
+        start_timer(duel, defender_id, "defender", bot)
+
+        # атакующему показываем ожидание
+        text_a = duel_status_text(duel, cb.from_user.id,
+                                  extra="⏳ Ждём защиту соперника…")
+        await safe_edit(cb, text_a, ikb([("🔄 Обновить", "duel:refresh", "primary")]))
+    await cb.answer("Удар выбран.")
 
 
 # ── ДУЭЛЬ: ЗАЩИТА ──────────────────────────────────────────────────
 
 @router.callback_query(F.data.regexp(r"^duel:def:(head|torso|arms|legs)$"))
-async def cb_duel_defend(cb: CallbackQuery):
+async def cb_duel_defend(cb: CallbackQuery, bot: Bot):
     duel = DUELS.get(cb.from_user.id)
     if not duel:
         return await cb.answer("Бой не найден.", show_alert=True)
@@ -1135,13 +1285,16 @@ async def cb_duel_defend(cb: CallbackQuery):
         return await cb.answer("Сейчас ты не защищаешься.", show_alert=True)
     if duel.atk_zone is None:
         return await cb.answer("Атакующий ещё не выбрал зону.", show_alert=True)
+    if duel.timer_for != cb.from_user.id:
+        return await cb.answer("Время вышло или ход уже сделан.", show_alert=True)
+
+    stop_timer(duel)
     def_zone = cb.data.split(":")[2]
-    return await _resolve_and_advance(cb, duel, duel.atk_zone, def_zone)
+    await _resolve_round(duel, bot, cb=cb, atk_zone=duel.atk_zone, def_zone=def_zone)
 
 
 @router.callback_query(F.data == "duel:ready_def")
 async def cb_duel_ready_def(cb: CallbackQuery):
-    """Игрок-защитник открывает экран с выбором зоны защиты (если атака уже выбрана)."""
     duel = DUELS.get(cb.from_user.id)
     if not duel:
         return await cb.answer("Бой не найден.", show_alert=True)
@@ -1149,7 +1302,9 @@ async def cb_duel_ready_def(cb: CallbackQuery):
         return await cb.answer("Сейчас не твоя защита.", show_alert=True)
     if duel.atk_zone is None:
         return await cb.answer("Атакующий ещё выбирает зону.", show_alert=True)
-    text = duel_status_text(duel, cb.from_user.id, extra="🛡 Выбери зону защиты.")
+    left = max(0, int(round(duel.timer_deadline - time.time()))) if duel.timer_for == cb.from_user.id else TURN_TIMEOUT
+    text = duel_status_text(duel, cb.from_user.id,
+                            extra="🛡 Выбери зону защиты.", timer_left=left)
     await safe_edit(cb, text, defend_zone_kb())
     await cb.answer()
 
@@ -1161,31 +1316,36 @@ async def cb_duel_refresh(cb: CallbackQuery):
         return await cb.answer("Бой не найден.", show_alert=True)
     role = duel.state_for(cb.from_user.id)
     if role == "attacker":
-        if duel.atk_zone is None:
-            text = duel_status_text(duel, cb.from_user.id, extra="🎯 Выбери зону удара.")
+        if duel.timer_for == cb.from_user.id:
+            left = max(0, int(round(duel.timer_deadline - time.time())))
+            text = duel_status_text(duel, cb.from_user.id,
+                                    extra="🎯 Выбери зону удара.", timer_left=left)
             await safe_edit(cb, text, attack_zone_kb())
         else:
-            text = duel_status_text(duel, cb.from_user.id, extra="⏳ Ждём защиту соперника…")
+            text = duel_status_text(duel, cb.from_user.id,
+                                    extra="⏳ Ждём защиту соперника…")
             await safe_edit(cb, text, ikb([("🔄 Обновить", "duel:refresh", "primary")]))
     else:
         if duel.atk_zone is None:
-            text = duel_status_text(duel, cb.from_user.id, extra="⏳ Соперник ещё выбирает удар…")
+            text = duel_status_text(duel, cb.from_user.id,
+                                    extra="⏳ Соперник ещё выбирает удар…")
             await safe_edit(cb, text, ikb([("🔄 Обновить", "duel:refresh", "primary")]))
         else:
-            text = duel_status_text(duel, cb.from_user.id, extra="🛡 Выбери зону защиты.")
+            left = max(0, int(round(duel.timer_deadline - time.time()))) if duel.timer_for == cb.from_user.id else TURN_TIMEOUT
+            text = duel_status_text(duel, cb.from_user.id,
+                                    extra="🛡 Выбери зону защиты.", timer_left=left)
             await safe_edit(cb, text, defend_zone_kb())
     await cb.answer("Обновлено")
 
 
-# ── РАЗРЕШЕНИЕ РАУНДА И ПЕРЕДАЧА ХОДА ─────────────────────────────
+# ── РАЗРЕШЕНИЕ РАУНДА ─────────────────────────────────────────────
 
-async def _resolve_and_advance(cb: CallbackQuery, duel: Duel, atk_zone: str, def_zone: str):
-    """
-    Считает раунд: атака vs защита, добавляет лог, проверяет смерть,
-    затем меняет роли атакующий↔защитник и переходит к следующему раунду.
-    """
-    attacker = duel.a if duel.attacker_is_a else duel.b
-    defender = duel.b if duel.attacker_is_a else duel.a
+async def _resolve_round(duel: Duel, bot: Bot, cb: Optional[CallbackQuery],
+                         atk_zone: str, def_zone: str):
+    """Считает раунд, проверяет смерть, меняет роли, начинает следующий раунд."""
+    stop_timer(duel)
+    attacker = duel.attacker()
+    defender = duel.defender()
 
     duel.log.append(f"<b>── Раунд {duel.round_no} ──</b>")
     duel.log.append(
@@ -1193,67 +1353,72 @@ async def _resolve_and_advance(cb: CallbackQuery, duel: Duel, atk_zone: str, def
         f"🛡 {defender.name} защищает {ZONE_INFO[def_zone]['emoji']} {ZONE_INFO[def_zone]['name']}"
     )
 
-    # DOT-эффекты на атакующем — тикают в начале его хода
     tick_dots(attacker, duel.log)
     if not attacker.alive():
-        return await _finish(cb, duel, winner_is_a=(attacker is duel.b))
+        return await _finish_duel(duel, winner_is_a=(attacker is duel.b), bot=bot)
 
     resolve_attack(attacker, defender, atk_zone, def_zone, duel.log)
 
     if not defender.alive():
-        return await _finish(cb, duel, winner_is_a=(defender is duel.b) is False)
+        return await _finish_duel(duel, winner_is_a=(defender is duel.a), bot=bot)
 
-    # готовим следующий раунд: меняем роли
+    # готовим следующий раунд
     duel.atk_zone = None
     duel.attacker_is_a = not duel.attacker_is_a
     duel.round_no += 1
 
-    # Проверка лимита раундов
     if duel.round_no > MAX_ROUNDS:
-        # победитель — у кого больше HP
         winner_is_a = duel.a.hp >= duel.b.hp
-        return await _finish(cb, duel, winner_is_a=winner_is_a)
+        return await _finish_duel(duel, winner_is_a=winner_is_a, bot=bot, reason="max_rounds")
 
-    # теперь надо показать состояние текущему игроку
-    await _show_turn_to_current(cb, duel)
+    await _start_next_round(duel, bot)
 
 
-async def _show_turn_to_current(cb: CallbackQuery, duel: Duel):
-    """
-    После раунда роли поменялись. Показываем cb.from_user.id его текущую роль.
-    Если роль 'attacker' — даём выбор удара. Если 'defender' — говорим ждать
-    выбор атакующего (или даём готовиться).
-    """
-    uid = cb.from_user.id
-    role = duel.state_for(uid)
+async def _start_next_round(duel: Duel, bot: Bot):
+    """Запускает новый раунд: рассылает экраны обоим игрокам."""
+    atk_id = duel.attacker_id()
+    def_id = duel.defender_id()
 
-    if role == "attacker":
-        text = duel_status_text(duel, uid, extra="🎯 Твой ход — выбери зону удара.")
-        await safe_edit(cb, text, attack_zone_kb())
-    elif role == "defender":
-        # Если соперник — бот, то бот уже "выбрал" атаку, и надо дать
-        # защитнику сразу выбрать защиту (через кнопку).
-        other_uid = duel.b_id if uid == duel.a_id else duel.a_id
-        if other_uid < 0:
-            # соперник — бот: он сделает свой ход автоматически, когда защитник нажмёт защиту
-            duel.atk_zone = bot_pick_attack_zone(duel.opponent(uid))
-            text = duel_status_text(duel, uid, extra="🛡 Соперник атакует — выбери зону защиты.")
-            await safe_edit(cb, text, defend_zone_kb())
-        else:
-            text = duel_status_text(duel, uid,
-                                    extra="⏳ Соперник выбирает зону удара. Нажми «Готов защищаться», "
-                                          "когда атака придёт.")
-            await safe_edit(cb, text, ikb([("▶️ Готов защищаться", "duel:ready_def", "primary")]))
+    if atk_id > 0:
+        # реальный игрок — атакующий
+        text = duel_status_text(duel, atk_id,
+                                extra="🎯 Твой ход — выбери зону удара.", timer_left=TURN_TIMEOUT)
+        try:
+            await bot.send_message(atk_id, text, reply_markup=attack_zone_kb())
+        except Exception:
+            pass
+        start_timer(duel, atk_id, "attacker", bot)
     else:
-        text = duel_status_text(duel, uid)
-        await safe_edit(cb, text, ikb([("🔄 Обновить", "duel:refresh", "primary")]))
+        # бот-атакующий: мгновенно выбирает зону
+        duel.atk_zone = bot_pick_attack_zone(duel.defender())
+        duel.log.append(f"⚔️ {duel.attacker().name} уже выбрал зону удара.")
+
+    if def_id > 0:
+        # реальный игрок — защитник
+        if duel.atk_zone is not None:
+            text = duel_status_text(duel, def_id,
+                                    extra="🛡 Соперник атакует — выбери зону защиты.",
+                                    timer_left=TURN_TIMEOUT)
+            try:
+                await bot.send_message(def_id, text, reply_markup=defend_zone_kb())
+            except Exception:
+                pass
+            start_timer(duel, def_id, "defender", bot)
+        else:
+            text = duel_status_text(duel, def_id,
+                                    extra="⏳ Соперник выбирает удар…")
+            try:
+                await bot.send_message(def_id, text,
+                                       reply_markup=ikb([("🔄 Обновить", "duel:refresh", "primary")]))
+            except Exception:
+                pass
+    else:
+        # бот-защитник: если атакующий — реальный игрок, то ждём его ход
+        # (он будет разрешён в cb_duel_attack)
+        pass
 
 
-async def _finish(cb: CallbackQuery, duel: Duel, winner_is_a: bool):
-    """
-    Завершает бой, обновляет БД и рассылает финальные экраны обоим.
-    winner_is_a=True — победа игрока duel.a_id.
-    """
+async def _finish_duel(duel: Duel, winner_is_a: bool, bot: Bot, reason: str = "ko"):
     aid, bid = duel.a_id, duel.b_id
     a_row = get_player(aid)
     b_row = get_player(bid) if bid else None
@@ -1276,26 +1441,29 @@ async def _finish(cb: CallbackQuery, duel: Duel, winner_is_a: bool):
 
     end_duel(duel)
 
+    reason_line = ""
+    if reason == "timeout":
+        reason_line = f"\n⏱ Причина: соперник не успел за {TURN_TIMEOUT} сек."
+    elif reason == "max_rounds":
+        reason_line = "\n⏱ Лимит раундов — победа по остатку HP."
+
     new_a = get_player(aid)
     a_arena = ARENAS[arena_of(new_a["wins"])]
-
-    # финальный экран для A
     footer_a = (
         f"{result_for_a}\n"
         f"🏆 {new_a['wins']}  ·  💀 {new_a['losses']}\n"
         f"📍 {a_arena['emoji']} {a_arena['name']}"
+        f"{reason_line}"
     )
     text_a = duel_status_text(duel, aid, extra=footer_a)
     kb_a = ikb([("⚔️ На арену", "arena:menu", "success")],
                [("🎲 Ещё бой", "arena:find", "danger")])
 
-    # если финал пришёл тому, чей это cb — редактируем его сообщение
-    if cb.from_user.id == aid:
-        await safe_edit(cb, text_a, kb_a)
-    else:
-        await safe_edit(cb, text_a, kb_a)
+    try:
+        await bot.send_message(aid, text_a, reply_markup=kb_a)
+    except Exception:
+        pass
 
-    # отправим финальный экран второму игроку, если это человек
     if bid and bid > 0:
         new_b = get_player(bid)
         b_arena = ARENAS[arena_of(new_b["wins"])]
@@ -1303,12 +1471,13 @@ async def _finish(cb: CallbackQuery, duel: Duel, winner_is_a: bool):
             f"{result_for_b}\n"
             f"🏆 {new_b['wins']}  ·  💀 {new_b['losses']}\n"
             f"📍 {b_arena['emoji']} {b_arena['name']}"
+            f"{reason_line}"
         )
         text_b = duel_status_text(duel, bid, extra=footer_b)
         kb_b = ikb([("⚔️ На арену", "arena:menu", "success")],
                    [("🎲 Ещё бой", "arena:find", "danger")])
         try:
-            await cb.bot.send_message(bid, text_b, reply_markup=kb_b)
+            await bot.send_message(bid, text_b, reply_markup=kb_b)
         except Exception:
             pass
 
@@ -1405,7 +1574,8 @@ async def cmd_stats(m: Message):
     total = q1("SELECT COUNT(*) c FROM players WHERE is_bot=0")["c"]
     bots = q1("SELECT COUNT(*) c FROM players WHERE is_bot=1")["c"]
     banned = q1("SELECT COUNT(*) c FROM players WHERE banned=1")["c"]
-    await m.answer(f"📊 Игроков: {total}\n🤖 Скрытых: {bots}\n🚫 Бан: {banned}\n⚔️ Активных боёв: {len({id(d) for d in DUELS.values()})}")
+    unique_duels = len({id(d) for d in DUELS.values()})
+    await m.answer(f"📊 Игроков: {total}\n🤖 Скрытых: {bots}\n🚫 Бан: {banned}\n⚔️ Активных боёв: {unique_duels}")
 
 
 @router.message(Command("addbots"))

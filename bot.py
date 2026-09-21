@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-⚔️ Арена Дуэлянтов — PvP + Казино + РП + Боссы
-Броня: 4 слота (голова/торс/руки/ноги).
-Бот играет логично, не блокирует постоянно.
-Красивое меню боя. Меню боссов в арене.
-Все команды: в группе — reply, в ЛС — reply или @user/ID.
+⚔️ Арена Дуэлянтов — PvP + Казино + РП + Боссы (исправленная версия)
 """
 
 import asyncio
@@ -66,11 +62,13 @@ PE = {
     "glove":  "5368324170671202286",
 }
 
+
 def pe(key: str, fallback: str) -> str:
     eid = PE.get(key)
     if not eid:
         return fallback
     return f'<tg-emoji emoji-id="{eid}">{fallback}</tg-emoji>'
+
 
 E_FIRE   = pe("fire", "🔥")
 E_SWORD  = pe("sword", "⚔️")
@@ -88,10 +86,10 @@ E_GLOVE  = pe("glove", "🧤")
 # ── Зоны тела ───────────────────────────────────────────────────────
 ZONES = ["head", "torso", "arms", "legs"]
 ZONE_INFO = {
-    "head":  dict(name="Голова", emoji="🧠", mult=1.5, short="Голова"),
-    "torso": dict(name="Торс",   emoji="🫀", mult=1.0, short="Торс"),
-    "arms":  dict(name="Руки",   emoji="💪", mult=0.8, short="Руки"),
-    "legs":  dict(name="Ноги",   emoji="🦵", mult=0.9, short="Ноги"),
+    "head":  dict(name="Голова", emoji="🧠", mult=1.5),
+    "torso": dict(name="Торс",   emoji="🫀", mult=1.0),
+    "arms":  dict(name="Руки",   emoji="💪", mult=0.8),
+    "legs":  dict(name="Ноги",   emoji="🦵", mult=0.9),
 }
 
 # ── Оружие ──────────────────────────────────────────────────────────
@@ -113,12 +111,9 @@ WEAPONS = {
 }
 
 # ── Броня: 4 слота ──────────────────────────────────────────────────
-# armor_slot = "head" | "torso" | "arms" | "legs"
-# Ключ предмета: {slot}_{level}
 ARMOR_LEVELS = ["none", "light", "medium", "heavy", "legend"]
 
 ARMOR_TEMPLATE = {
-    # level: (имя, эмодзи, защита_базовая, цена_базовая, шанс, dmg_bonus, описание)
     "none":   dict(name="Без",         emoji="👕", df=0,  price=0,    chance=0,  dmg_bonus=0,  desc="—"),
     "light":  dict(name="Лёгкая",      emoji="🥋", df=2,  price=100,  chance=5,  dmg_bonus=0,  desc="+5% шанс спец-атаки"),
     "medium": dict(name="Средняя",     emoji="🛡", df=5,  price=280,  chance=0,  dmg_bonus=0,  desc="ровная защита"),
@@ -126,10 +121,9 @@ ARMOR_TEMPLATE = {
     "legend": dict(name="Легендарная", emoji="✨", df=14, price=1100, chance=10, dmg_bonus=25, desc="+10% шанс, +25% урон спец-атаки"),
 }
 
-# Множитель защиты по зоне
 ARMOR_ZONE_MULT = {
-    "head":  0.8,   # голову защищать сложнее — броня тоньше
-    "torso": 1.3,   # торс — самая защищённая
+    "head":  0.8,
+    "torso": 1.3,
     "arms":  0.9,
     "legs":  1.0,
 }
@@ -158,7 +152,6 @@ def armor_item_info(slot: str, level: str) -> dict:
 
 
 def build_all_armor_items() -> dict:
-    """Все предметы брони: 4 слота × 5 уровней = 20 предметов."""
     items = {}
     for slot in ZONES:
         for level in ARMOR_LEVELS:
@@ -168,8 +161,6 @@ def build_all_armor_items() -> dict:
 
 
 ARMOR_ITEMS = build_all_armor_items()
-
-# Стартовая броня (пустая по всем слотам)
 START_ARMOR = ",".join(armor_item_key(s, "none") for s in ZONES)
 
 BASE_STATS = dict(hp=150)
@@ -197,46 +188,27 @@ BOSSES = {
         key="goblin",
         name="👺 Гоблин-Вождь",
         desc="Хитрый и злой. Бьёт по слабой броне.",
-        hp=160, weapon="sword", armor_slot_levels={
-            "head": "light", "torso": "light", "arms": "none", "legs": "none",
-        },
-        reward_mult=3,
-        min_wins=0,
+        hp=160, weapon="sword",
+        armor_slot_levels={"head": "light", "torso": "light", "arms": "none", "legs": "none"},
+        reward_mult=3, min_wins=0,
     ),
     "dragon": dict(
         key="dragon",
         name="🐉 Древний Дракон",
-        desc="Огнедышащий. Броня — легендарная, оружие — посох.",
-        hp=260, weapon="staff", armor_slot_levels={
-            "head": "medium", "torso": "heavy", "arms": "medium", "legs": "medium",
-        },
-        reward_mult=5,
-        min_wins=5,
+        desc="Огнедышащий. Оружие — посох.",
+        hp=260, weapon="staff",
+        armor_slot_levels={"head": "medium", "torso": "heavy", "arms": "medium", "legs": "medium"},
+        reward_mult=5, min_wins=5,
     ),
     "lord": dict(
         key="lord",
         name="👹 Древний Лорд",
-        desc="Владыка арены. Молот и полная легендарная броня.",
-        hp=380, weapon="hammer", armor_slot_levels={
-            "head": "legend", "torso": "legend", "arms": "legend", "legs": "legend",
-        },
-        reward_mult=10,
-        min_wins=15,
+        desc="Владыка арены. Молот и легендарная броня.",
+        hp=380, weapon="hammer",
+        armor_slot_levels={"head": "legend", "torso": "legend", "arms": "legend", "legs": "legend"},
+        reward_mult=10, min_wins=15,
     ),
 }
-
-
-def boss_to_fighter(boss: dict) -> "Fighter":
-    """Создаёт Fighter босса с 4 слотами брони."""
-    f = Fighter(
-        name=boss["name"],
-        max_hp=boss["hp"],
-        hp=boss["hp"],
-        weapon=boss["weapon"],
-        armor_slots={s: armor_item_key(s, boss["armor_slot_levels"][s]) for s in ZONES},
-    )
-    return f
-
 
 # ── Ники для скрытых ботов ──────────────────────────────────────────
 HUMAN_NAMES = [
@@ -293,7 +265,7 @@ def ikb(*rows) -> InlineKeyboardMarkup:
 
 
 # ════════════════════════════════════════════════════════════════════
-#  БОЕЦ — с 4 слотами брони
+#  БОЕЦ
 # ════════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -302,29 +274,37 @@ class Fighter:
     max_hp: int
     hp: int
     weapon: str
-    armor_slots: dict = field(default_factory=dict)   # {zone: item_key}
+    armor_slots: dict = field(default_factory=dict)
     dots: list = field(default_factory=list)
     stun: bool = False
 
     def __post_init__(self):
-        w = WEAPONS[self.weapon]
+        w = WEAPONS.get(self.weapon) or WEAPONS["fists"]
+        self.weapon = self.weapon if self.weapon in WEAPONS else "fists"
         self.weapon_dmg = w["dmg"]
-        if not self.armor_slots:
-            self.armor_slots = {s: armor_item_key(s, "none") for s in ZONES}
 
-        # Итоговая защита по каждой зоне
+        slots = self.armor_slots or {}
+        fixed = {}
+        for s in ZONES:
+            key = slots.get(s) or armor_item_key(s, "none")
+            if key not in ARMOR_ITEMS:
+                key = armor_item_key(s, "none")
+            fixed[s] = key
+        self.armor_slots = fixed
+
         self.armor_def = {}
         total_chance = 0
         total_bonus = 0
         for slot in ZONES:
-            key = self.armor_slots.get(slot, armor_item_key(slot, "none"))
-            item = ARMOR_ITEMS.get(key) or armor_item_info(slot, "none")
+            key = self.armor_slots[slot]
+            item = ARMOR_ITEMS[key]
             self.armor_def[slot] = item["df"]
             total_chance += item["chance"]
             total_bonus += item["dmg_bonus"]
 
-        self.spec_chance = min(w["chance"] + total_chance // len(ZONES), 70)
-        self.spec_dmg_bonus = total_bonus / 100.0 / len(ZONES)
+        # Суммарный шанс (максимум 70), бонус — средний
+        self.spec_chance = min(w["chance"] + total_chance, 70)
+        self.spec_dmg_bonus = total_bonus / 100.0
 
     def alive(self) -> bool:
         return self.hp > 0
@@ -338,42 +318,31 @@ class Fighter:
 
 def hp_bar(f: Fighter, width: int = 12) -> str:
     if f.max_hp <= 0:
-        return ""
+        return "⬛" * width
     filled = int(round(width * f.hp / f.max_hp))
     filled = max(0, min(width, filled))
-    # Цвет в зависимости от HP
     ratio = f.hp / f.max_hp
     if ratio > 0.6:
-        bar = "🟩" * filled + "⬛" * (width - filled)
+        return "🟩" * filled + "⬛" * (width - filled)
     elif ratio > 0.3:
-        bar = "🟨" * filled + "⬛" * (width - filled)
+        return "🟨" * filled + "⬛" * (width - filled)
     else:
-        bar = "🟥" * filled + "⬛" * (width - filled)
-    return bar
+        return "🟥" * filled + "⬛" * (width - filled)
 
 
-def fighter_card(f: Fighter, side: str = "") -> str:
+def fighter_card(f: Fighter) -> str:
     w = WEAPONS[f.weapon]
     ad = f.armor_def
-    line1 = f"{side} <b>{f.name}</b>"
-    line2 = f"{E_HEART} <b>{f.hp}</b>/{f.max_hp}  {hp_bar(f)}"
-    line3 = f"{w['emoji']} {w['name']} · урон {f.weapon_dmg}"
-    line4 = (f"{E_SHIELD} 🧠{ad['head']} 🫀{ad['torso']} "
-             f"💪{ad['arms']} 🦵{ad['legs']}")
-    return f"{line1}\n{line2}\n{line3}\n{line4}"
-
-
-def armor_slots_line(f: Fighter) -> str:
-    parts = []
-    for slot in ZONES:
-        key = f.armor_slots.get(slot, armor_item_key(slot, "none"))
-        item = ARMOR_ITEMS.get(key) or armor_item_info(slot, "none")
-        parts.append(f"{ZONE_INFO[slot]['emoji']}{item['emoji']}")
-    return " ".join(parts)
+    return (
+        f"│ <b>{f.name}</b>\n"
+        f"│ {E_HEART} <b>{f.hp}</b>/{f.max_hp}  {hp_bar(f)}\n"
+        f"│ {w['emoji']} {w['name']} · урон {f.weapon_dmg}\n"
+        f"│ {E_SHIELD} 🧠{ad['head']} 🫀{ad['torso']} 💪{ad['arms']} 🦵{ad['legs']}"
+    )
 
 
 # ════════════════════════════════════════════════════════════════════
-#  РАСЧЁТ УРОНА
+#  УРОН
 # ════════════════════════════════════════════════════════════════════
 
 def compute_damage(att: Fighter, dfn: Fighter, atk_zone: str, def_zone: Optional[str],
@@ -510,7 +479,6 @@ class Duel:
     boss_key: Optional[str] = None
     reward_mult: int = 1
 
-    # Анти-блок бота
     bot_last_block_round: int = -10
     bot_block_streak: int = 0
 
@@ -556,28 +524,6 @@ class Duel:
 DUELS: dict[int, Duel] = {}
 
 
-def start_duel(aid: int, bid: int, is_boss: bool = False,
-               boss_key: Optional[str] = None, reward_mult: int = 1) -> Duel:
-    a_row = get_player(aid)
-    b_row = get_player(bid)
-    fa = fighter_from_row(a_row)
-    if is_boss and boss_key and boss_key in BOSSES:
-        fb = boss_to_fighter(BOSSES[boss_key])
-    else:
-        fb = fighter_from_row(b_row)
-    attacker_is_a = random.random() < 0.5
-    duel = Duel(a_id=aid, b_id=bid, a=fa, b=fb,
-                attacker_is_a=attacker_is_a, is_boss=is_boss,
-                boss_key=boss_key, reward_mult=reward_mult)
-    first_name = fa.name if attacker_is_a else fb.name
-    prefix = f"{E_BOSS} <b>БОСС</b> " if is_boss else ""
-    duel.log.append(f"{prefix}Бой начался! Первым атакует <b>{first_name}</b>.")
-    DUELS[aid] = duel
-    if bid > 0:
-        DUELS[bid] = duel
-    return duel
-
-
 def stop_timer(duel: Duel):
     if duel.timer_task and not duel.timer_task.done():
         duel.timer_task.cancel()
@@ -593,78 +539,6 @@ def end_duel(duel: Duel):
     if duel.b_id > 0:
         DUELS.pop(duel.b_id, None)
 
-
-# ════════════════════════════════════════════════════════════════════
-#  КЛАВИАТУРЫ
-# ════════════════════════════════════════════════════════════════════
-
-def attack_zone_kb() -> InlineKeyboardMarkup:
-    return ikb(
-        [("🧠 Голова ×1.5", "duel:atk:head", "danger"),
-         ("🫀 Торс ×1.0", "duel:atk:torso", "danger")],
-        [("💪 Руки ×0.8", "duel:atk:arms", "danger"),
-         ("🦵 Ноги ×0.9", "duel:atk:legs", "danger")],
-    )
-
-
-def defend_zone_kb() -> InlineKeyboardMarkup:
-    return ikb(
-        [("🧠 Голова", "duel:def:head", "success"),
-         ("🫀 Торс", "duel:def:torso", "success")],
-        [("💪 Руки", "duel:def:arms", "success"),
-         ("🦵 Ноги", "duel:def:legs", "success")],
-    )
-
-
-def last_log_lines(duel: Duel, n: int = 5) -> str:
-    if not duel.log:
-        return "  <i>Бой начинается…</i>"
-    lines = duel.log[-n:]
-    return "\n".join(f"  {ln}" for ln in lines)
-
-
-def duel_status_text(duel: Duel, for_uid: int, extra: str = "",
-                     timer_left: Optional[int] = None) -> str:
-    role = duel.state_for(for_uid)
-    atk_name = duel.attacker().name
-
-    if role == "attacker":
-        prompt = f"🎯 <b>Твой ход</b> — выбери, куда бить"
-    elif role == "defender":
-        prompt = f"{E_SHIELD} <b>{atk_name}</b> атакует — выбери, что защищать"
-    else:
-        prompt = "⏳ Бой идёт…"
-
-    if timer_left is not None and role in ("attacker", "defender"):
-        bar = "🟢" * max(1, timer_left // 10) if timer_left > 0 else "🔴"
-        prompt += f"\n⏱ Осталось: <b>{timer_left} сек</b> {bar}"
-
-    body = last_log_lines(duel, n=5)
-    boss_line = ""
-    if duel.is_boss:
-        boss_line = f"{E_BOSS} <b>БОЙ С БОССОМ</b>  ·  награда ×{duel.reward_mult}\n\n"
-
-    return (
-        f"╔══════════════════════════╗\n"
-        f"      ⚔️ <b>РАУНД {duel.round_no}</b>\n"
-        f"╚══════════════════════════╝\n\n"
-        f"{boss_line}"
-        f"┌─ 🔵 <b>ТЫ</b>\n"
-        f"{fighter_card(duel.me(for_uid) or duel.a, side='│')}\n"
-        f"└────────────\n\n"
-        f"┌─ 🔴 <b>СОПЕРНИК</b>\n"
-        f"{fighter_card(duel.opponent(for_uid) or duel.b, side='│')}\n"
-        f"└────────────\n\n"
-        f"📜 <b>Последние действия:</b>\n{body}\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"{prompt}"
-        + (f"\n\n{extra}" if extra else "")
-    )
-
-
-# ════════════════════════════════════════════════════════════════════
-#  ТАЙМЕР
-# ════════════════════════════════════════════════════════════════════
 
 def start_timer(duel: Duel, uid: int, role: str, bot: Bot):
     if uid < 0:
@@ -709,6 +583,7 @@ async def _auto_lose(duel: Duel, loser_uid: int, bot: Bot):
 
 _db = sqlite3.connect(DB_PATH, check_same_thread=False)
 _db.row_factory = sqlite3.Row
+_db_lock = asyncio.Lock()
 
 
 def init_db():
@@ -742,29 +617,33 @@ def init_db():
         CREATE INDEX IF NOT EXISTS ix_notif ON notifications(user_id, seen);
         """
     )
-    # Миграция: если старая колонка `armor` есть, не мешаем
-    try:
-        cols = [r["name"] for r in qa("PRAGMA table_info(players)")]
-        if "armor" in cols and "armor_head" not in cols:
-            _db.execute("ALTER TABLE players RENAME COLUMN armor TO armor_old")
-            _db.commit()
-    except Exception:
-        pass
     _db.commit()
 
 
 def q1(sql, args=()):
-    return _db.execute(sql, args).fetchone()
+    try:
+        return _db.execute(sql, args).fetchone()
+    except Exception as e:
+        logging.warning(f"q1 error: {e}")
+        return None
 
 
 def qa(sql, args=()):
-    return _db.execute(sql, args).fetchall()
+    try:
+        return _db.execute(sql, args).fetchall()
+    except Exception as e:
+        logging.warning(f"qa error: {e}")
+        return []
 
 
 def ex(sql, args=()):
-    cur = _db.execute(sql, args)
-    _db.commit()
-    return cur
+    try:
+        cur = _db.execute(sql, args)
+        _db.commit()
+        return cur
+    except Exception as e:
+        logging.warning(f"ex error: {e}")
+        return None
 
 
 def get_player(uid):
@@ -803,7 +682,8 @@ def add_chips(uid, amount: int):
 
 
 def player_armor_slots(p) -> dict:
-    """Возвращает {zone: item_key} из строки игрока."""
+    if not p:
+        return {s: armor_item_key(s, "none") for s in ZONES}
     return {
         "head":  p["armor_head"]  or "head_none",
         "torso": p["armor_torso"] or "torso_none",
@@ -815,18 +695,28 @@ def player_armor_slots(p) -> dict:
 def fighter_from_row(p) -> Fighter:
     slots = player_armor_slots(p)
     total_hp = BASE_STATS["hp"]
-    # HP-бонус от брони (усреднённо +3 за каждую часть выше none)
     for key in slots.values():
         lvl = key.split("_", 1)[1] if "_" in key else "none"
-        if lvl == "light":  total_hp += 5
+        if lvl == "light":    total_hp += 5
         elif lvl == "medium": total_hp += 12
-        elif lvl == "heavy": total_hp += 20
+        elif lvl == "heavy":  total_hp += 20
         elif lvl == "legend": total_hp += 30
     return Fighter(
         name=esc(p["name"]),
         max_hp=total_hp,
         hp=total_hp,
-        weapon=p["weapon"],
+        weapon=p["weapon"] if p["weapon"] in WEAPONS else "fists",
+        armor_slots=slots,
+    )
+
+
+def boss_to_fighter(boss: dict) -> Fighter:
+    slots = {s: armor_item_key(s, boss["armor_slot_levels"][s]) for s in ZONES}
+    return Fighter(
+        name=boss["name"],
+        max_hp=boss["hp"],
+        hp=boss["hp"],
+        weapon=boss["weapon"],
         armor_slots=slots,
     )
 
@@ -870,12 +760,8 @@ def ensure_masked_bots(count: int = 24):
             weapon = random.choice(["bow", "staff", "hammer"])
             lvl_range = ["medium", "heavy", "legend"]
 
-        slots = {}
-        for s in ZONES:
-            lvl = random.choice(lvl_range)
-            slots[s] = armor_item_key(s, lvl)
-
-        armors_owned = ",".join(set(list(slots.values()) + ["head_none", "torso_none", "arms_none", "legs_none"]))
+        slots = {s: armor_item_key(s, random.choice(lvl_range)) for s in ZONES}
+        armors_owned = ",".join(set(list(slots.values()) + [armor_item_key(s, "none") for s in ZONES]))
 
         ex(
             "INSERT INTO players (user_id, username, name, chips, wins, losses, "
@@ -897,29 +783,33 @@ async def safe_edit(cb: CallbackQuery, text: str, markup=None):
         await cb.message.edit_text(text[:4090], reply_markup=markup)
     except TelegramBadRequest as e:
         if "not modified" not in str(e):
-            await cb.message.answer(text[:4090], reply_markup=markup)
+            try:
+                await cb.message.answer(text[:4090], reply_markup=markup)
+            except Exception:
+                pass
 
 
 def gear_screen(uid):
     p = get_player(uid)
+    if not p:
+        return "Профиль не найден.", None
     w = WEAPONS[p["weapon"]]
     f = fighter_from_row(p)
     slots = player_armor_slots(p)
-
     lines = [
         f"🎒 <b>{esc(p['name'])}</b>",
-        f"",
+        "",
         f"{E_TROPHY} Победы: <b>{p['wins']}</b>  ·  {E_SKULL} Поражения: {p['losses']}",
         f"{E_CHIPS} Фишки: <b>{p['chips']}</b>",
         f"📍 {ARENAS[arena_of(p['wins'])]['emoji']} {ARENAS[arena_of(p['wins'])]['name']}",
-        f"",
+        "",
         f"❤️ HP: <b>{f.max_hp}</b>   ⚔️ Атака: <b>{f.weapon_dmg}</b>",
-        f"",
-        f"<b>⚔️ Оружие:</b>",
+        "",
+        "<b>⚔️ Оружие:</b>",
         f"  {w['emoji']} {w['name']} — <i>{w['spec']}</i>",
         f"     урон <b>{w['dmg']}</b>, шанс {w['chance']}%",
-        f"",
-        f"<b>🛡 Броня по слотам:</b>",
+        "",
+        "<b>🛡 Броня по слотам:</b>",
     ]
     for slot in ZONES:
         key = slots[slot]
@@ -928,7 +818,6 @@ def gear_screen(uid):
             f"  {ZONE_INFO[slot]['emoji']} {ZONE_INFO[slot]['name']}: "
             f"{item['emoji']} <b>{item['name']}</b>  (защита {item['df']})"
         )
-
     kb = ikb(
         [("⚔️ Оружие", "gear:w", "primary"), ("🛡 Броня", "gear:armor_menu", "primary")],
         [("👤 Мой профиль", "duel:myprofile", "success")],
@@ -937,10 +826,11 @@ def gear_screen(uid):
 
 
 def armor_slot_menu(uid):
-    """Меню выбора слота брони."""
     p = get_player(uid)
+    if not p:
+        return "Профиль не найден.", None
     slots = player_armor_slots(p)
-    lines = [f"🛡 <b>Броня — выбери часть тела</b>", f"{E_CHIPS} Фишки: <b>{p['chips']}</b>", ""]
+    lines = ["🛡 <b>Броня — выбери часть тела</b>", f"{E_CHIPS} Фишки: <b>{p['chips']}</b>", ""]
     for slot in ZONES:
         item = ARMOR_ITEMS.get(slots[slot]) or armor_item_info(slot, "none")
         lines.append(
@@ -958,8 +848,9 @@ def armor_slot_menu(uid):
 
 
 def armor_slot_list(uid, slot: str):
-    """Список брони для конкретного слота."""
     p = get_player(uid)
+    if not p or slot not in ZONES:
+        return "Ошибка.", None
     slots = player_armor_slots(p)
     equipped = slots.get(slot, armor_item_key(slot, "none"))
     owned = set(p["armors_owned"].split(","))
@@ -989,9 +880,11 @@ def armor_slot_list(uid, slot: str):
 
 def weapon_list(uid):
     p = get_player(uid)
+    if not p:
+        return "Профиль не найден.", None
     equipped = p["weapon"]
     owned = set(p["weapons_owned"].split(","))
-    lines = [f"⚔️ <b>Оружие</b>", f"{E_CHIPS} Фишки: <b>{p['chips']}</b>", ""]
+    lines = ["⚔️ <b>Оружие</b>", f"{E_CHIPS} Фишки: <b>{p['chips']}</b>", ""]
     rows = []
     for key, it in WEAPONS.items():
         lines.append(f"{it['emoji']} <b>{it['name']}</b> — <i>{it['spec']}</i>\n"
@@ -1028,7 +921,8 @@ def top_screen(uid, arena_key: str):
         rank = q1(
             "SELECT COUNT(*) c FROM players WHERE is_bot=0 AND banned=0 AND wins BETWEEN ? AND ? AND wins > ?",
             (a["min_wins"], a["max_wins"], me["wins"]),
-        )["c"] + 1
+        )
+        rank = (rank["c"] if rank else 0) + 1
         lines += ["…", f"{rank}. <b>{esc(me['name'])}</b> — {me['wins']} {E_TROPHY} / {me['losses']} {E_SKULL} ← ты"]
     lines += ["", f"{E_TROPHY} Победа: +1 и деньги. {E_SKULL} Поражение: −1."]
     kb = ikb(
@@ -1042,6 +936,8 @@ def top_screen(uid, arena_key: str):
 
 def arena_menu_screen(uid):
     p = get_player(uid)
+    if not p:
+        return "Профиль не найден.", None
     key = arena_of(p["wins"])
     a = ARENAS[key]
     text = (
@@ -1074,6 +970,8 @@ def arena_menu_screen(uid):
 
 def bosses_menu_screen(uid):
     p = get_player(uid)
+    if not p:
+        return "Профиль не найден.", None
     lines = [
         f"╔══════════════════════════╗\n"
         f"      {E_BOSS} <b>БОССЫ АРЕНЫ</b>\n"
@@ -1082,7 +980,7 @@ def bosses_menu_screen(uid):
     rows = []
     for bkey, b in BOSSES.items():
         locked = p["wins"] < b["min_wins"]
-        lock = f"🔒 нужен {b['min_wins']} 🏆" if locked else f"награда ×{b['reward_mult']}"
+        lock = f"🔒 нужен {b['min_wins']} {E_TROPHY}" if locked else f"награда ×{b['reward_mult']}"
         lines.append(
             f"{b['name']}\n"
             f"  ❤️ HP {b['hp']} · ⚔️ {WEAPONS[b['weapon']]['name']}\n"
@@ -1098,6 +996,8 @@ def bosses_menu_screen(uid):
 
 def arena_list_screen(uid):
     p = get_player(uid)
+    if not p:
+        return "Профиль не найден.", None
     key = arena_of(p["wins"])
     a = ARENAS[key]
     rows = qa(
@@ -1147,63 +1047,42 @@ def pick_opponent(uid, wins):
 
 
 # ════════════════════════════════════════════════════════════════════
-#  БОТ-ЛОГИКА — играет логично, не блокирует постоянно
+#  БОТ-ЛОГИКА
 # ════════════════════════════════════════════════════════════════════
 
 def bot_pick_attack_zone(attacker: Fighter, defender: Fighter) -> str:
-    """
-    Логика атаки:
-    • Если у соперника мало HP — добиваем в зону с максимальным уроном.
-    • Иначе — бьём по зоне с максимальным «чистым» уроном (урон оружия − броня).
-    • 10% блеф.
-    """
     if random.random() < 0.10:
         return random.choice(ZONES)
     if defender.hp <= defender.max_hp * 0.30:
         return max(ZONES, key=lambda z: attacker.weapon_of_zone(z))
+
     def score(z: str) -> tuple:
         dmg = attacker.weapon_of_zone(z) - defender.armor_of(z)
         return (dmg, ZONE_INFO[z]["mult"])
     return max(ZONES, key=score)
 
 
-def bot_wants_to_defend(duel: "Duel", bot_is_a: bool) -> bool:
-    """
-    Решает, будет ли бот защищаться в этом раунде.
-    Условия:
-      • Нельзя защищаться два раза подряд (bot_block_streak < 2).
-      • Нельзя защищаться чаще, чем раз в 3 раунда (bot_last_block_round).
-      • Чем меньше HP у бота — тем выше шанс защиты.
-    """
-    # Жёсткие ограничения
+def bot_wants_to_defend(duel: Duel, bot_is_a: bool) -> bool:
     if duel.bot_block_streak >= 2:
         return False
     if duel.round_no - duel.bot_last_block_round < 3:
         return False
-
     bot = duel.a if bot_is_a else duel.b
-    # Базовый шанс защиты — 25%
     base = 0.25
     ratio = bot.hp / bot.max_hp
     if ratio < 0.30:
         base = 0.65
     elif ratio < 0.60:
         base = 0.40
-    # Блеф/разнообразие
     return random.random() < base
 
 
 def bot_pick_defend_zone(attacker: Fighter, defender: Fighter) -> str:
-    """
-    Защита бота:
-    • Обычно защищает самую опасную зону атакующего (по чистому урону).
-    • Иногда — вторую по опасности (блеф).
-    """
     def danger(z: str) -> int:
         return attacker.weapon_of_zone(z) - defender.armor_of(z)
     sorted_zones = sorted(ZONES, key=danger, reverse=True)
-    if random.random() < 0.25:
-        return sorted_zones[1] if len(sorted_zones) > 1 else sorted_zones[0]
+    if random.random() < 0.25 and len(sorted_zones) > 1:
+        return sorted_zones[1]
     return sorted_zones[0]
 
 
@@ -1216,6 +1095,8 @@ CASINO_BETS = [10, 25, 50, 100, 250, 500, 1000]
 
 def casino_menu(uid):
     p = get_player(uid)
+    if not p:
+        return "Профиль не найден.", None
     text = (
         f"╔══════════════════════════╗\n"
         f"   {E_SLOT} <b>КАЗИНО</b>\n"
@@ -1250,7 +1131,7 @@ def bet_keyboard(game: str):
 
 def play_slots(uid: int, bet: int):
     p = get_player(uid)
-    if p["chips"] < bet:
+    if not p or p["chips"] < bet:
         return None, "Недостаточно фишек."
     symbols = ["🍒", "🍋", "🍊", "🍇", "💎", "7️⃣"]
     weights = [25, 22, 20, 15, 12, 6]
@@ -1270,7 +1151,7 @@ def play_slots(uid: int, bet: int):
 
 def play_dice(uid: int, bet: int):
     p = get_player(uid)
-    if p["chips"] < bet:
+    if not p or p["chips"] < bet:
         return None, "Недостаточно фишек."
     player = random.randint(1, 6)
     dealer = random.randint(1, 6)
@@ -1287,7 +1168,7 @@ def play_dice(uid: int, bet: int):
 
 def play_coin(uid: int, bet: int, choice: str = "heads"):
     p = get_player(uid)
-    if p["chips"] < bet:
+    if not p or p["chips"] < bet:
         return None, "Недостаточно фишек."
     result = random.choice(["heads", "tails"])
     add_chips(uid, -bet)
@@ -1300,7 +1181,7 @@ def play_coin(uid: int, bet: int, choice: str = "heads"):
 
 def play_roulette(uid: int, bet: int, color: str = "red"):
     p = get_player(uid)
-    if p["chips"] < bet:
+    if not p or p["chips"] < bet:
         return None, "Недостаточно фишек."
     reds = {1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
     num = random.randint(0, 36)
@@ -1324,16 +1205,16 @@ def play_roulette(uid: int, bet: int, color: str = "red"):
 # ════════════════════════════════════════════════════════════════════
 
 RP_ACTIONS = {
-    "ударить":   ("👊", "ударил(а)"),
-    "обнять":    ("🤗", "обнял(а)"),
-    "поцеловать":("😘", "поцеловал(а)"),
-    "пнуть":     ("🦵", "пнул(а)"),
-    "погладить": ("🤚", "погладил(а)"),
-    "укусить":   ("😬", "укусил(а)"),
-    "пожать":    ("🤝", "пожал(а) руку"),
-    "толкнуть":  ("💥", "толкнул(а)"),
-    "кинуть":    ("🥊", "кинул(а) в"),
-    "лечить":    ("💊", "подлечил(а)"),
+    "ударить":    ("👊", "ударил(а)"),
+    "обнять":     ("🤗", "обнял(а)"),
+    "поцеловать": ("😘", "поцеловал(а)"),
+    "пнуть":      ("🦵", "пнул(а)"),
+    "погладить":  ("🤚", "погладил(а)"),
+    "укусить":    ("😬", "укусил(а)"),
+    "пожать":     ("🤝", "пожал(а) руку"),
+    "толкнуть":   ("💥", "толкнул(а)"),
+    "кинуть":     ("🥊", "кинул(а) в"),
+    "лечить":     ("💊", "подлечил(а)"),
 }
 
 RP_COOLDOWNS: dict[tuple, float] = {}
@@ -1360,27 +1241,26 @@ class DuelFind(StatesGroup):
 
 
 HELP_TEXT = (
-    f"╔══════════════════════════╗\n"
-    f"   ⚔️ <b>АРЕНА ДУЭЛЯНТОВ</b>\n"
-    f"╚══════════════════════════╝\n\n"
-    f"PvP + казино + РП + боссы.\n\n"
-    f"<b>Как писать команды:</b>\n"
-    f"• В <b>группе</b> — <u>только ответом</u> на сообщение игрока.\n"
-    f"• В <b>ЛС</b> — ответом или по <code>@username</code> / ID.\n\n"
-    f"<b>Игрокам:</b>\n"
-    f"• <code>перчатка</code> — вызвать на бой\n"
-    f"• <code>перевод 100</code> — перевести фишки\n"
-    f"• <code>ударить</code>, <code>обнять</code>, <code>поцеловать</code>, <code>пнуть</code>,\n"
-    f"  <code>погладить</code>, <code>укусить</code>, <code>пожать</code>, <code>толкнуть</code>,\n"
-    f"  <code>кинуть</code>, <code>лечить</code>\n"
-    f"• <code>фото</code>, <code>топ</code>, <code>босс</code>, <code>help</code>\n\n"
-    f"<b>Админу:</b>\n"
-    f"• <code>бан</code> / <code>разбан</code>\n"
-    f"• <code>выдать 1000</code>, <code>очки 5</code>, <code>винрейт 50</code>\n"
-    f"• <code>стоп</code>, <code>рассылка текст</code>, <code>ботов 10</code>\n\n"
-    f"<b>Бой:</b> атакующий выбирает зону удара, защищающийся — зону защиты. "
-    f"Совпало → блок. Иначе урон = оружие − броня зоны. "
-    f"Бот играет логично, но не блокирует постоянно.\n"
+    "╔══════════════════════════╗\n"
+    "   ⚔️ <b>АРЕНА ДУЭЛЯНТОВ</b>\n"
+    "╚══════════════════════════╝\n\n"
+    "PvP + казино + РП + боссы.\n\n"
+    "<b>Как писать команды:</b>\n"
+    "• В <b>группе</b> — только ответом на сообщение игрока.\n"
+    "• В <b>ЛС</b> — ответом или по <code>@username</code> / ID.\n\n"
+    "<b>Игрокам:</b>\n"
+    "• <code>перчатка</code> — вызвать на бой\n"
+    "• <code>перевод 100</code> — перевести фишки\n"
+    "• <code>ударить</code>, <code>обнять</code>, <code>поцеловать</code>, <code>пнуть</code>,\n"
+    "  <code>погладить</code>, <code>укусить</code>, <code>пожать</code>, <code>толкнуть</code>,\n"
+    "  <code>кинуть</code>, <code>лечить</code>\n"
+    "• <code>фото</code>, <code>топ</code>, <code>босс</code>, <code>help</code>\n\n"
+    "<b>Админу:</b>\n"
+    "• <code>бан</code> / <code>разбан</code>\n"
+    "• <code>выдать 1000</code>, <code>очки 5</code>, <code>винрейт 50</code>\n"
+    "• <code>стоп</code>, <code>рассылка текст</code>, <code>ботов 10</code>\n\n"
+    "<b>Бой:</b> атакующий выбирает зону удара, защищающийся — зону защиты. "
+    "Совпало → блок. Иначе урон = оружие − броня зоны.\n"
     f"⏱ У игроков {TURN_TIMEOUT} сек на ход, бот отвечает мгновенно."
 )
 
@@ -1391,7 +1271,9 @@ async def flush_notifications(m: Message):
     if not rows:
         return
     ids = [r["id"] for r in rows]
-    ex(f"UPDATE notifications SET seen=1 WHERE id IN ({','.join('?' * len(ids))})", tuple(ids))
+    if ids:
+        placeholders = ",".join("?" * len(ids))
+        ex(f"UPDATE notifications SET seen=1 WHERE id IN ({placeholders})", tuple(ids))
     await m.answer("📬 <b>Пока тебя не было:</b>\n\n" + "\n\n".join(r["text"] for r in rows))
 
 
@@ -1433,15 +1315,19 @@ def resolve_target_by_text(text: str) -> Optional[int]:
 
 
 def resolve_target(m: Message, command_word: str) -> tuple[Optional[int], Optional[str]]:
+    # Reply — если цель не бот
     if m.reply_to_message and m.reply_to_message.from_user:
-        return m.reply_to_message.from_user.id, None
+        target_user = m.reply_to_message.from_user
+        if not target_user.is_bot:
+            return target_user.id, None
+
     if is_private(m):
         text = m.text or ""
         rest = text[len(command_word):].strip() if text.lower().startswith(command_word.lower()) else text
         tid = resolve_target_by_text(rest)
         if tid:
             return tid, None
-        return None, (f"Укажи цель: <code>{command_word} @user</code> или ответь на сообщение.")
+        return None, f"Укажи цель: <code>{command_word} @user</code> или ответь на сообщение."
     return None, (
         f"⚠️ В группе команда работает <b>только ответом</b> на сообщение игрока.\n"
         f"Ответь на его сообщение и напиши <code>{command_word}</code>."
@@ -1467,10 +1353,10 @@ async def cmd_start(m: Message, state: FSMContext):
         return
     await state.set_state(Reg.name)
     await m.answer(
-        f"⚔️ <b>Добро пожаловать на Арену Дуэлянтов!</b>\n\n"
-        f"PvP + казино + РП + боссы.\n"
-        f"Броня на 4 части тела.\n\n"
-        f"Как зовут твоего бойца? (2–16 символов)",
+        "⚔️ <b>Добро пожаловать на Арену Дуэлянтов!</b>\n\n"
+        "PvP + казино + РП + боссы.\n"
+        "Броня на 4 части тела.\n\n"
+        "Как зовут твоего бойца? (2–16 символов)",
         reply_markup=ReplyKeyboardRemove(),
     )
 
@@ -1530,18 +1416,20 @@ async def show_gear(m):
 
 async def show_top(m):
     p = get_player(m.from_user.id)
+    if not p:
+        return
     t, k = top_screen(m.from_user.id, arena_of(p["wins"]))
     await m.answer(t, reply_markup=k)
 
 
 async def show_rp(m):
     text = (
-        f"🎭 <b>РП-команды</b>\n\n"
-        f"В группе — ответом на сообщение игрока, одним словом:\n"
-        f"<code>ударить</code>, <code>обнять</code>, <code>поцеловать</code>, <code>пнуть</code>,\n"
-        f"<code>погладить</code>, <code>укусить</code>, <code>пожать</code>, <code>толкнуть</code>,\n"
-        f"<code>кинуть</code>, <code>лечить</code>.\n\n"
-        f"В ЛС — так же, или через <code>ударить @user</code>.\n\n"
+        "🎭 <b>РП-команды</b>\n\n"
+        "В группе — ответом на сообщение игрока, одним словом:\n"
+        "<code>ударить</code>, <code>обнять</code>, <code>поцеловать</code>, <code>пнуть</code>,\n"
+        "<code>погладить</code>, <code>укусить</code>, <code>пожать</code>, <code>толкнуть</code>,\n"
+        "<code>кинуть</code>, <code>лечить</code>.\n\n"
+        "В ЛС — так же, или через <code>ударить @user</code>.\n\n"
         f"Откат: {RP_COOLDOWN} сек."
     )
     await m.answer(text)
@@ -1564,7 +1452,9 @@ async def menu_dispatch(m, state):
         return await m.answer("Сначала отправь /start.")
     touch_username(m)
     await flush_notifications(m)
-    await MENU_HANDLERS[m.text](m)
+    handler = MENU_HANDLERS.get(m.text)
+    if handler:
+        await handler(m)
 
 
 @router.message(F.text.in_(MENU_TEXTS))
@@ -1578,6 +1468,32 @@ async def on_menu(m: Message, state: FSMContext):
 #  БОЙ: НАЧАЛО
 # ════════════════════════════════════════════════════════════════════
 
+def start_duel(aid: int, bid: int, is_boss: bool = False,
+               boss_key: Optional[str] = None, reward_mult: int = 1) -> Optional[Duel]:
+    a_row = get_player(aid)
+    if not a_row:
+        return None
+    fa = fighter_from_row(a_row)
+    if is_boss and boss_key and boss_key in BOSSES:
+        fb = boss_to_fighter(BOSSES[boss_key])
+    else:
+        b_row = get_player(bid)
+        if not b_row:
+            return None
+        fb = fighter_from_row(b_row)
+    attacker_is_a = random.random() < 0.5
+    duel = Duel(a_id=aid, b_id=bid, a=fa, b=fb,
+                attacker_is_a=attacker_is_a, is_boss=is_boss,
+                boss_key=boss_key, reward_mult=reward_mult)
+    first_name = fa.name if attacker_is_a else fb.name
+    prefix = f"{E_BOSS} <b>БОСС</b> " if is_boss else ""
+    duel.log.append(f"{prefix}Бой начался! Первым атакует <b>{first_name}</b>.")
+    DUELS[aid] = duel
+    if bid > 0:
+        DUELS[bid] = duel
+    return duel
+
+
 async def begin_duel_msg(aid: int, bid: int, m: Message, bot: Bot,
                          is_boss: bool = False, boss_key: Optional[str] = None,
                          reward_mult: int = 1):
@@ -1586,6 +1502,8 @@ async def begin_duel_msg(aid: int, bid: int, m: Message, bot: Bot,
     if aid in DUELS:
         return await m.answer("У тебя уже идёт бой.")
     duel = start_duel(aid, bid, is_boss=is_boss, boss_key=boss_key, reward_mult=reward_mult)
+    if not duel:
+        return await m.answer("Не удалось начать бой.")
     role = duel.state_for(aid)
     if role == "attacker":
         text = duel_status_text(duel, aid, timer_left=TURN_TIMEOUT)
@@ -1608,6 +1526,72 @@ async def begin_duel_msg(aid: int, bid: int, m: Message, bot: Bot,
 
 
 # ════════════════════════════════════════════════════════════════════
+#  КЛАВИАТУРЫ БОЯ
+# ════════════════════════════════════════════════════════════════════
+
+def attack_zone_kb() -> InlineKeyboardMarkup:
+    return ikb(
+        [("🧠 Голова ×1.5", "duel:atk:head", "danger"),
+         ("🫀 Торс ×1.0", "duel:atk:torso", "danger")],
+        [("💪 Руки ×0.8", "duel:atk:arms", "danger"),
+         ("🦵 Ноги ×0.9", "duel:atk:legs", "danger")],
+    )
+
+
+def defend_zone_kb() -> InlineKeyboardMarkup:
+    return ikb(
+        [("🧠 Голова", "duel:def:head", "success"),
+         ("🫀 Торс", "duel:def:torso", "success")],
+        [("💪 Руки", "duel:def:arms", "success"),
+         ("🦵 Ноги", "duel:def:legs", "success")],
+    )
+
+
+def duel_status_text(duel: Duel, for_uid: int, extra: str = "",
+                     timer_left: Optional[int] = None) -> str:
+    role = duel.state_for(for_uid)
+    atk_name = duel.attacker().name
+    me = duel.me(for_uid) or duel.a
+    opp = duel.opponent(for_uid) or duel.b
+
+    if role == "attacker":
+        prompt = "🎯 <b>Твой ход</b> — выбери, куда бить"
+    elif role == "defender":
+        prompt = f"{E_SHIELD} <b>{atk_name}</b> атакует — выбери, что защищать"
+    else:
+        prompt = "⏳ Бой идёт…"
+
+    if timer_left is not None and role in ("attacker", "defender"):
+        prompt += f"\n⏱ Осталось: <b>{timer_left} сек</b>"
+
+    if not duel.log:
+        body = "  <i>Бой начинается…</i>"
+    else:
+        body = "\n".join(f"  {ln}" for ln in duel.log[-5:])
+
+    boss_line = ""
+    if duel.is_boss:
+        boss_line = f"{E_BOSS} <b>БОЙ С БОССОМ</b>  ·  награда ×{duel.reward_mult}\n\n"
+
+    return (
+        f"╔══════════════════════════╗\n"
+        f"      ⚔️ <b>РАУНД {duel.round_no}</b>\n"
+        f"╚══════════════════════════╝\n\n"
+        f"{boss_line}"
+        f"┌─ 🔵 <b>ТЫ</b>\n"
+        f"{fighter_card(me)}\n"
+        f"└────────────\n\n"
+        f"┌─ 🔴 <b>СОПЕРНИК</b>\n"
+        f"{fighter_card(opp)}\n"
+        f"└────────────\n\n"
+        f"📜 <b>Последние действия:</b>\n{body}\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"{prompt}"
+        + (f"\n\n{extra}" if extra else "")
+    )
+
+
+# ════════════════════════════════════════════════════════════════════
 #  CALLBACKS
 # ════════════════════════════════════════════════════════════════════
 
@@ -1617,7 +1601,8 @@ async def cb_arena_menu(cb: CallbackQuery, state: FSMContext):
     if not get_player(cb.from_user.id):
         return await cb.answer("Сначала /start", show_alert=True)
     t, k = arena_menu_screen(cb.from_user.id)
-    await safe_edit(cb, t, k)
+    if t:
+        await safe_edit(cb, t, k)
     await cb.answer()
 
 
@@ -1626,7 +1611,8 @@ async def cb_arena_bosses(cb: CallbackQuery):
     if not get_player(cb.from_user.id):
         return await cb.answer("Сначала /start", show_alert=True)
     t, k = bosses_menu_screen(cb.from_user.id)
-    await safe_edit(cb, t, k)
+    if t:
+        await safe_edit(cb, t, k)
     await cb.answer()
 
 
@@ -1643,8 +1629,9 @@ async def cb_arena_boss_fight(cb: CallbackQuery, bot: Bot):
     b = BOSSES[bkey]
     if p["wins"] < b["min_wins"]:
         return await cb.answer(f"Нужно {b['min_wins']} 🏆 для этого босса.", show_alert=True)
-    duel = start_duel(cb.from_user.id, -1, is_boss=True, boss_key=bkey,
-                      reward_mult=b["reward_mult"])
+    duel = start_duel(cb.from_user.id, -1, is_boss=True, boss_key=bkey, reward_mult=b["reward_mult"])
+    if not duel:
+        return await cb.answer("Ошибка запуска боя.", show_alert=True)
     role = duel.state_for(cb.from_user.id)
     if role == "attacker":
         text = duel_status_text(duel, cb.from_user.id, timer_left=TURN_TIMEOUT)
@@ -1670,6 +1657,8 @@ async def cb_arena_find(cb: CallbackQuery, bot: Bot):
     if not oid:
         return await cb.answer("Не удалось подобрать соперника.", show_alert=True)
     duel = start_duel(cb.from_user.id, oid)
+    if not duel:
+        return await cb.answer("Не удалось начать бой.", show_alert=True)
     role = duel.state_for(cb.from_user.id)
     if role == "attacker":
         text = duel_status_text(duel, cb.from_user.id, timer_left=TURN_TIMEOUT)
@@ -1684,8 +1673,7 @@ async def cb_arena_find(cb: CallbackQuery, bot: Bot):
             await safe_edit(cb, text, defend_zone_kb())
             start_timer(duel, cb.from_user.id, "defender", bot)
         else:
-            text = duel_status_text(duel, cb.from_user.id,
-                                    extra="⏳ Соперник выбирает удар…")
+            text = duel_status_text(duel, cb.from_user.id, extra="⏳ Соперник выбирает удар…")
             await safe_edit(cb, text, ikb([("🔄 Обновить", "duel:refresh", "primary")]))
     await cb.answer()
 
@@ -1695,7 +1683,8 @@ async def cb_arena_list(cb: CallbackQuery):
     if not get_player(cb.from_user.id):
         return await cb.answer("Сначала /start", show_alert=True)
     t, k = arena_list_screen(cb.from_user.id)
-    await safe_edit(cb, t, k)
+    if t:
+        await safe_edit(cb, t, k)
     await cb.answer()
 
 
@@ -1719,6 +1708,8 @@ async def cb_duel_pick(cb: CallbackQuery, bot: Bot):
     if tid == cb.from_user.id:
         return await cb.answer("Нельзя драться с собой.", show_alert=True)
     duel = start_duel(cb.from_user.id, tid)
+    if not duel:
+        return await cb.answer("Соперник недоступен.", show_alert=True)
     role = duel.state_for(cb.from_user.id)
     if role == "attacker":
         text = duel_status_text(duel, cb.from_user.id, timer_left=TURN_TIMEOUT)
@@ -1733,27 +1724,28 @@ async def cb_duel_pick(cb: CallbackQuery, bot: Bot):
             await safe_edit(cb, text, defend_zone_kb())
             start_timer(duel, cb.from_user.id, "defender", bot)
         else:
-            text = duel_status_text(duel, cb.from_user.id,
-                                    extra="⏳ Соперник выбирает удар…")
+            text = duel_status_text(duel, cb.from_user.id, extra="⏳ Соперник выбирает удар…")
             await safe_edit(cb, text, ikb([("🔄 Обновить", "duel:refresh", "primary")]))
     await cb.answer()
 
 
 def profile_text(row) -> str:
-    w = WEAPONS[row["weapon"]]
+    if not row:
+        return "Профиль не найден."
+    w = WEAPONS[row["weapon"]] if row["weapon"] in WEAPONS else WEAPONS["fists"]
     f = fighter_from_row(row)
     slots = player_armor_slots(row)
     arena = ARENAS[arena_of(row["wins"])]
     lines = [
         f"👤 <b>{esc(row['name'])}</b>",
-        f"",
+        "",
         f"{E_TROPHY} {row['wins']}  ·  {E_SKULL} {row['losses']}  ·  {E_CHIPS} {row['chips']}",
         f"📍 {arena['emoji']} {arena['name']}",
-        f"",
+        "",
         f"❤️ HP: <b>{f.max_hp}</b>",
         f"{w['emoji']} {w['name']} — урон <b>{w['dmg']}</b>",
-        f"",
-        f"<b>🛡 Броня:</b>",
+        "",
+        "<b>🛡 Броня:</b>",
     ]
     for slot in ZONES:
         item = ARMOR_ITEMS.get(slots[slot]) or armor_item_info(slot, "none")
@@ -1788,7 +1780,7 @@ async def cb_my_profile(cb: CallbackQuery):
 
 
 # ════════════════════════════════════════════════════════════════════
-#  БОЙ: АТАКА / ЗАЩИТА
+#  БОЙ: атака/защита
 # ════════════════════════════════════════════════════════════════════
 
 @router.callback_query(F.data.regexp(r"^duel:atk:(head|torso|arms|legs)$"))
@@ -1802,23 +1794,24 @@ async def cb_duel_attack(cb: CallbackQuery, bot: Bot):
         return await cb.answer("Время вышло или ход уже сделан.", show_alert=True)
     stop_timer(duel)
     atk_zone = cb.data.split(":")[2]
+    if atk_zone not in ZONES:
+        return await cb.answer()
     duel.atk_zone = atk_zone
     def_id = duel.defender_id()
 
     if def_id < 0:
-        # Бот-защитник: решает, будет ли защищаться и в какую зону
         bot_is_a = (def_id == duel.a_id)
-        bot = duel.a if bot_is_a else duel.b
+        bot_f = duel.a if bot_is_a else duel.b
         attacker = duel.b if bot_is_a else duel.a
         if bot_wants_to_defend(duel, bot_is_a):
-            def_zone = bot_pick_defend_zone(attacker, bot)
+            def_zone = bot_pick_defend_zone(attacker, bot_f)
             duel.bot_last_block_round = duel.round_no
             duel.bot_block_streak += 1
-            duel.log.append(f"🛡 {bot.name} встаёт в защиту")
+            duel.log.append(f"🛡 {bot_f.name} встаёт в защиту")
         else:
             def_zone = None
             duel.bot_block_streak = 0
-        await _resolve_round(duel, bot_msg_obj(bot), cb=cb, atk_zone=atk_zone, def_zone=def_zone)
+        await _resolve_round(duel, bot, cb=cb, atk_zone=atk_zone, def_zone=def_zone)
     else:
         attacker_name = duel.attacker().name
         text_b = duel_status_text(duel, def_id,
@@ -1829,15 +1822,9 @@ async def cb_duel_attack(cb: CallbackQuery, bot: Bot):
         except Exception:
             pass
         start_timer(duel, def_id, "defender", bot)
-        text_a = duel_status_text(duel, cb.from_user.id,
-                                  extra="⏳ Ждём защиту соперника…")
+        text_a = duel_status_text(duel, cb.from_user.id, extra="⏳ Ждём защиту соперника…")
         await safe_edit(cb, text_a, ikb([("🔄 Обновить", "duel:refresh", "primary")]))
     await cb.answer("Удар выбран.")
-
-
-def bot_msg_obj(bot: Bot):
-    """Заглушка — нужна только для сигнатуры вызова."""
-    return bot
 
 
 @router.callback_query(F.data.regexp(r"^duel:def:(head|torso|arms|legs)$"))
@@ -1853,6 +1840,8 @@ async def cb_duel_defend(cb: CallbackQuery, bot: Bot):
         return await cb.answer("Время вышло или ход уже сделан.", show_alert=True)
     stop_timer(duel)
     def_zone = cb.data.split(":")[2]
+    if def_zone not in ZONES:
+        return await cb.answer()
     await _resolve_round(duel, bot, cb=cb, atk_zone=duel.atk_zone, def_zone=def_zone)
 
 
@@ -1885,13 +1874,11 @@ async def cb_duel_refresh(cb: CallbackQuery):
                                     extra="🎯 Выбери зону удара.", timer_left=left)
             await safe_edit(cb, text, attack_zone_kb())
         else:
-            text = duel_status_text(duel, cb.from_user.id,
-                                    extra="⏳ Ждём защиту соперника…")
+            text = duel_status_text(duel, cb.from_user.id, extra="⏳ Ждём защиту соперника…")
             await safe_edit(cb, text, ikb([("🔄 Обновить", "duel:refresh", "primary")]))
     else:
         if duel.atk_zone is None:
-            text = duel_status_text(duel, cb.from_user.id,
-                                    extra="⏳ Соперник ещё выбирает удар…")
+            text = duel_status_text(duel, cb.from_user.id, extra="⏳ Соперник ещё выбирает удар…")
             await safe_edit(cb, text, ikb([("🔄 Обновить", "duel:refresh", "primary")]))
         else:
             left = max(0, int(round(duel.timer_deadline - time.time()))) if duel.timer_for == cb.from_user.id else TURN_TIMEOUT
@@ -1912,13 +1899,13 @@ async def _resolve_round(duel: Duel, bot: Bot, cb: Optional[CallbackQuery],
     defender = duel.defender()
 
     duel.log.append(f"── Раунд {duel.round_no} ──")
-    def_str = (f"{ZONE_INFO[def_zone]['emoji']} {ZONE_INFO[def_zone]['name']}"
-               if def_zone else "без защиты")
     duel.log.append(
         f"⚔️ {attacker.name} → {ZONE_INFO[atk_zone]['emoji']} {ZONE_INFO[atk_zone]['name']}"
     )
     if def_zone:
-        duel.log.append(f"🛡 {defender.name} → {def_str}")
+        duel.log.append(
+            f"🛡 {defender.name} → {ZONE_INFO[def_zone]['emoji']} {ZONE_INFO[def_zone]['name']}"
+        )
 
     tick_dots(attacker, duel.log)
     if not attacker.alive():
@@ -1932,7 +1919,6 @@ async def _resolve_round(duel: Duel, bot: Bot, cb: Optional[CallbackQuery],
     duel.attacker_is_a = not duel.attacker_is_a
     duel.round_no += 1
 
-    # Сброс стрика блока, если бот долго не защищался
     if duel.round_no - duel.bot_last_block_round > 4:
         duel.bot_block_streak = 0
 
@@ -1948,7 +1934,6 @@ async def _start_next_round(duel: Duel, bot: Bot):
     def_id = duel.defender_id()
 
     if atk_id > 0:
-        # Атакующий — игрок
         text = duel_status_text(duel, atk_id,
                                 extra="🎯 Твой ход — выбери зону удара.", timer_left=TURN_TIMEOUT)
         try:
@@ -1957,10 +1942,8 @@ async def _start_next_round(duel: Duel, bot: Bot):
             pass
         start_timer(duel, atk_id, "attacker", bot)
     else:
-        # Атакующий — бот: выбирает зону сразу
         duel.atk_zone = bot_pick_attack_zone(duel.attacker(), duel.defender())
         duel.log.append(f"⚔️ {duel.attacker().name} выбрал удар")
-
         if def_id > 0:
             text = duel_status_text(duel, def_id,
                                     extra=f"{E_SHIELD} Соперник атакует — выбери зону защиты.",
@@ -1975,6 +1958,9 @@ async def _start_next_round(duel: Duel, bot: Bot):
 async def _finish_duel(duel: Duel, winner_is_a: bool, bot: Bot, reason: str = "ko"):
     aid, bid = duel.a_id, duel.b_id
     a_row = get_player(aid)
+    if not a_row:
+        end_duel(duel)
+        return
     b_row = get_player(bid) if bid and bid > 0 else None
     mult = duel.reward_mult if duel.is_boss else 1
 
@@ -2027,22 +2013,23 @@ async def _finish_duel(duel: Duel, winner_is_a: bool, bot: Bot, reason: str = "k
 
     if bid and bid > 0:
         new_b = get_player(bid)
-        b_arena = ARENAS[arena_of(new_b["wins"])]
-        footer_b = (
-            f"\n╔══════════════════════════╗\n"
-            f"  {result_for_b}\n"
-            f"  {E_TROPHY} {new_b['wins']}  ·  {E_SKULL} {new_b['losses']}  ·  {E_CHIPS} {new_b['chips']}\n"
-            f"  📍 {b_arena['emoji']} {b_arena['name']}"
-            f"{reason_line}\n"
-            f"╚══════════════════════════╝"
-        )
-        text_b = duel_status_text(duel, bid, extra=footer_b)
-        kb_b = ikb([("⚔️ На арену", "arena:menu", "success")],
-                   [("🎲 Ещё бой", "arena:find", "danger")])
-        try:
-            await bot.send_message(bid, text_b, reply_markup=kb_b)
-        except Exception:
-            pass
+        if new_b:
+            b_arena = ARENAS[arena_of(new_b["wins"])]
+            footer_b = (
+                f"\n╔══════════════════════════╗\n"
+                f"  {result_for_b}\n"
+                f"  {E_TROPHY} {new_b['wins']}  ·  {E_SKULL} {new_b['losses']}  ·  {E_CHIPS} {new_b['chips']}\n"
+                f"  📍 {b_arena['emoji']} {b_arena['name']}"
+                f"{reason_line}\n"
+                f"╚══════════════════════════╝"
+            )
+            text_b = duel_status_text(duel, bid, extra=footer_b)
+            kb_b = ikb([("⚔️ На арену", "arena:menu", "success")],
+                       [("🎲 Ещё бой", "arena:find", "danger")])
+            try:
+                await bot.send_message(bid, text_b, reply_markup=kb_b)
+            except Exception:
+                pass
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -2067,7 +2054,8 @@ async def cb_gear_menu(cb: CallbackQuery):
     if not get_player(cb.from_user.id):
         return await cb.answer("Сначала /start", show_alert=True)
     t, k = gear_screen(cb.from_user.id)
-    await safe_edit(cb, t, k)
+    if t:
+        await safe_edit(cb, t, k)
     await cb.answer()
 
 
@@ -2076,7 +2064,8 @@ async def cb_gear_weapon(cb: CallbackQuery):
     if not get_player(cb.from_user.id):
         return await cb.answer("Сначала /start", show_alert=True)
     t, k = weapon_list(cb.from_user.id)
-    await safe_edit(cb, t, k)
+    if t:
+        await safe_edit(cb, t, k)
     await cb.answer()
 
 
@@ -2085,7 +2074,8 @@ async def cb_gear_armor_menu(cb: CallbackQuery):
     if not get_player(cb.from_user.id):
         return await cb.answer("Сначала /start", show_alert=True)
     t, k = armor_slot_menu(cb.from_user.id)
-    await safe_edit(cb, t, k)
+    if t:
+        await safe_edit(cb, t, k)
     await cb.answer()
 
 
@@ -2095,7 +2085,8 @@ async def cb_gear_armor_slot(cb: CallbackQuery):
         return await cb.answer("Сначала /start", show_alert=True)
     slot = cb.data.split(":")[1]
     t, k = armor_slot_list(cb.from_user.id, slot)
-    await safe_edit(cb, t, k)
+    if t:
+        await safe_edit(cb, t, k)
     await cb.answer()
 
 
@@ -2119,7 +2110,8 @@ async def cb_buy_weapon(cb: CallbackQuery):
     else:
         return await cb.answer(f"Нужно {item['price']}💰", show_alert=True)
     t, k = weapon_list(cb.from_user.id)
-    await safe_edit(cb, t, k)
+    if t:
+        await safe_edit(cb, t, k)
     await cb.answer(toast)
 
 
@@ -2130,7 +2122,9 @@ async def cb_buy_armor(cb: CallbackQuery):
         return await cb.answer("Сначала /start", show_alert=True)
     _, slot, level = cb.data.split(":")
     key = armor_item_key(slot, level)
-    item = ARMOR_ITEMS[key]
+    item = ARMOR_ITEMS.get(key)
+    if not item:
+        return await cb.answer("Предмет не найден.", show_alert=True)
     owned = set(p["armors_owned"].split(","))
     col = f"armor_{slot}"
     if key in owned:
@@ -2143,7 +2137,8 @@ async def cb_buy_armor(cb: CallbackQuery):
     else:
         return await cb.answer(f"Нужно {item['price']}💰", show_alert=True)
     t, k = armor_slot_list(cb.from_user.id, slot)
-    await safe_edit(cb, t, k)
+    if t:
+        await safe_edit(cb, t, k)
     await cb.answer(toast)
 
 
@@ -2152,7 +2147,8 @@ async def cb_cas_menu(cb: CallbackQuery):
     if not get_player(cb.from_user.id):
         return await cb.answer("Сначала /start", show_alert=True)
     t, k = casino_menu(cb.from_user.id)
-    await safe_edit(cb, t, k)
+    if t:
+        await safe_edit(cb, t, k)
     await cb.answer()
 
 
@@ -2197,6 +2193,8 @@ async def cb_cas_allin(cb: CallbackQuery):
 
 async def _process_bet(cb: CallbackQuery, game: str, bet: int):
     p = get_player(cb.from_user.id)
+    if not p:
+        return await cb.answer("Сначала /start", show_alert=True)
     if bet <= 0:
         return await cb.answer("Неверная ставка.", show_alert=True)
     if p["chips"] < bet:
@@ -2258,10 +2256,13 @@ async def txt_photo(m: Message):
 async def txt_boss(m: Message):
     if not get_player(m.from_user.id):
         return await m.answer("Сначала /start в ЛС бота.")
-    await m.answer(f"{E_BOSS} Выбери босса в меню арены:", reply_markup=MENU_KB if is_private(m) else None)
     if is_private(m):
         t, k = bosses_menu_screen(m.from_user.id)
-        await m.answer(t, reply_markup=k)
+        await m.answer(f"{E_BOSS} Выбери босса:", reply_markup=k if k else MENU_KB)
+        if t:
+            await m.answer(t)
+    else:
+        await m.answer(f"{E_BOSS} Меню боссов доступно в ЛС бота.")
 
 
 @router.message(F.text.regexp(r"(?i)^перчатка(\s|$)"))
@@ -2396,8 +2397,8 @@ async def adm_ban(m: Message):
     if not is_admin(m.from_user.id):
         return
     tid, err = resolve_target(m, "бан")
-    if err:
-        return await m.answer(err)
+    if err or not tid:
+        return await m.answer(err or "Не найдено.")
     ex("UPDATE players SET banned=1 WHERE user_id=?", (tid,))
     DUELS.pop(tid, None)
     await m.answer(f"🚫 Игрок <code>{tid}</code> забанен.")
@@ -2408,8 +2409,8 @@ async def adm_unban(m: Message):
     if not is_admin(m.from_user.id):
         return
     tid, err = resolve_target(m, "разбан")
-    if err:
-        return await m.answer(err)
+    if err or not tid:
+        return await m.answer(err or "Не найдено.")
     ex("UPDATE players SET banned=0 WHERE user_id=?", (tid,))
     await m.answer(f"✅ Игрок <code>{tid}</code> разбанен.")
 
@@ -2419,8 +2420,8 @@ async def adm_give(m: Message):
     if not is_admin(m.from_user.id):
         return
     tid, err = resolve_target(m, "выдать")
-    if err:
-        return await m.answer(err)
+    if err or not tid:
+        return await m.answer(err or "Не найдено.")
     amount = None
     for p in (m.text or "").split():
         if p.lstrip("-").isdigit():
@@ -2438,8 +2439,8 @@ async def adm_points(m: Message):
     if not is_admin(m.from_user.id):
         return
     tid, err = resolve_target(m, "очки")
-    if err:
-        return await m.answer(err)
+    if err or not tid:
+        return await m.answer(err or "Не найдено.")
     amount = None
     for p in (m.text or "").split():
         if p.lstrip("-").isdigit():
@@ -2457,8 +2458,8 @@ async def adm_setwins(m: Message):
     if not is_admin(m.from_user.id):
         return
     tid, err = resolve_target(m, "винрейт")
-    if err:
-        return await m.answer(err)
+    if err or not tid:
+        return await m.answer(err or "Не найдено.")
     amount = None
     for p in (m.text or "").split():
         if p.isdigit():
@@ -2476,8 +2477,8 @@ async def adm_endduel(m: Message):
     if not is_admin(m.from_user.id):
         return
     tid, err = resolve_target(m, "стоп")
-    if err:
-        return await m.answer(err)
+    if err or not tid:
+        return await m.answer(err or "Не найдено.")
     if tid in DUELS:
         end_duel(DUELS[tid])
         await m.answer(f"✅ Бой игрока <code>{tid}</code> сброшен.")
@@ -2512,9 +2513,11 @@ async def adm_addbots(m: Message):
         if p.isdigit():
             n = int(p)
             break
-    before = q1("SELECT COUNT(*) c FROM players WHERE is_bot=1")["c"]
+    before = q1("SELECT COUNT(*) c FROM players WHERE is_bot=1")
+    before = before["c"] if before else 0
     ensure_masked_bots(before + n)
-    after = q1("SELECT COUNT(*) c FROM players WHERE is_bot=1")["c"]
+    after = q1("SELECT COUNT(*) c FROM players WHERE is_bot=1")
+    after = after["c"] if after else 0
     await m.answer(f"✅ Добавлено: {after - before}")
 
 
@@ -2538,9 +2541,12 @@ async def cmd_admin(m: Message):
 async def cmd_stats(m: Message):
     if not is_admin(m.from_user.id):
         return
-    total = q1("SELECT COUNT(*) c FROM players WHERE is_bot=0")["c"]
-    bots = q1("SELECT COUNT(*) c FROM players WHERE is_bot=1")["c"]
-    banned = q1("SELECT COUNT(*) c FROM players WHERE banned=1")["c"]
+    total = q1("SELECT COUNT(*) c FROM players WHERE is_bot=0")
+    bots = q1("SELECT COUNT(*) c FROM players WHERE is_bot=1")
+    banned = q1("SELECT COUNT(*) c FROM players WHERE banned=1")
+    total = total["c"] if total else 0
+    bots = bots["c"] if bots else 0
+    banned = banned["c"] if banned else 0
     unique_duels = len({id(d) for d in DUELS.values()})
     await m.answer(f"📊 Игроков: {total}\n🤖 Скрытых: {bots}\n🚫 Бан: {banned}\n⚔️ Активных боёв: {unique_duels}")
 

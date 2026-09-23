@@ -2,11 +2,25 @@
 # -*- coding: utf-8 -*-
 """
 ================================================================================
-⚔️ АРЕНА ДУЭЛЯНТОВ (DUEL ARENA) — Enterprise Edition
-Версия: 4.0 (Monolithic, Type-Hinted, Fully Documented)
-Описание: Полнофункциональный Telegram бот для PvP дуэлей, казино, RP-действий 
-          и управления экономикой с поддержкой чатовых команд без префикса '/'.
-Требования: Python 3.10+, aiogram 3.x, sqlite3
+⚔️ АРЕНА ДУЭЛЯНТОВ (DUEL ARENA) — Ultimate Edition v5.0
+================================================================================
+Полнофункциональный Telegram-бот для PvP дуэлей, казино, RP-действий,
+боссов и системы промокодов. Поддержка чатовых команд без префикса '/'.
+
+Требования:
+    - Python 3.10+
+    - aiogram >= 3.0.0
+    - sqlite3 (встроен)
+
+Особенности:
+    - 9 видов оружия с уникальными эффектами
+    - 24 предмета брони (6 на каждый из 4 слотов)
+    - 4 босса с уникальной экипировкой
+    - 20 RP-действий с кулдаунами
+    - 5 игр казино (слоты, кости, монетка, рулетка, больше/меньше)
+    - Система промокодов с ограничениями
+    - Скрытые боты для быстрого матчмейкинга
+    - Балансировка по аренам
 ================================================================================
 """
 
@@ -49,7 +63,7 @@ from aiogram.types import (
 class Config:
     """
     Класс конфигурации бота.
-    В продакшене рекомендуется использовать библиотеку pydantic-settings или environs.
+    В продакшене рекомендуется использовать переменные окружения.
     """
     BOT_TOKEN: str = os.getenv("BOT_TOKEN", "ВАШ_ТОКЕН_ЗДЕСЬ")
     DB_PATH: str = os.getenv("DB_PATH", "arena.db")
@@ -59,11 +73,10 @@ class Config:
     TURN_TIMEOUT: int = 45
     RP_COOLDOWN: int = 5
     
-    # Настройки логирования
     LOG_LEVEL: int = logging.INFO
     LOG_FORMAT: str = "%(asctime)s | %(levelname)-8s | %(name)s:%(lineno)d | %(message)s"
 
-# Премиум эмодзи (Замените ID на реальные из вашего набора через @getidsbot)
+# Премиум эмодзи (замените ID на реальные через @getidsbot)
 PREMIUM_EMOJI_IDS: Dict[str, str] = {
     "fire":   "5368324170671202286",
     "sword":  "5368324170671202287",
@@ -79,6 +92,8 @@ PREMIUM_EMOJI_IDS: Dict[str, str] = {
     "glove":  "5368324170671202297",
     "star":   "5368324170671202298",
     "magic":  "5368324170671202299",
+    "gift":   "5368324170671202300",
+    "promo":  "5368324170671202301",
 }
 
 def get_premium_emoji(key: str, fallback: str) -> str:
@@ -86,11 +101,11 @@ def get_premium_emoji(key: str, fallback: str) -> str:
     Генерирует HTML-тег для премиум эмодзи или возвращает fallback.
     
     Args:
-        key: Ключ из словаря PREMIUM_EMOJI_IDS.
-        fallback: Стандартный эмодзи для отката.
+        key: Ключ из словаря PREMIUM_EMOJI_IDS
+        fallback: Стандартный эмодзи для отката
         
     Returns:
-        Строка с HTML-тегом <tg-emoji> или fallback.
+        Строка с HTML-тегом <tg-emoji> или fallback
     """
     eid = PREMIUM_EMOJI_IDS.get(key)
     if not eid:
@@ -112,6 +127,8 @@ E_BOSS   = get_premium_emoji("boss", "👹")
 E_GLOVE  = get_premium_emoji("glove", "🧤")
 E_STAR   = get_premium_emoji("star", "⭐")
 E_MAGIC  = get_premium_emoji("magic", "✨")
+E_GIFT   = get_premium_emoji("gift", "🎁")
+E_PROMO  = get_premium_emoji("promo", "🎟")
 
 # ==============================================================================
 # 2. ИГРОВЫЕ ДАННЫЕ И КОНТЕНТ
@@ -227,11 +244,11 @@ def create_button(text: str, callback_data: str) -> InlineKeyboardButton:
     Создает Inline-кнопку.
     
     Args:
-        text: Текст на кнопке.
-        callback_data: Данные для обработки нажатия.
+        text: Текст на кнопке
+        callback_data: Данные для обработки нажатия
         
     Returns:
-        Объект InlineKeyboardButton.
+        Объект InlineKeyboardButton
     """
     return InlineKeyboardButton(text=text, callback_data=callback_data)
 
@@ -240,10 +257,10 @@ def build_inline_keyboard(*rows: List[Tuple[str, str]]) -> InlineKeyboardMarkup:
     Строит Inline-клавиатуру из кортежей (текст, callback_data).
     
     Args:
-        *rows: Переменное количество строк, каждая строка — список кортежей.
+        *rows: Переменное количество строк, каждая строка — список кортежей
         
     Returns:
-        Объект InlineKeyboardMarkup.
+        Объект InlineKeyboardMarkup
     """
     keyboard = []
     for row in rows:
@@ -256,15 +273,15 @@ async def safe_edit_message(
     markup: Optional[InlineKeyboardMarkup] = None
 ) -> bool:
     """
-    Безопасно редактирует сообщение, обрабатывая ошибки 'not modified' и fallback на отправку нового.
+    Безопасно редактирует сообщение, обрабатывая ошибки 'not modified'.
     
     Args:
-        cb: Объект CallbackQuery.
-        text: Новый текст сообщения.
-        markup: Новая клавиатура (опционально).
+        cb: Объект CallbackQuery
+        text: Новый текст сообщения
+        markup: Новая клавиатура (опционально)
         
     Returns:
-        True если успешно, False если произошла критическая ошибка.
+        True если успешно, False если произошла критическая ошибка
     """
     try:
         await cb.message.edit_text(text[:4090], reply_markup=markup, parse_mode=ParseMode.HTML)
@@ -288,8 +305,8 @@ async def safe_edit_message(
 
 class DatabaseManager:
     """
-    Менеджер базы данных для управления состоянием игроков, уведомлений и статистики.
-    Использует sqlite3 с отключенной проверкой потока для совместимости с asyncio.
+    Менеджер базы данных для управления состоянием игроков, уведомлений,
+    статистики и промокодов.
     """
     
     def __init__(self, db_path: str):
@@ -319,6 +336,7 @@ class DatabaseManager:
                 is_bot INTEGER NOT NULL DEFAULT 0, 
                 created REAL NOT NULL DEFAULT 0
             );
+            
             CREATE TABLE IF NOT EXISTS notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, 
                 user_id INTEGER NOT NULL, 
@@ -326,8 +344,30 @@ class DatabaseManager:
                 ts REAL NOT NULL, 
                 seen INTEGER NOT NULL DEFAULT 0
             );
+            
+            CREATE TABLE IF NOT EXISTS promo_codes (
+                code TEXT PRIMARY KEY,
+                reward_chips INTEGER NOT NULL DEFAULT 0,
+                reward_wins INTEGER NOT NULL DEFAULT 0,
+                max_uses INTEGER NOT NULL DEFAULT 1,
+                current_uses INTEGER NOT NULL DEFAULT 0,
+                expires_at REAL NOT NULL DEFAULT 0,
+                created_by INTEGER NOT NULL,
+                created_at REAL NOT NULL DEFAULT 0,
+                active INTEGER NOT NULL DEFAULT 1
+            );
+            
+            CREATE TABLE IF NOT EXISTS promo_activations (
+                user_id INTEGER NOT NULL,
+                code TEXT NOT NULL,
+                activated_at REAL NOT NULL,
+                PRIMARY KEY (user_id, code)
+            );
+            
             CREATE INDEX IF NOT EXISTS ix_notif_user ON notifications(user_id, seen);
             CREATE INDEX IF NOT EXISTS ix_players_wins ON players(wins, is_bot, banned);
+            CREATE INDEX IF NOT EXISTS ix_promo_active ON promo_codes(active, expires_at);
+            CREATE INDEX IF NOT EXISTS ix_promo_act_user ON promo_activations(user_id);
         """
         try:
             self._connection.executescript(schema)
@@ -399,7 +439,7 @@ class Fighter:
         fixed_slots = {}
         for s in ZONES:
             key = slots.get(s) or f"{s}_none"
-            if not self._get_armor_item(key):
+            if not get_armor_item_by_key(key):
                 key = f"{s}_none"
             fixed_slots[s] = key
         self.armor_slots = fixed_slots
@@ -410,22 +450,13 @@ class Fighter:
         
         for slot in ZONES:
             key = self.armor_slots[slot]
-            item = self._get_armor_item(key) or self._get_armor_item(f"{slot}_none")
+            item = get_armor_item_by_key(key) or get_armor_item_by_key(f"{slot}_none")
             self.armor_def[slot] = item["df"]
             total_chance += item["chance"]
             total_bonus += item["dmg_bonus"]
 
         self.spec_chance = min(w["chance"] + total_chance, 70)
         self.spec_dmg_bonus = total_bonus / 100.0
-
-    @staticmethod
-    def _get_armor_item(key: str) -> Optional[Dict[str, Any]]:
-        """Внутренний метод поиска предмета брони по ключу."""
-        for slot, items in ARMOR_DATA.items():
-            for it in items:
-                if it["key"] == key:
-                    return {**it, "slot": slot}
-        return None
 
     def is_alive(self) -> bool:
         """Проверяет, жив ли боец (HP > 0)."""
@@ -438,6 +469,14 @@ class Fighter:
     def get_weapon_dmg_for_zone(self, zone: str) -> int:
         """Рассчитывает базовый урон оружия по конкретной зоне с учетом множителя."""
         return max(1, round(self.weapon_dmg * ZONE_INFO[zone]["mult"]))
+
+def get_armor_item_by_key(key: str) -> Optional[Dict[str, Any]]:
+    """Поиск предмета брони по ключу во всем массиве данных."""
+    for slot, items in ARMOR_DATA.items():
+        for it in items:
+            if it["key"] == key:
+                return {**it, "slot": slot}
+    return None
 
 def generate_hp_bar(fighter: Fighter, width: int = 12) -> str:
     """Генерирует визуальную полосу здоровья."""
@@ -471,7 +510,7 @@ def format_fighter_card(fighter: Fighter) -> str:
 class Duel:
     """
     Состояние активной дуэли.
-    Управляет ходами, таймерами, логами и специальными состояниями (оглушение, яды).
+    Управляет ходами, таймерами, логами и специальными состояниями.
     """
     a_id: int
     b_id: int
@@ -487,11 +526,9 @@ class Duel:
     reward_mult: int = 1
     finished: bool = False
     
-    # AI специфичные поля
     bot_last_block_round: int = -10
     bot_block_streak: int = 0
     
-    # Таймер
     timer_task: Optional[asyncio.Task] = None
     timer_deadline: float = 0.0
     timer_for: Optional[int] = None
@@ -542,7 +579,7 @@ def calculate_damage(
     Рассчитывает итоговый урон с учетом брони, зон и множителей.
     
     Returns:
-        Кортеж (нанесенный урон, строка примечания, например "Блок!")
+        Кортеж (нанесенный урон, строка примечания)
     """
     if def_zone == atk_zone:
         return 0, f"{E_SHIELD} <b>Блок!</b>"
@@ -585,7 +622,7 @@ def resolve_special_attack(
     Пытается применить специальную атаку оружия.
     
     Returns:
-        True, если спец-атака была применена, False иначе.
+        True, если спец-атака была применена, False иначе
     """
     w = WEAPONS[attacker.weapon]
     
@@ -652,12 +689,10 @@ def execute_attack_phase(
         log.append(f"💫 {attacker.name} оглушён и пропускает ход!")
         return
 
-    # Попытка применить спец-атаку на основе шанса
     if random.random() * 100 < attacker.spec_chance:
         if resolve_special_attack(attacker, defender, atk_zone, def_zone, log):
             return
 
-    # Обычная атака
     dmg, note = calculate_damage(attacker, defender, atk_zone, def_zone)
     if note:
         log.append(f"{ZONE_INFO[atk_zone]['emoji']} {attacker.name} бьёт в «{ZONE_INFO[atk_zone]['name']}» — {note}")
@@ -688,7 +723,7 @@ def terminate_duel(duel: Duel) -> None:
 
 def start_duel_timer(duel: Duel, uid: int, role: str, bot: Bot) -> None:
     """Инициализирует таймер хода для конкретного игрока."""
-    if uid < 0:  # Боты не имеют таймеров
+    if uid < 0:
         return
     stop_duel_timer(duel)
     duel.timer_for = uid
@@ -707,7 +742,6 @@ async def _timer_runner_task(duel: Duel, uid: int, role: str, bot: Bot) -> None:
                 break
             await asyncio.sleep(1)
             
-        # Проверки перед применением наказания за время
         if duel.finished or duel.timer_for != uid or duel.get_state_for(uid) != role:
             return
         if uid not in ACTIVE_DUELS:
@@ -725,21 +759,12 @@ async def handle_timeout_defeat(duel: Duel, loser_uid: int, bot: Bot) -> None:
     loser = duel.get_fighter(loser_uid)
     duel.log.append(f"⏱ <b>{loser.name if loser else 'Неизвестный'} не успел за {Config.TURN_TIMEOUT} сек — авто-поражение!</b>")
     
-    # Определяем победителя (противоположная сторона)
     winner_is_a = not (loser_uid == duel.a_id)
     await finalize_duel(duel, winner_is_a=winner_is_a, bot=bot, reason="timeout")
 
 # ==============================================================================
 # 8. ИИ БОТА И ГЕНЕРАЦИЯ СОПЕРНИКОВ
 # ==============================================================================
-
-def get_armor_item_by_key(key: str) -> Optional[Dict[str, Any]]:
-    """Поиск предмета брони по ключу во всем массиве данных."""
-    for slot, items in ARMOR_DATA.items():
-        for it in items:
-            if it["key"] == key:
-                return {**it, "slot": slot}
-    return None
 
 def get_player_armor_slots(player_row: sqlite3.Row) -> Dict[str, str]:
     """Извлекает и валидирует слоты брони из записи БД."""
@@ -818,7 +843,6 @@ def ensure_masked_bots_exist(target_count: int = 50) -> None:
         name = generate_random_bot_name(existing_names)
         uid = -random.randint(10_000_000, 99_999_999)
         
-        # Балансировка: распределение ботов по аренам
         wins = random.choices(
             [random.randint(0, 9), random.randint(10, 29), random.randint(30, 60)], 
             weights=[5, 4, 2]
@@ -857,19 +881,16 @@ def ensure_masked_bots_exist(target_count: int = 50) -> None:
 def pick_balanced_opponent(player_uid: int, player_wins: int) -> Optional[int]:
     """
     Подбирает соперника строго того же уровня (арены), что и игрок.
-    Приоритет: реальные игроки > боты той же арены > генерация нового бота.
     """
     arena = determine_arena(player_wins)
     limits = ARENAS[arena]
     
-    # 1. Ищем реальных игроков
     humans = [r["user_id"] for r in db.fetch_all("""
         SELECT user_id FROM players 
         WHERE user_id != ? AND banned=0 AND is_bot=0 AND wins BETWEEN ? AND ? 
         ORDER BY RANDOM() LIMIT 6
     """, (player_uid, limits["min_wins"], limits["max_wins"]))]
     
-    # 2. Ищем ботов той же арены
     bots = [r["user_id"] for r in db.fetch_all("""
         SELECT user_id FROM players 
         WHERE is_bot=1 AND banned=0 AND wins BETWEEN ? AND ? 
@@ -877,13 +898,12 @@ def pick_balanced_opponent(player_uid: int, player_wins: int) -> Optional[int]:
     """, (limits["min_wins"], limits["max_wins"]))]
     
     if humans and bots:
-        return random.choice(bots if random.random() < 0.6 else humans) # 60% шанс на бота для скорости
+        return random.choice(bots if random.random() < 0.6 else humans)
     if humans:
         return random.choice(humans)
     if bots:
         return random.choice(bots)
     
-    # 3. Fallback: генерируем нового бота под текущую арену
     ensure_masked_bots_exist(10)
     rows = db.fetch_all("""
         SELECT user_id FROM players 
@@ -898,19 +918,13 @@ def pick_balanced_opponent(player_uid: int, player_wins: int) -> Optional[int]:
 # ==============================================================================
 
 def bot_decide_attack_zone(attacker: Fighter, defender: Fighter) -> str:
-    """
-    Логика выбора зоны атаки для бота.
-    Учитывает добивание, максимальный урон и элемент случайности.
-    """
-    # 10% шанс на полностью случайную атаку (ошибка ИИ)
+    """Логика выбора зоны атаки для бота."""
     if random.random() < 0.10:
         return random.choice(ZONES)
     
-    # Если противник при смерти, бьем туда, где максимальный сырой урон
     if defender.hp <= defender.max_hp * 0.30:
         return max(ZONES, key=lambda z: attacker.get_weapon_dmg_for_zone(z))
 
-    # Иначе ищем зону с наилучшим соотношением урон минус защита
     def score_zone(z: str) -> tuple:
         dmg = attacker.get_weapon_dmg_for_zone(z) - defender.get_armor_def(z)
         return (dmg, ZONE_INFO[z]["mult"])
@@ -927,7 +941,6 @@ def bot_decide_to_defend(duel: Duel, bot_is_a: bool) -> bool:
     bot_fighter = duel.a if bot_is_a else duel.b
     hp_ratio = bot_fighter.hp / bot_fighter.max_hp
     
-    # Чем меньше здоровья, тем выше шанс встать в блок
     if hp_ratio < 0.30:
         base_chance = 0.65
     elif hp_ratio < 0.60:
@@ -938,13 +951,12 @@ def bot_decide_to_defend(duel: Duel, bot_is_a: bool) -> bool:
     return random.random() < base_chance
 
 def bot_decide_defend_zone(attacker: Fighter, defender: Fighter) -> str:
-    """Выбирает зону для защиты, основываясь на наиболее опасной зоне атаки противника."""
+    """Выбирает зону для защиты, основываясь на наиболее опасной зоне атаки."""
     def danger_level(z: str) -> int:
         return attacker.get_weapon_dmg_for_zone(z) - defender.get_armor_def(z)
         
     sorted_zones = sorted(ZONES, key=danger_level, reverse=True)
     
-    # 25% шанс ошибиться и защитить вторую по опасности зону
     if random.random() < 0.25 and len(sorted_zones) > 1:
         return sorted_zones[1]
     return sorted_zones[0]
@@ -979,7 +991,7 @@ def play_casino_slots(uid: int, bet: int) -> Tuple[Optional[str], Optional[str]]
     return f"{' | '.join(spin)}\n\n{E_SKULL} <b>Мимо.</b>\nВы проиграли: −{bet}💰", None
 
 def play_casino_dice(uid: int, bet: int) -> Tuple[Optional[str], Optional[str]]:
-    """Логика игры в кости (больше/меньше не нужно, просто сравнение с дилером)."""
+    """Логика игры в кости."""
     p = db.fetch_one("SELECT chips FROM players WHERE user_id=?", (uid,))
     if not p or p["chips"] < bet:
         return None, "Недостаточно фишек на балансе."
@@ -1000,7 +1012,7 @@ def play_casino_dice(uid: int, bet: int) -> Tuple[Optional[str], Optional[str]]:
         return f"{E_DICE} Ты: {player_roll} · Дилер: {dealer_roll}\n\n{E_SKULL} <b>Поражение.</b> −{bet}💰", None
 
 def play_casino_coin(uid: int, bet: int, choice: str = "heads") -> Tuple[Optional[str], Optional[str]]:
-    """Логика игры в монетку (Орел или Решка)."""
+    """Логика игры в монетку."""
     p = db.fetch_one("SELECT chips FROM players WHERE user_id=?", (uid,))
     if not p or p["chips"] < bet:
         return None, "Недостаточно фишек на балансе."
@@ -1058,19 +1070,239 @@ def play_casino_highlow(uid: int, bet: int, choice: str = "high") -> Tuple[Optio
     win = False
     if choice == "high" and is_high: win = True
     elif choice == "low" and is_low: win = True
-    elif result_num == 50: # Ровно 50 - возврат
+    elif result_num == 50:
         db.execute("UPDATE players SET chips=chips+? WHERE user_id=?", (bet, uid))
         return f"📊 Выпало число: <b>{result_num}</b>\n\n🤝 <b>Ровно 50!</b> Ставка возвращена.", None
         
     if win:
-        payout = int(bet * 1.9) # Небольшая маржа казино
+        payout = int(bet * 1.9)
         db.execute("UPDATE players SET chips=chips+? WHERE user_id=?", (payout, uid))
         return f"📊 Выпало число: <b>{result_num}</b>\n\n{E_TROPHY} <b>Победа!</b> +{payout}💰", None
     else:
         return f"📊 Выпало число: <b>{result_num}</b>\n\n{E_SKULL} <b>Поражение.</b> −{bet}💰", None
 
 # ==============================================================================
-# 11. RP (ROLEPLAY) СИСТЕМА
+# 11. СИСТЕМА ПРОМОКОДОВ
+# ==============================================================================
+
+def create_promo_code(
+    code: str,
+    reward_chips: int,
+    reward_wins: int,
+    max_uses: int,
+    hours_valid: int,
+    created_by: int
+) -> Tuple[bool, str]:
+    """
+    Создает новый промокод.
+    
+    Args:
+        code: Уникальный код (будет приведен к верхнему регистру)
+        reward_chips: Награда в фишках
+        reward_wins: Награда в победах
+        max_uses: Максимальное количество активаций
+        hours_valid: Срок действия в часах
+        created_by: ID админа, создавшего код
+        
+    Returns:
+        Кортеж (успех, сообщение)
+    """
+    code = code.strip().upper()
+    
+    if not code or len(code) < 3 or len(code) > 20:
+        return False, "Код должен быть от 3 до 20 символов."
+    
+    if not re.match(r'^[A-Z0-9_-]+$', code):
+        return False, "Код может содержать только буквы, цифры, _ и -"
+    
+    if reward_chips < 0 or reward_wins < 0:
+        return False, "Награды не могут быть отрицательными."
+    
+    if max_uses < 1:
+        return False, "Максимум активаций должен быть ≥ 1."
+    
+    if hours_valid < 1:
+        return False, "Срок действия должен быть ≥ 1 часа."
+    
+    existing = db.fetch_one("SELECT code FROM promo_codes WHERE code=?", (code,))
+    if existing:
+        return False, f"Промокод <code>{code}</code> уже существует."
+    
+    now = time.time()
+    expires_at = now + (hours_valid * 3600)
+    
+    db.execute("""
+        INSERT INTO promo_codes (code, reward_chips, reward_wins, max_uses, current_uses, expires_at, created_by, created_at, active)
+        VALUES (?, ?, ?, ?, 0, ?, ?, ?, 1)
+    """, (code, reward_chips, reward_wins, max_uses, expires_at, created_by, now))
+    
+    return True, f"{E_PROMO} Промокод <code>{code}</code> создан!\n\n💰 Фишки: {reward_chips}\n🏆 Победы: {reward_wins}\n👥 Макс. активаций: {max_uses}\n⏳ Действует: {hours_valid} ч."
+
+def deactivate_promo_code(code: str) -> Tuple[bool, str]:
+    """Деактивирует промокод."""
+    code = code.strip().upper()
+    existing = db.fetch_one("SELECT * FROM promo_codes WHERE code=?", (code,))
+    if not existing:
+        return False, "Промокод не найден."
+    
+    db.execute("UPDATE promo_codes SET active=0 WHERE code=?", (code,))
+    return True, f"{E_PROMO} Промокод <code>{code}</code> деактивирован."
+
+def get_promo_info(code: str) -> Optional[Dict[str, Any]]:
+    """Получает информацию о промокоде."""
+    code = code.strip().upper()
+    row = db.fetch_one("SELECT * FROM promo_codes WHERE code=?", (code,))
+    if not row:
+        return None
+    
+    now = time.time()
+    is_expired = row["expires_at"] < now
+    is_maxed = row["current_uses"] >= row["max_uses"]
+    
+    return {
+        "code": row["code"],
+        "reward_chips": row["reward_chips"],
+        "reward_wins": row["reward_wins"],
+        "max_uses": row["max_uses"],
+        "current_uses": row["current_uses"],
+        "expires_at": row["expires_at"],
+        "created_by": row["created_by"],
+        "created_at": row["created_at"],
+        "active": bool(row["active"]),
+        "is_expired": is_expired,
+        "is_maxed": is_maxed,
+        "is_valid": row["active"] and not is_expired and not is_maxed,
+    }
+
+def activate_promo_code(user_id: int, code: str) -> Tuple[bool, str]:
+    """
+    Активирует промокод для игрока.
+    
+    Args:
+        user_id: ID игрока
+        code: Код для активации
+        
+    Returns:
+        Кортеж (успех, сообщение)
+    """
+    code = code.strip().upper()
+    
+    player = db.fetch_one("SELECT * FROM players WHERE user_id=?", (user_id,))
+    if not player:
+        return False, "Сначала отправь /start в ЛС бота."
+    
+    if player["banned"]:
+        return False, "🚫 Тебе недоступна активация промокодов."
+    
+    promo = get_promo_info(code)
+    if not promo:
+        return False, f"❌ Промокод <code>{code}</code> не найден."
+    
+    if not promo["active"]:
+        return False, f"❌ Промокод <code>{code}</code> деактивирован администратором."
+    
+    if promo["is_expired"]:
+        return False, f"❌ Промокод <code>{code}</code> истёк."
+    
+    if promo["is_maxed"]:
+        return False, f"❌ Промокод <code>{code}</code> исчерпан (все активации использованы)."
+    
+    already_activated = db.fetch_one(
+        "SELECT 1 FROM promo_activations WHERE user_id=? AND code=?",
+        (user_id, code)
+    )
+    if already_activated:
+        return False, f"❌ Ты уже активировал промокод <code>{code}</code>."
+    
+    now = time.time()
+    
+    try:
+        db.execute(
+            "INSERT INTO promo_activations (user_id, code, activated_at) VALUES (?, ?, ?)",
+            (user_id, code, now)
+        )
+        db.execute(
+            "UPDATE promo_codes SET current_uses=current_uses+1 WHERE code=?",
+            (code,)
+        )
+        
+        if promo["reward_chips"] > 0:
+            db.execute(
+                "UPDATE players SET chips=chips+? WHERE user_id=?",
+                (promo["reward_chips"], user_id)
+            )
+        
+        if promo["reward_wins"] > 0:
+            db.execute(
+                "UPDATE players SET wins=wins+? WHERE user_id=?",
+                (promo["reward_wins"], user_id)
+            )
+        
+        rewards = []
+        if promo["reward_chips"] > 0:
+            rewards.append(f"💰 +{promo['reward_chips']} фишек")
+        if promo["reward_wins"] > 0:
+            rewards.append(f"🏆 +{promo['reward_wins']} побед")
+        
+        rewards_text = "\n".join(rewards) if rewards else "🎁 Секретный бонус!"
+        
+        return True, (
+            f"{E_GIFT} <b>ПРОМОКОД АКТИВИРОВАН!</b>\n\n"
+            f"🎟 Код: <code>{code}</code>\n"
+            f"{rewards_text}\n\n"
+            f"📊 Осталось активаций: {promo['max_uses'] - promo['current_uses'] - 1}/{promo['max_uses']}"
+        )
+        
+    except sqlite3.Error as e:
+        logging.error(f"Error activating promo code: {e}")
+        return False, "❌ Произошла ошибка при активации. Попробуй позже."
+
+def list_active_promos() -> List[Dict[str, Any]]:
+    """Возвращает список всех активных промокодов."""
+    rows = db.fetch_all("""
+        SELECT * FROM promo_codes 
+        WHERE active=1 
+        ORDER BY created_at DESC
+    """)
+    
+    result = []
+    now = time.time()
+    for row in rows:
+        is_expired = row["expires_at"] < now
+        is_maxed = row["current_uses"] >= row["max_uses"]
+        result.append({
+            "code": row["code"],
+            "reward_chips": row["reward_chips"],
+            "reward_wins": row["reward_wins"],
+            "max_uses": row["max_uses"],
+            "current_uses": row["current_uses"],
+            "expires_at": row["expires_at"],
+            "created_by": row["created_by"],
+            "is_expired": is_expired,
+            "is_maxed": is_maxed,
+            "is_valid": not is_expired and not is_maxed,
+        })
+    
+    return result
+
+def format_promo_info(promo: Dict[str, Any]) -> str:
+    """Форматирует информацию о промокоде для отображения."""
+    expires_str = time.strftime("%d.%m.%Y %H:%M", time.localtime(promo["expires_at"]))
+    
+    status = "✅ Активен" if promo["is_valid"] else ("⏰ Истёк" if promo["is_expired"] else ("🚫 Исчерпан" if promo["is_maxed"] else "❌ Деактивирован"))
+    
+    return (
+        f"{E_PROMO} <b>Промокод: <code>{promo['code']}</code></b>\n\n"
+        f"📊 Статус: {status}\n"
+        f"💰 Награда фишками: <b>{promo['reward_chips']}</b>\n"
+        f"🏆 Награда победами: <b>{promo['reward_wins']}</b>\n"
+        f"👥 Активаций: <b>{promo['current_uses']}</b> / {promo['max_uses']}\n"
+        f"⏰ Истекает: {expires_str}\n"
+        f"🛠 Создан админом: <code>{promo['created_by']}</code>"
+    )
+
+# ==============================================================================
+# 12. RP (ROLEPLAY) СИСТЕМА
 # ==============================================================================
 
 RP_ACTIONS: Dict[str, Tuple[str, str]] = {
@@ -1096,7 +1328,6 @@ RP_ACTIONS: Dict[str, Tuple[str, str]] = {
     "пожать_плечами": ("🤷", "пожал(а) плечами при виде"),
 }
 
-# Хранилище кулдаунов: (actor_id, target_id, action) -> timestamp
 RP_COOLDOWNS: Dict[Tuple[int, int, str], float] = {}
 
 def generate_rp_text(actor_name: str, target_name: str, action_key: str) -> str:
@@ -1105,60 +1336,46 @@ def generate_rp_text(actor_name: str, target_name: str, action_key: str) -> str:
     return f"{emoji} <b>{esc(actor_name)}</b> {verb} <b>{esc(target_name)}</b>!"
 
 # ==============================================================================
-# 12. УНИВЕРСАЛЬНЫЙ ПАРСЕР ЦЕЛЕЙ (TARGET RESOLVER)
+# 13. УНИВЕРСАЛЬНЫЙ ПАРСЕР ЦЕЛЕЙ
 # ==============================================================================
 
 def resolve_command_target(m: Message, command_word: str) -> Tuple[Optional[int], Optional[str]]:
     """
     Универсальная функция для определения цели команды в чате.
-    Поддерживает: 1. Reply на сообщение. 2. Упоминание @username. 3. Числовой ID.
-    
-    Args:
-        m: Объект сообщения.
-        command_word: Слово-команда (для очистки строки).
-        
-    Returns:
-        Кортеж (user_id цели, сообщение об ошибке). Если цель найдена, ошибка = None.
+    Поддерживает: 1. Reply. 2. @username. 3. Числовой ID.
     """
-    # Приоритет 1: Ответ на сообщение (Reply)
     if m.reply_to_message and m.reply_to_message.from_user and not m.reply_to_message.from_user.is_bot:
         return m.reply_to_message.from_user.id, None
 
-    # Приоритет 2: Парсинг текста на наличие @username или ID
     text = m.text or ""
     if text.lower().startswith(command_word.lower()):
         rest_of_text = text[len(command_word):].strip()
     else:
         rest_of_text = text
 
-    # Регулярное выражение для поиска @username или числа
     match = re.search(r'@(\w+)|(-?\d+)', rest_of_text)
     if match:
         val = match.group(1) or match.group(2)
         
-        # Проверка на числовой ID
-        if val.isdigit() or (val.startswith('-') and val[1:].isdigit()):
+        if val.lstrip('-').isdigit():
             row = db.fetch_one("SELECT user_id FROM players WHERE user_id=? AND banned=0", (int(val),))
             if row:
                 return row["user_id"], None
         else:
-            # Проверка на username или имя
-            row = db.fetch_one("""
-                SELECT user_id FROM players 
-                WHERE (LOWER(username)=LOWER(?) OR LOWER(name)=LOWER(?)) AND banned=0 
-                LIMIT 1
-            """, (val, val))
+            row = db.fetch_one(
+                "SELECT user_id FROM players WHERE (LOWER(username)=LOWER(?) OR LOWER(name)=LOWER(?)) AND banned=0 LIMIT 1",
+                (val, val)
+            )
             if row:
                 return row["user_id"], None
                 
-    # Если ничего не найдено, формируем ошибку в зависимости от типа чата
     if m.chat.type == "private":
         return None, f"Укажи цель: ответь на сообщение или напиши <code>{command_word} @user</code> / <code>{command_word} ID</code>"
     else:
-        return None, f"⚠️ В группе команда работает <b>только ответом</b> на сообщение игрока или через упоминание <code>@username</code> / <code>ID</code>."
+        return None, f"⚠️ В группе команда работает <b>только ответом</b> на сообщение игрока или через <code>@username</code> / <code>ID</code>."
 
 # ==============================================================================
-# 13. ГЕНЕРАТОРЫ UI ЭКРАНОВ
+# 14. ГЕНЕРАТОРЫ UI ЭКРАНОВ
 # ==============================================================================
 
 def generate_gear_screen(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]:
@@ -1315,17 +1532,15 @@ def get_finish_duel_kb() -> InlineKeyboardMarkup:
     )
 
 # ==============================================================================
-# 14. ХЕНДЛЕРЫ: СТАРТ, МЕНЮ, ПОМОЩЬ
+# 15. ХЕНДЛЕРЫ: СТАРТ, МЕНЮ, ПОМОЩЬ
 # ==============================================================================
 
 router = Router()
 
 class RegistrationState(StatesGroup):
-    """Состояния для процесса регистрации нового игрока."""
     waiting_for_name = State()
 
 class DuelFindState(StatesGroup):
-    """Состояния для поиска соперника по нику."""
     waiting_for_target = State()
 
 HELP_TEXT = (
@@ -1342,6 +1557,9 @@ HELP_TEXT = (
     "• <code>монетка [сумма] [орел/решка]</code> или <code>мон [сумма] [о/р]</code>\n"
     "• <code>рулетка [сумма] [красное/черное/зеленое]</code> или <code>рул [сумма] [к/ч/з]</code>\n"
     "• <code>больше [сумма]</code> или <code>меньше [сумма]</code>\n\n"
+    "<b>🎟 Промокоды:</b>\n"
+    "• <code>#код [промокод]</code> или <code>активировать [код]</code> — активировать\n"
+    "• <code>промо</code> — список активных промокодов\n\n"
     "<b>🎭 RP действия:</b>\n"
     "• <code>ударить</code>, <code>уд</code> | <code>обнять</code>, <code>обн</code>\n"
     "• <code>поцеловать</code>, <code>поц</code> | <code>пнуть</code>, <code>пн</code>\n"
@@ -1353,7 +1571,11 @@ HELP_TEXT = (
     "• <code>бан</code> / <code>разбан</code>\n"
     "• <code>выдать [сумма]</code>\n"
     "• <code>очки [число]</code> | <code>винрейт [число]</code>\n"
-    "• <code>стоп</code> | <code>рассылка [текст]</code> | <code>ботов [число]</code>"
+    "• <code>стоп</code> | <code>рассылка [текст]</code> | <code>ботов [число]</code>\n"
+    "• <code>промо создать [код] [фишки] [победы] [макс] [часов]</code>\n"
+    "• <code>промо удалить [код]</code>\n"
+    "• <code>промо инфо [код]</code>\n"
+    "• <code>промо список</code>"
 )
 
 @router.message(CommandStart())
@@ -1381,7 +1603,7 @@ async def handle_start_command(m: Message, state: FSMContext) -> None:
     await state.set_state(RegistrationState.waiting_for_name)
     await m.answer(
         "⚔️ <b>Добро пожаловать на Арену Дуэлянтов!</b>\n\n"
-        "PvP + казино + боссы.\n"
+        "PvP + казино + боссы + промокоды.\n"
         "Уникальная броня на 4 части тела и множество видов оружия.\n\n"
         "Как зовут твоего бойца? (2–16 символов)", 
         reply_markup=ReplyKeyboardRemove()
@@ -1411,7 +1633,8 @@ async def handle_registration_name(m: Message, state: FSMContext) -> None:
     await state.clear()
     await m.answer(
         f"Боец <b>{esc(name)}</b> создан! 🎉\n\n"
-        f"{E_CHIPS} Стартовый баланс: {Config.START_CHIPS}", 
+        f"{E_CHIPS} Стартовый баланс: {Config.START_CHIPS}\n"
+        f"{E_PROMO} Активируй промокоды командой <code>#код [код]</code>", 
         reply_markup=ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(text="⚔️ Арена"), KeyboardButton(text="🎰 Казино")],
@@ -1450,17 +1673,21 @@ async def flush_notifications(m: Message) -> None:
     await m.answer("📬 <b>Пока тебя не было:</b>\n\n" + "\n\n".join(r["text"] for r in rows))
 
 # ==============================================================================
-# 15. ХЕНДЛЕРЫ: ЧАТОВЫЕ КОМАНДЫ (ДУЭЛИ, RP, КАЗИНО, АДМИН)
+# 16. ХЕНДЛЕРЫ: ЧАТОВЫЕ КОМАНДЫ
 # ==============================================================================
 
 def is_admin(uid: int) -> bool:
-    """Проверяет, является ли пользователь администратором."""
     return uid == Config.ADMIN_ID
 
 def is_user_banned(uid: int) -> bool:
-    """Проверяет, забанен ли пользователь."""
     p = db.fetch_one("SELECT banned FROM players WHERE user_id=?", (uid,))
     return bool(p and p["banned"])
+
+def notify_player(uid: int, text: str) -> None:
+    """Добавляет уведомление для игрока в БД."""
+    if uid <= 0:
+        return
+    db.execute("INSERT INTO notifications (user_id, text, ts) VALUES (?,?,?)", (uid, text, time.time()))
 
 # --- ДУЭЛИ ---
 @router.message(F.text.regexp(r"(?i)^(перчатка|перч|glove|вызов)(\s|$)"))
@@ -1487,15 +1714,17 @@ async def cmd_challenge_duel(m: Message, bot: Bot) -> None:
         await m.answer("Этот игрок забанен и не может участвовать в боях.")
         return
         
-    if tid < 0: # Вызов бота
+    if tid < 0:
         await initiate_duel_message(m.from_user.id, tid, m, bot)
     else:
-        notify(tid, f"{E_GLOVE} <b>{esc(db.fetch_one('SELECT name FROM players WHERE user_id=?", (m.from_user.id,))['name'])}</b> кинул тебе перчатку! Открой бота для принятия вызова.")
+        attacker_row = db.fetch_one("SELECT name FROM players WHERE user_id=?", (m.from_user.id,))
+        attacker_name = attacker_row["name"] if attacker_row else "Неизвестный"
+        notify_player(tid, f"{E_GLOVE} <b>{esc(attacker_name)}</b> кинул тебе перчатку! Открой бота для принятия вызова.")
         await m.answer(f"{E_GLOVE} Ты кинул перчатку <b>{esc(target['name'])}</b>. Ожидай ответа в ЛС.")
 
 @router.message(F.text.regexp(r"(?i)^(фото|профиль|stat)(\s|$)"))
 async def cmd_show_profile(m: Message) -> None:
-    """Показывает профиль игрока (свой или указанного)."""
+    """Показывает профиль игрока."""
     row = db.fetch_one("SELECT * FROM players WHERE user_id=?", (m.from_user.id,))
     if not row:
         await m.answer("Сначала /start в ЛС бота.")
@@ -1548,7 +1777,7 @@ async def process_rp_action(m: Message, action_key: str) -> None:
     actor = db.fetch_one("SELECT name FROM players WHERE user_id=?", (m.from_user.id,))
     await m.answer(generate_rp_text(actor["name"], target["name"], action_key))
 
-# Динамическая регистрация хендлеров для всех RP команд с сокращениями
+# Динамическая регистрация RP handlers
 RP_MAPPINGS = {
     "ударить": ["ударить", "уд", "hit"],
     "обнять": ["обнять", "обн", "hug"],
@@ -1575,7 +1804,7 @@ RP_MAPPINGS = {
 for action, variants in RP_MAPPINGS.items():
     pattern = r"(?i)^(" + "|".join(re.escape(v) for v in variants) + r")(\s|$)"
     
-    async def make_rp_handler(act: str) -> Callable:
+    def make_rp_handler(act: str) -> Callable:
         async def handler(m: Message) -> None:
             await process_rp_action(m, act)
         return handler
@@ -1674,6 +1903,145 @@ async def cmd_chat_highlow_low(m: Message) -> None:
         return
     p2 = db.fetch_one("SELECT chips FROM players WHERE user_id=?", (m.from_user.id,))
     await m.answer(f"{result}\n\n{E_CHIPS} Баланс: <b>{p2['chips']}</b>")
+
+# --- ПРОМОКОДЫ (ИГРОК) ---
+@router.message(F.text.regexp(r"(?i)^#код\s+(\S+)$"))
+async def cmd_promo_hash(m: Message) -> None:
+    """Активация промокода через #код [код]."""
+    match = re.search(r"(?i)^#код\s+(\S+)$", m.text or "")
+    if not match:
+        return
+    
+    code = match.group(1)
+    success, message = activate_promo_code(m.from_user.id, code)
+    await m.answer(message)
+
+@router.message(F.text.regexp(r"(?i)^(активировать|актив|redeem)\s+(\S+)$"))
+async def cmd_promo_activate(m: Message) -> None:
+    """Активация промокода через активировать [код]."""
+    match = re.search(r"(?i)^(?:активировать|актив|redeem)\s+(\S+)$", m.text or "")
+    if not match:
+        return
+    
+    code = match.group(1)
+    success, message = activate_promo_code(m.from_user.id, code)
+    await m.answer(message)
+
+@router.message(F.text.regexp(r"(?i)^промо$"))
+async def cmd_promo_list_player(m: Message) -> None:
+    """Список активных промокодов для игрока."""
+    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (m.from_user.id,)):
+        await m.answer("Сначала /start в ЛС бота.")
+        return
+    
+    promos = list_active_promos()
+    valid_promos = [p for p in promos if p["is_valid"]]
+    
+    if not valid_promos:
+        await m.answer(f"{E_PROMO} <b>Активных промокодов сейчас нет.</b>\n\nСледи за новостями — администратор периодически выпускает новые коды!")
+        return
+    
+    lines = [f"{E_PROMO} <b>АКТИВНЫЕ ПРОМОКОДЫ</b>\n", f"Найдено: <b>{len(valid_promos)}</b>\n"]
+    
+    for i, promo in enumerate(valid_promos[:10], 1):
+        remaining = promo["max_uses"] - promo["current_uses"]
+        lines.append(f"{i}. <code>{promo['code']}</code>")
+        rewards = []
+        if promo["reward_chips"] > 0:
+            rewards.append(f"💰{promo['reward_chips']}")
+        if promo["reward_wins"] > 0:
+            rewards.append(f"🏆{promo['reward_wins']}")
+        lines.append(f"   Награда: {' + '.join(rewards) if rewards else '🎁'}")
+        lines.append(f"   Осталось активаций: {remaining}/{promo['max_uses']}\n")
+    
+    lines.append(f"{E_MAGIC} Активируй: <code>#код [код]</code>")
+    
+    await m.answer("\n".join(lines))
+
+# --- ПРОМОКОДЫ (АДМИН) ---
+@router.message(F.text.regexp(r"(?i)^промо создать\s+(\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)$"))
+async def cmd_promo_create(m: Message) -> None:
+    """Создание промокода: промо создать [код] [фишки] [победы] [макс] [часов]."""
+    if not is_admin(m.from_user.id):
+        return
+    
+    match = re.search(r"(?i)^промо создать\s+(\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)$", m.text or "")
+    if not match:
+        await m.answer("Использование: <code>промо создать [код] [фишки] [победы] [макс] [часов]</code>")
+        return
+    
+    code = match.group(1)
+    reward_chips = int(match.group(2))
+    reward_wins = int(match.group(3))
+    max_uses = int(match.group(4))
+    hours = int(match.group(5))
+    
+    success, message = create_promo_code(code, reward_chips, reward_wins, max_uses, hours, m.from_user.id)
+    await m.answer(message)
+
+@router.message(F.text.regexp(r"(?i)^промо удалить\s+(\S+)$"))
+async def cmd_promo_delete(m: Message) -> None:
+    """Удаление (деактивация) промокода."""
+    if not is_admin(m.from_user.id):
+        return
+    
+    match = re.search(r"(?i)^промо удалить\s+(\S+)$", m.text or "")
+    if not match:
+        return
+    
+    code = match.group(1)
+    success, message = deactivate_promo_code(code)
+    await m.answer(message)
+
+@router.message(F.text.regexp(r"(?i)^промо инфо\s+(\S+)$"))
+async def cmd_promo_info(m: Message) -> None:
+    """Информация о промокоде."""
+    if not is_admin(m.from_user.id):
+        return
+    
+    match = re.search(r"(?i)^промо инфо\s+(\S+)$", m.text or "")
+    if not match:
+        return
+    
+    code = match.group(1)
+    promo = get_promo_info(code)
+    if not promo:
+        await m.answer(f"❌ Промокод <code>{code}</code> не найден.")
+        return
+    
+    await m.answer(format_promo_info(promo))
+
+@router.message(F.text.regexp(r"(?i)^промо список$"))
+async def cmd_promo_list_admin(m: Message) -> None:
+    """Список всех промокодов для админа."""
+    if not is_admin(m.from_user.id):
+        return
+    
+    promos = list_active_promos()
+    
+    if not promos:
+        await m.answer(f"{E_PROMO} <b>Промокодов пока нет.</b>\n\nСоздай первый: <code>промо создать [код] [фишки] [победы] [макс] [часов]</code>")
+        return
+    
+    lines = [f"{E_PROMO} <b>ВСЕ ПРОМОКОДЫ ({len(promos)})</b>\n"]
+    
+    for i, promo in enumerate(promos[:20], 1):
+        status = "✅" if promo["is_valid"] else ("⏰" if promo["is_expired"] else ("🚫" if promo["is_maxed"] else "❌"))
+        expires_str = time.strftime("%d.%m %H:%M", time.localtime(promo["expires_at"]))
+        lines.append(f"{i}. {status} <code>{promo['code']}</code>")
+        rewards = []
+        if promo["reward_chips"] > 0:
+            rewards.append(f"💰{promo['reward_chips']}")
+        if promo["reward_wins"] > 0:
+            rewards.append(f"🏆{promo['reward_wins']}")
+        lines.append(f"   Награда: {' + '.join(rewards) if rewards else '—'}")
+        lines.append(f"   Активаций: {promo['current_uses']}/{promo['max_uses']}")
+        lines.append(f"   Истекает: {expires_str}\n")
+    
+    if len(promos) > 20:
+        lines.append(f"… и ещё {len(promos) - 20} промокодов")
+    
+    await m.answer("\n".join(lines))
 
 # --- АДМИН КОМАНДЫ ---
 @router.message(F.text.regexp(r"(?i)^бан(\s|$)"))
@@ -1783,7 +2151,7 @@ async def adm_cmd_broadcast(m: Message, bot: Bot) -> None:
         try:
             await bot.send_message(r["user_id"], f"📢 <b>Сообщение:</b>\n\n{text}")
             ok_count += 1
-            await asyncio.sleep(0.05) # Anti-flood задержка
+            await asyncio.sleep(0.05)
         except TelegramRetryAfter as e:
             await asyncio.sleep(e.retry_after)
         except Exception:
@@ -1813,7 +2181,12 @@ async def cmd_admin_panel(m: Message) -> None:
         "• <code>винрейт [число]</code>\n"
         "• <code>стоп</code>\n"
         "• <code>рассылка [текст]</code>\n"
-        "• <code>ботов [число]</code>"
+        "• <code>ботов [число]</code>\n\n"
+        "<b>🎟 Промокоды:</b>\n"
+        "• <code>промо создать [код] [фишки] [победы] [макс] [часов]</code>\n"
+        "• <code>промо удалить [код]</code>\n"
+        "• <code>промо инфо [код]</code>\n"
+        "• <code>промо список</code>"
     )
 
 @router.message(Command("stats"))
@@ -1823,23 +2196,19 @@ async def cmd_bot_stats(m: Message) -> None:
     total = db.fetch_one("SELECT COUNT(*) c FROM players WHERE is_bot=0")["c"]
     bots = db.fetch_one("SELECT COUNT(*) c FROM players WHERE is_bot=1")["c"]
     banned = db.fetch_one("SELECT COUNT(*) c FROM players WHERE banned=1")["c"]
+    promos = db.fetch_one("SELECT COUNT(*) c FROM promo_codes WHERE active=1")["c"]
     await m.answer(
         f"📊 <b>Статистика бота:</b>\n"
         f"👥 Игроков: {total}\n"
         f"🤖 Скрытых ботов: {bots}\n"
         f"🚫 В бане: {banned}\n"
-        f"⚔️ Активных боёв: {len({id(d) for d in ACTIVE_DUELS.values()})}"
+        f"⚔️ Активных боёв: {len({id(d) for d in ACTIVE_DUELS.values()})}\n"
+        f"🎟 Активных промокодов: {promos}"
     )
 
 # ==============================================================================
-# 16. ЛОГИКА ДУЭЛИ: ЗАПУСК, РАУНДЫ, ЗАВЕРШЕНИЕ
+# 17. ЛОГИКА ДУЭЛИ: ЗАПУСК, РАУНДЫ, ЗАВЕРШЕНИЕ
 # ==============================================================================
-
-def notify_player(uid: int, text: str) -> None:
-    """Добавляет уведомление для игрока в БД."""
-    if uid <= 0:
-        return
-    db.execute("INSERT INTO notifications (user_id, text, ts) VALUES (?,?,?)", (uid, text, time.time()))
 
 def initiate_duel(a_id: int, b_id: int, is_boss: bool = False, boss_key: Optional[str] = None, reward_mult: int = 1) -> Optional[Duel]:
     """Создает и инициализирует объект дуэли."""
@@ -1928,7 +2297,6 @@ async def process_duel_round(duel: Duel, bot: Bot, cb: Optional[CallbackQuery], 
         await finalize_duel(duel, winner_is_a=(defender is duel.a), bot=bot)
         return
 
-    # Смена ролей для следующего раунда
     duel.atk_zone = None
     duel.attacker_is_a = not duel.attacker_is_a
     duel.round_no += 1
@@ -1939,7 +2307,7 @@ async def process_duel_round(duel: Duel, bot: Bot, cb: Optional[CallbackQuery], 
     await start_next_duel_round(duel, bot)
 
 async def start_next_duel_round(duel: Duel, bot: Bot) -> None:
-    """Инициализирует следующий раунд, отправляя сообщения участникам."""
+    """Инициализирует следующий раунд."""
     if duel.finished:
         return
         
@@ -1975,7 +2343,6 @@ async def finalize_duel(duel: Duel, winner_is_a: bool, bot: Bot, reason: str = "
         terminate_duel(duel)
         return
         
-    b_row = db.fetch_one("SELECT * FROM players WHERE user_id=?", (bid,)) if bid and bid > 0 else None
     mult = duel.reward_mult if duel.is_boss else 1
 
     if winner_is_a:
@@ -2043,7 +2410,7 @@ async def finalize_duel(duel: Duel, winner_is_a: bool, bot: Bot, reason: str = "
                 pass
 
 # ==============================================================================
-# 17. CALLBACK HANDLERS (INLINE КНОПКИ)
+# 18. CALLBACK HANDLERS (INLINE КНОПКИ)
 # ==============================================================================
 
 @router.callback_query(F.data == "arena:menu")
@@ -2306,7 +2673,6 @@ async def cb_duel_refresh(cb: CallbackQuery) -> None:
             await safe_edit_message(cb, generate_duel_status_text(duel, cb.from_user.id, extra=f"{E_SHIELD} Выбери зону защиты.", timer_left=max(0, int(round(duel.timer_deadline - time.time())))), get_defend_zone_kb())
     await cb.answer("Обновлено")
 
-# --- Снаряжение UI ---
 @router.callback_query(F.data == "gear:menu")
 async def cb_gear_menu(cb: CallbackQuery) -> None:
     if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
@@ -2494,7 +2860,7 @@ async def cb_top_leaderboard(cb: CallbackQuery) -> None:
     await cb.answer()
 
 # ==============================================================================
-# 18. FALLBACK И ЗАПУСК
+# 19. FALLBACK И ЗАПУСК
 # ==============================================================================
 
 @router.message(DuelFindState.waiting_for_target, F.text)
@@ -2505,7 +2871,6 @@ async def duel_find_target_handler(m: Message, state: FSMContext, bot: Bot) -> N
         
     if m.text in {"⚔️ Арена", "🎰 Казино", "🎒 Снаряжение", "🏆 Топ"}:
         await state.clear()
-        # Обработка кнопок меню будет передана в fallback или специфичные хендлеры
         return
         
     await state.clear()
@@ -2567,8 +2932,6 @@ async def main() -> None:
         raise SystemExit("Missing BOT_TOKEN")
         
     logging.info("Initializing database...")
-    # db инициализируется при импорте, но можно добавить дополнительную проверку
-    
     logging.info("Generating masked bots...")
     ensure_masked_bots_exist(50)
     
@@ -2580,8 +2943,8 @@ async def main() -> None:
     await bot.set_my_commands([
         BotCommand(command="start", description="Начать / вернуться"),
         BotCommand(command="help", description="Правила и команды"),
-        BotCommand(command="admin", description="Админ-панель (только для админа)"),
-        BotCommand(command="stats", description="Статистика бота (только для админа)"),
+        BotCommand(command="admin", description="Админ-панель"),
+        BotCommand(command="stats", description="Статистика бота"),
     ])
     
     await bot.delete_webhook(drop_pending_updates=True)

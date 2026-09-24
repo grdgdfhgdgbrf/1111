@@ -217,8 +217,8 @@ class Config:
     """
 
     # --- Авторизация и доступ ---
-    BOT_TOKEN:  =  "8996813076:AAGq74gyRRW5fMxvHaIE190_B-tmzXk8aNA"
-    ADMIN_ID:  =  "5356400377"
+    BOT_TOKEN  =  "8996813076:AAGq74gyRRW5fMxvHaIE190_B-tmzXk8aNA"
+    ADMIN_ID  =  "5356400377"
 
     # --- База данных ---
     DB_PATH: str = os.getenv("DB_PATH", "arena_ultimate.db")

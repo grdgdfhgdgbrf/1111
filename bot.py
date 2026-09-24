@@ -1,83 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-================================================================================
-⚔️ АРЕНА ДУЭЛЯНТОВ (DUEL ARENA) — Ultimate Edition v7.1 (Monolithic Extended)
-================================================================================
 
-Описание:
-    Полнофункциональный Telegram-бот для PvP-дуэлей, RPG-элементов, чатовых
-    ивентов (Боссы, Караваны, Набеги) и экономики. Поддерживает команды без
-    префикса '/' через ответы на сообщения или упоминания (@username / ID).
-    В личных сообщениях используется кнопочное меню.
-
-Ключевые особенности:
-    1. Валюта: Кристаллы (💎) — премиум-валюта с собственной экономикой.
-    2. Боевая система: Каждое оружие имеет 3 уникальных варианта атаки с
-       индивидуальными кулдаунами (в раундах). Выбор варианта предшествует
-       выбору зоны атаки, что добавляет тактическую глубину.
-    3. Чатовые события: Глобальные Боссы, Караваны и Набеги, атакуются
-       командой всеми участниками чата. Запускаются по расписанию или
-       администратором.
-    4. RP-система: 25+ действий с автоматическим HTML-упоминанием цели
-       (<a href="tg://user?id=...">Name</a>).
-    5. Команды чата: Поддержка сокращений (сл, кост, мон, рул), переводов,
-       вызова на дуэль, профиля.
-    6. Премиум эмодзи: Интегрирована карта ID (на основе
-       github.com/Zulut30/premium-telegram-emoji).
-    7. Архитектура: Строгая типизация (Python 3.10+), ORM-подобный
-       SQLite-враппер, модульная структура хендлеров.
-
-Структура кода:
-    - Секция 1: Импорты и зависимости
-    - Секция 2: Конфигурация и константы
-    - Секция 3: Система премиум эмодзи
-    - Секция 4: Игровые данные (зоны, оружие, броня)
-    - Секция 5: Арены и боссы
-    - Секция 6: Утилиты и UI-хелперы
-    - Секция 7: Система базы данных (SQLite Wrapper)
-    - Секция 8: Модели данных (Боец, Дуэль, События)
-    - Секция 9: Боевая логика и механики
-    - Секция 10: Управление дуэлью и таймерами
-    - Секция 11: ИИ бота и генерация соперников
-    - Секция 12: Казино и экономика
-    - Секция 13: Чатовые события (Боссы и Караваны)
-    - Секция 14: Промокоды
-    - Секция 15: RP-система
-    - Секция 16: Универсальный парсер целей
-    - Секция 17: Генераторы UI-экранов
-    - Секция 18: Хендлеры старта, меню, помощи
-    - Секция 19: Хендлеры чатовых команд
-    - Секция 20: Логика дуэли (запуск, раунды, завершение)
-    - Секция 21: Callback хендлеры (inline-кнопки)
-    - Секция 22: Fallback и запуск
-
-Требования:
-    - Python 3.10 или выше
-    - aiogram >= 3.0.0
-    - sqlite3 (встроен в стандартную библиотеку Python)
-
-Лицензия: MIT
-Автор: AI Assistant
-Версия: 7.1 Extended
-================================================================================
-"""
-
-# ==============================================================================
-# 1. ИМПОРТЫ И ЗАВИСИМОСТИ
-# ==============================================================================
-
-# Стандартная библиотека Python
-# ------------------------------------------------------------------------------
-# asyncio - для асинхронного выполнения кода и управления событиями
-# html - для безопасного экранирования HTML-тегов в пользовательском вводе
-# logging - для структурированного логирования событий приложения
-# os - для работы с переменными окружения и файловой системой
-# random - для генерации случайных чисел в игровой механике
-# re - для регулярных выражений при парсинге команд
-# sqlite3 - для работы с локальной базой данных SQLite
-# time - для работы с временными метками и задержками
-# traceback - для детального вывода стека вызовов при ошибках
 import asyncio
 import html
 import logging
@@ -87,77 +10,17 @@ import re
 import sqlite3
 import time
 import traceback
-
-# dataclasses - для создания структурированных моделей данных
-# field - для настройки полей dataclass (значения по умолчанию)
 from dataclasses import dataclass, field
+from typing import Optional, Tuple, List, Dict, Any, Union, Callable, Set
 
-# typing - для строгой типизации всех функций и классов
-# Optional - для указания опциональных значений (может быть None)
-# Tuple - для кортежей фиксированной длины
-# List - для списков переменной длины
-# Dict - для словарей (хэш-таблиц)
-# Any - для произвольных типов
-# Union - для объединения нескольких типов
-# Callable - для типов функций
-# Set - для множеств уникальных элементов
-# TypeVar - для создания обобщённых типов
-# Generic - для создания обобщённых классов
-from typing import (
-    Optional,
-    Tuple,
-    List,
-    Dict,
-    Any,
-    Union,
-    Callable,
-    Set,
-    TypeVar,
-    Generic,
-)
-
-# aiogram 3.x - современный фреймворк для Telegram-ботов
-# ------------------------------------------------------------------------------
-# Bot - основной класс бота для взаимодействия с Telegram API
-# Dispatcher - диспетчер для обработки входящих событий
-# F - фильтр для создания условий в хендлерах
-# Router - маршрутизатор для группировки хендлеров
 from aiogram import Bot, Dispatcher, F, Router
-
-# DefaultBotProperties - свойства бота по умолчанию (parse_mode и др.)
 from aiogram.client.default import DefaultBotProperties
-
-# ParseMode - режимы парсинга текста (HTML, Markdown, MarkdownV2)
 from aiogram.enums import ParseMode
-
-# TelegramBadRequest - ошибка при некорректном запросе к API
-# TelegramRetryAfter - ошибка при превышении лимита запросов (flood control)
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
-
-# Command - фильтр для команд (например, /start, /help)
-# CommandStart - специальный фильтр для команды /start
 from aiogram.filters import Command, CommandStart
-
-# FSMContext - контекст машины состояний для управления диалогами
 from aiogram.fsm.context import FSMContext
-
-# State - отдельное состояние FSM
-# StatesGroup - группа связанных состояний
 from aiogram.fsm.state import State, StatesGroup
-
-# MemoryStorage - хранилище состояний в памяти (для простых ботов)
 from aiogram.fsm.storage.memory import MemoryStorage
-
-# Типы Telegram-объектов:
-# BotCommand - команда бота для меню команд
-# CallbackQuery - запрос от inline-кнопки
-# InlineKeyboardButton - inline-кнопка
-# InlineKeyboardMarkup - inline-клавиатура
-# KeyboardButton - обычная кнопка reply-клавиатуры
-# Message - входящее сообщение
-# ReplyKeyboardMarkup - reply-клавиатура (постоянная)
-# ReplyKeyboardRemove - удаление reply-клавиатуры
-# User - объект пользователя Telegram
 from aiogram.types import (
     BotCommand,
     CallbackQuery,
@@ -167,85 +30,29 @@ from aiogram.types import (
     Message,
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
-    User,
 )
 
 
-# ==============================================================================
-# 2. КОНФИГУРАЦИЯ И КОНСТАНТЫ
-# ==============================================================================
-
 class Config:
-    """
-    Глобальная конфигурация бота.
-
-    Данный класс содержит все основные настройки приложения, сгруппированные
-    по категориям. В продакшн-среде настоятельно рекомендуется использовать
-    переменные окружения через os.getenv() или специализированные библиотеки
-    для управления конфигурацией (pydantic-settings, environs, python-decouple).
-
-    Attributes:
-        BOT_TOKEN: Токен бота от @BotFather. Хранить в секрете!
-        ADMIN_ID: Числовой ID администратора Telegram.
-        DB_PATH: Путь к файлу базы данных SQLite.
-
-        START_CRYSTALS: Стартовый баланс кристаллов для новых игроков.
-        TURN_TIMEOUT: Время на ход в дуэли (в секундах).
-        RP_COOLDOWN: Кулдаун между RP-действиями (в секундах).
-        TRANSFER_TAX: Налог на перевод кристаллов (в процентах).
-        MIN_TRANSFER: Минимальная сумма перевода.
-        MAX_TRANSFER: Максимальная сумма перевода.
-
-        CASINO_MIN_BET: Минимальная ставка в казино.
-        CASINO_MAX_BET: Максимальная ставка в казино.
-        CASINO_DAILY_LIMIT: Дневной лимит ставок.
-
-        BOT_GENERATION_COUNT: Количество скрытых ботов для матчмейкинга.
-        BOT_WIN_DISTRIBUTION: Распределение побед ботов по аренам.
-
-        EVENT_BOSS_BASE_HP: Базовое HP рейдового босса.
-        EVENT_CARAVAN_BASE_HP: Базовое HP каравана.
-        EVENT_MIN_DAMAGE: Минимальный урон по событию.
-        EVENT_MAX_DAMAGE: Максимальный урон по событию.
-
-        PROMO_MIN_CODE_LENGTH: Минимальная длина промокода.
-        PROMO_MAX_CODE_LENGTH: Максимальная длина промокода.
-
-        LOG_LEVEL: Уровень логирования (DEBUG, INFO, WARNING, ERROR, CRITICAL).
-        LOG_FORMAT: Формат строки лога.
-        LOG_DATE_FORMAT: Формат даты в логах.
-    """
-
-    # --- Авторизация и доступ ---
-    BOT_TOKEN  =  "8996813076:AAGq74gyRRW5fMxvHaIE190_B-tmzXk8aNA"
-    ADMIN_ID  =  "5356400377"
-
-    # --- База данных ---
+    BOT_TOKEN: str = os.getenv("8996813076:AAGq74gyRRW5fMxvHaIE190_B-tmzXk8aNA", "ВАШ_ТОКЕН_ЗДЕСЬ")
+    ADMIN_ID: int = int(os.getenv("ADMIN_ID", "5356400377"))
     DB_PATH: str = os.getenv("DB_PATH", "arena_ultimate.db")
-
-    # --- Игровые константы ---
     START_CRYSTALS: int = 500
     TURN_TIMEOUT: int = 45
     RP_COOLDOWN: int = 5
-    TRANSFER_TAX: float = 0.05  # 5% налог на перевод
+    TRANSFER_TAX: float = 0.05
     MIN_TRANSFER: int = 10
     MAX_TRANSFER: int = 100000
-
-    # --- Казино ---
     CASINO_MIN_BET: int = 10
     CASINO_MAX_BET: int = 50000
     CASINO_DAILY_LIMIT: int = 100000
     CASINO_BETS: List[int] = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000]
-
-    # --- Генерация ботов ---
     BOT_GENERATION_COUNT: int = 50
     BOT_WIN_DISTRIBUTION: Dict[str, float] = {
-        "bronze": 0.5,  # 50% ботов на бронзовой арене
-        "silver": 0.35,  # 35% ботов на серебряной арене
-        "gold": 0.15,  # 15% ботов на золотой арене
+        "bronze": 0.5,
+        "silver": 0.35,
+        "gold": 0.15,
     }
-
-    # --- Чатовые события ---
     EVENT_BOSS_BASE_HP: int = 2000
     EVENT_CARAVAN_BASE_HP: int = 1000
     EVENT_RAID_BASE_HP: int = 3000
@@ -254,95 +61,53 @@ class Config:
     EVENT_CRIT_CHANCE: float = 0.15
     EVENT_CRIT_MULT: float = 2.5
     EVENT_DEFAULT_DURATION_HOURS: float = 2.0
-
-    # --- Промокоды ---
     PROMO_MIN_CODE_LENGTH: int = 3
     PROMO_MAX_CODE_LENGTH: int = 20
     PROMO_MAX_USES: int = 1000
-    PROMO_MAX_HOURS: int = 8760  # 1 год
-
-    # --- Рейтинги и топы ---
+    PROMO_MAX_HOURS: int = 8760
     TOP_LEADERBOARD_SIZE: int = 20
     TOP_SHOW_SELF_RANK: bool = True
-
-    # --- Настройки логирования ---
     LOG_LEVEL: int = logging.INFO
     LOG_FORMAT: str = "%(asctime)s | %(levelname)-8s | %(name)s:%(lineno)d | %(message)s"
     LOG_DATE_FORMAT: str = "%Y-%m-%d %H:%M:%S"
 
 
-# Дополнительные игровые константы
-# ------------------------------------------------------------------------------
-
-# Базовое здоровье для всех игроков
 BASE_HP: int = 150
-
-# Минимальная и максимальная длина имени игрока
 MIN_NAME_LENGTH: int = 2
 MAX_NAME_LENGTH: int = 16
-
-# Максимальное количество владеемого оружия и брони
 MAX_OWNED_WEAPONS: int = 10
 MAX_OWNED_ARMORS: int = 30
-
-# Лимиты на размер лога боя (последние N записей)
 DUEL_LOG_LIMIT: int = 10
 DUEL_LOG_DISPLAY_LIMIT: int = 5
-
-# Максимальная длина текста сообщения Telegram
 TELEGRAM_MAX_TEXT_LENGTH: int = 4096
-
-# Задержка для anti-flood при рассылке
 BROADCAST_DELAY: float = 0.05
-
-# Количество попыток при генерации уникального имени бота
 BOT_NAME_GENERATION_ATTEMPTS: int = 300
-
-# Количество сохраняемых уведомлений на пользователя
 MAX_NOTIFICATIONS_PER_USER: int = 15
 
 
-# ==============================================================================
-# 3. СИСТЕМА ПРЕМИУМ ЭМОДЗИ
-# ==============================================================================
-# Источники ID: https://github.com/Zulut30/premium-telegram-emoji
-#
-# Telegram Premium позволяет использовать анимированные эмодзи с уникальными ID.
-# Эти ID можно получить через бота @getidsbot или аналогичные сервисы.
-# При отсутствии Premium у пользователя отобразится fallback (обычный эмодзи).
-
 PREMIUM_EMOJI_IDS: Dict[str, str] = {
-    # Основные игровые эмодзи
     "fire": "5368324170671202286",
     "sword": "5368324170671202287",
     "shield": "5368324170671202292",
     "heart": "5368324170671202293",
     "skull": "5368324170671202291",
     "trophy": "5368324170671202290",
-
-    # Экономика и казино
-    "crystal": "5368324170671202310",  # Новая валюта: Кристаллы
+    "crystal": "5368324170671202310",
     "coin": "5368324170671202288",
     "slot": "5368324170671202294",
     "dice": "5368324170671202295",
     "gift": "5368324170671202300",
     "promo": "5368324170671202301",
-
-    # Боссы и события
     "boss": "5368324170671202296",
     "glove": "5368324170671202297",
     "star": "5368324170671202298",
     "magic": "5368324170671202299",
     "lightning": "5368324170671202311",
     "meteor": "5368324170671202312",
-
-    # Зоны тела
     "zone_head": "5368324170671202320",
     "zone_torso": "5368324170671202321",
     "zone_arms": "5368324170671202322",
     "zone_legs": "5368324170671202323",
-
-    # Дополнительные эмодзи для UI
     "warning": "5368324170671202330",
     "success": "5368324170671202331",
     "error": "5368324170671202332",
@@ -357,170 +122,80 @@ PREMIUM_EMOJI_IDS: Dict[str, str] = {
 
 
 def get_premium_emoji(key: str, fallback: str) -> str:
-    """
-    Генерирует HTML-тег для премиум-эмодзи Telegram.
-
-    Функция возвращает специальный HTML-тег <tg-emoji>, который отображается
-    как анимированный эмодзи у пользователей с Telegram Premium. У обычных
-    пользователей отобразится fallback (обычный Unicode-эмодзи).
-
-    Args:
-        key: Ключ, соответствующий записи в PREMIUM_EMOJI_IDS.
-            Если ключ не найден в словаре, функция вернёт fallback.
-        fallback: Стандартный Unicode-эмодзи для отката, если ID не найден
-            или премиум-эмодзи не поддерживается клиентом пользователя.
-
-    Returns:
-        Строка формата:
-        - <tg-emoji emoji-id="...">fallback</tg-emoji> - если ID найден
-        - fallback - если ID не найден
-
-    Example:
-        >>> get_premium_emoji("fire", "🔥")
-        '<tg-emoji emoji-id="5368324170671202286">🔥</tg-emoji>'
-        >>> get_premium_emoji("unknown", "❓")
-        '❓'
-    """
     eid = PREMIUM_EMOJI_IDS.get(key)
     return f'<tg-emoji emoji-id="{eid}">{fallback}</tg-emoji>' if eid else fallback
 
 
-# ------------------------------------------------------------------------------
-# Инициализация глобальных переменных эмодзи для удобного доступа во всем коде.
-# Эти переменные можно использовать в любом месте приложения без необходимости
-# каждый раз вызывать функцию get_premium_emoji().
-# ------------------------------------------------------------------------------
+E_FIRE = get_premium_emoji("fire", "🔥")
+E_SWORD = get_premium_emoji("sword", "⚔️")
+E_SHIELD = get_premium_emoji("shield", "🛡")
+E_HEART = get_premium_emoji("heart", "❤️")
+E_SKULL = get_premium_emoji("skull", "💀")
+E_TROPHY = get_premium_emoji("trophy", "🏆")
+E_CRYSTAL = get_premium_emoji("crystal", "💎")
+E_COIN = get_premium_emoji("coin", "🪙")
+E_SLOT = get_premium_emoji("slot", "🎰")
+E_DICE = get_premium_emoji("dice", "🎲")
+E_GIFT = get_premium_emoji("gift", "🎁")
+E_PROMO = get_premium_emoji("promo", "🎟")
+E_BOSS = get_premium_emoji("boss", "👹")
+E_GLOVE = get_premium_emoji("glove", "🧤")
+E_STAR = get_premium_emoji("star", "⭐")
+E_MAGIC = get_premium_emoji("magic", "✨")
+E_LIGHTNING = get_premium_emoji("lightning", "⚡")
+E_METEOR = get_premium_emoji("meteor", "☄️")
+E_ZONE_HEAD = get_premium_emoji("zone_head", "🧠")
+E_ZONE_TORSO = get_premium_emoji("zone_torso", "🫀")
+E_ZONE_ARMS = get_premium_emoji("zone_arms", "💪")
+E_ZONE_LEGS = get_premium_emoji("zone_legs", "🦵")
+E_WARNING = get_premium_emoji("warning", "⚠️")
+E_SUCCESS = get_premium_emoji("success", "✅")
+E_ERROR = get_premium_emoji("error", "❌")
+E_INFO = get_premium_emoji("info", "ℹ️")
+E_CROWN = get_premium_emoji("crown", "👑")
+E_DIAMOND = get_premium_emoji("diamond", "💠")
+E_GEM = get_premium_emoji("gem", "💎")
+E_SCROLL = get_premium_emoji("scroll", "📜")
+E_BOOK = get_premium_emoji("book", "📖")
+E_POTION = get_premium_emoji("potion", "🧪")
 
-# Основные игровые эмодзи
-E_FIRE = get_premium_emoji("fire", "🔥")           # Огонь, горение
-E_SWORD = get_premium_emoji("sword", "⚔️")         # Меч, атака
-E_SHIELD = get_premium_emoji("shield", "🛡")       # Щит, защита
-E_HEART = get_premium_emoji("heart", "❤️")         # Сердце, здоровье
-E_SKULL = get_premium_emoji("skull", "💀")         # Череп, смерть, поражение
-E_TROPHY = get_premium_emoji("trophy", "🏆")       # Кубок, победа
-
-# Экономика и казино
-E_CRYSTAL = get_premium_emoji("crystal", "💎")     # Кристаллы (новая валюта)
-E_COIN = get_premium_emoji("coin", "🪙")           # Монета
-E_SLOT = get_premium_emoji("slot", "🎰")           # Слот-машина
-E_DICE = get_premium_emoji("dice", "🎲")           # Кости
-E_GIFT = get_premium_emoji("gift", "🎁")           # Подарок
-E_PROMO = get_premium_emoji("promo", "🎟")         # Промокод
-
-# Боссы и события
-E_BOSS = get_premium_emoji("boss", "👹")           # Босс
-E_GLOVE = get_premium_emoji("glove", "🧤")         # Перчатка (вызов)
-E_STAR = get_premium_emoji("star", "⭐")           # Звезда
-E_MAGIC = get_premium_emoji("magic", "✨")         # Магия
-E_LIGHTNING = get_premium_emoji("lightning", "⚡") # Молния
-E_METEOR = get_premium_emoji("meteor", "☄️")       # Метеор
-
-# Зоны тела для боя
-E_ZONE_HEAD = get_premium_emoji("zone_head", "🧠")   # Голова
-E_ZONE_TORSO = get_premium_emoji("zone_torso", "🫀") # Торс
-E_ZONE_ARMS = get_premium_emoji("zone_arms", "💪")   # Руки
-E_ZONE_LEGS = get_premium_emoji("zone_legs", "🦵")   # Ноги
-
-# UI-эмодзи
-E_WARNING = get_premium_emoji("warning", "⚠️")     # Предупреждение
-E_SUCCESS = get_premium_emoji("success", "✅")     # Успех
-E_ERROR = get_premium_emoji("error", "❌")         # Ошибка
-E_INFO = get_premium_emoji("info", "ℹ️")           # Информация
-E_CROWN = get_premium_emoji("crown", "👑")         # Корона
-E_DIAMOND = get_premium_emoji("diamond", "💠")     # Ромб
-E_GEM = get_premium_emoji("gem", "💎")             # Драгоценность
-E_SCROLL = get_premium_emoji("scroll", "📜")       # Свиток
-E_BOOK = get_premium_emoji("book", "📖")           # Книга
-E_POTION = get_premium_emoji("potion", "🧪")       # Зелье
-
-
-# ==============================================================================
-# 4. ИГРОВЫЕ ДАННЫЕ: ЗОНЫ, ОРУЖИЕ (3 ВАРИАНТА), БРОНЯ
-# ==============================================================================
-
-# ------------------------------------------------------------------------------
-# 4.1. ЗОНЫ ТЕЛА
-# ------------------------------------------------------------------------------
 
 ZONES: List[str] = ["head", "torso", "arms", "legs"]
 
 ZONE_INFO: Dict[str, Dict[str, Any]] = {
-    "head": dict(
-        name="Голова",
-        emoji=E_ZONE_HEAD,
-        mult=1.5,
-        desc="Высокий урон, но сложно попасть. Критические попадания!",
-        block_chance_bonus=0.1,  # Бонус к шансу блока для головы
-    ),
-    "torso": dict(
-        name="Торс",
-        emoji=E_ZONE_TORSO,
-        mult=1.0,
-        desc="Средний урон, стандартная цель. Базовый вариант.",
-        block_chance_bonus=0.0,
-    ),
-    "arms": dict(
-        name="Руки",
-        emoji=E_ZONE_ARMS,
-        mult=0.8,
-        desc="Низкий урон, но высокая точность попадания.",
-        block_chance_bonus=-0.1,
-    ),
-    "legs": dict(
-        name="Ноги",
-        emoji=E_ZONE_LEGS,
-        mult=0.9,
-        desc="Средний урон, шанс замедлить противника.",
-        block_chance_bonus=-0.05,
-    ),
+    "head": {
+        "name": "Голова",
+        "emoji": E_ZONE_HEAD,
+        "mult": 1.5,
+        "desc": "Высокий урон, но сложно попасть. Критические попадания!",
+        "block_chance_bonus": 0.1,
+    },
+    "torso": {
+        "name": "Торс",
+        "emoji": E_ZONE_TORSO,
+        "mult": 1.0,
+        "desc": "Средний урон, стандартная цель. Базовый вариант.",
+        "block_chance_bonus": 0.0,
+    },
+    "arms": {
+        "name": "Руки",
+        "emoji": E_ZONE_ARMS,
+        "mult": 0.8,
+        "desc": "Низкий урон, но высокая точность попадания.",
+        "block_chance_bonus": -0.1,
+    },
+    "legs": {
+        "name": "Ноги",
+        "emoji": E_ZONE_LEGS,
+        "mult": 0.9,
+        "desc": "Средний урон, шанс замедлить противника.",
+        "block_chance_bonus": -0.05,
+    },
 }
 
 
-# ------------------------------------------------------------------------------
-# 4.2. ВАРИАНТЫ АТАКИ
-# ------------------------------------------------------------------------------
-
 @dataclass
 class AttackVariant:
-    """
-    Представление одного из трех вариантов атаки для оружия.
-
-    Каждое оружие в игре имеет ровно 3 уникальных варианта атаки, которые
-    различаются по урону, пробитию брони, кулдауну и специальным эффектам.
-    Это добавляет тактическую глубину в боевую систему: игрок должен выбирать
-    между быстрой атакой без кулдауна и мощной атакой с длительным КД.
-
-    Attributes:
-        name: Название приема (например, "Размах", "Выпад", "Казнь").
-            Используется для отображения в UI и логах боя.
-        description: Краткое описание эффекта для игрока. Показывается
-            при выборе варианта атаки и в описании оружия.
-        damage_mult: Множитель базового урона оружия. Значение 1.0 означает
-            обычный урон, >1.0 - усиленный, <1.0 - ослабленный.
-        armor_penetration: Процент игнорирования брони цели. Значение
-            от 0.0 (без пробития) до 1.0 (полное игнорирование брони).
-        cooldown_rounds: Количество раундов, в течение которых прием
-            недоступен после использования. 0 означает отсутствие кулдауна.
-        effect: Специальный эффект, который может сработать при попадании.
-            Возможные значения:
-            - None: нет спецэффекта
-            - "triple": тройная атака (3 удара подряд)
-            - "bleed": кровотечение (периодический урон)
-            - "burn": горение (периодический урон)
-            - "stun": оглушение (пропуск хода)
-            - "pierce": пробитие (дополнительное игнорирование брони)
-            - "exec": казнь (двойной урон по слабым целям)
-
-    Example:
-        >>> variant = AttackVariant(
-        ...     name="Казнь",
-        ...     description="Двойной урон, но легко блокируется",
-        ...     damage_mult=2.0,
-        ...     armor_penetration=0.0,
-        ...     cooldown_rounds=4,
-        ...     effect="exec"
-        ... )
-    """
     name: str
     description: str
     damage_mult: float
@@ -529,22 +204,18 @@ class AttackVariant:
     effect: Optional[str] = None
 
 
-# ------------------------------------------------------------------------------
-# 4.3. ОРУЖИЕ С ТРЕМЯ ВАРИАНТАМИ АТАКИ
-# ------------------------------------------------------------------------------
-
 WEAPONS: Dict[str, Dict[str, Any]] = {
-    "fists": dict(
-        emoji="👊",
-        name="Кулаки",
-        base_dmg=10,
-        price=0,
-        description="Базовое оружие новичка. Быстрые, но слабые удары.",
-        tier="common",
-        variants=[
+    "fists": {
+        "emoji": "👊",
+        "name": "Кулаки",
+        "base_dmg": 10,
+        "price": 0,
+        "description": "Базовое оружие новичка. Быстрые, но слабые удары.",
+        "tier": "common",
+        "variants": [
             AttackVariant(
                 name="Джеб",
-                description="Быстрый удар, низкий шанс промаха. Идеально для试探",
+                description="Быстрый удар, низкий шанс промаха. Идеально для разведки",
                 damage_mult=0.8,
                 armor_penetration=0.0,
                 cooldown_rounds=0,
@@ -567,15 +238,15 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
                 effect="stun",
             ),
         ],
-    ),
-    "dagger": dict(
-        emoji="🗡",
-        name="Кинжал",
-        base_dmg=14,
-        price=200,
-        description="Быстрое оружие убийцы. Высокий шанс критических ударов.",
-        tier="uncommon",
-        variants=[
+    },
+    "dagger": {
+        "emoji": "🗡",
+        "name": "Кинжал",
+        "base_dmg": 14,
+        "price": 200,
+        "description": "Быстрое оружие убийцы. Высокий шанс критических ударов.",
+        "tier": "uncommon",
+        "variants": [
             AttackVariant(
                 name="Укол",
                 description="Точный удар в уязвимое место. Пробивает до 20% брони",
@@ -601,15 +272,15 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
                 effect="triple",
             ),
         ],
-    ),
-    "sword": dict(
-        emoji=E_SWORD,
-        name="Меч",
-        base_dmg=20,
-        price=500,
-        description="Классическое оружие воина. Сбалансированный урон и защита.",
-        tier="rare",
-        variants=[
+    },
+    "sword": {
+        "emoji": E_SWORD,
+        "name": "Меч",
+        "base_dmg": 20,
+        "price": 500,
+        "description": "Классическое оружие воина. Сбалансированный урон и защита.",
+        "tier": "rare",
+        "variants": [
             AttackVariant(
                 name="Размах",
                 description="Стандартная атака по площади. Надёжный и проверенный прием",
@@ -635,15 +306,15 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
                 effect="exec",
             ),
         ],
-    ),
-    "axe": dict(
-        emoji="🪓",
-        name="Топор",
-        base_dmg=26,
-        price=800,
-        description="Тяжёлое оружие варвара. Огромный урон, но медленные атаки.",
-        tier="rare",
-        variants=[
+    },
+    "axe": {
+        "emoji": "🪓",
+        "name": "Топор",
+        "base_dmg": 26,
+        "price": 800,
+        "description": "Тяжёлое оружие варвара. Огромный урон, но медленные атаки.",
+        "tier": "rare",
+        "variants": [
             AttackVariant(
                 name="Рубящий удар",
                 description="Тяжелая, но надежная атака. Пробивает 10% брони",
@@ -669,15 +340,15 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
                 effect=None,
             ),
         ],
-    ),
-    "bow": dict(
-        emoji="🏹",
-        name="Лук",
-        base_dmg=32,
-        price=1200,
-        description="Дальнобойное оружие охотника. Высокий урон на дистанции.",
-        tier="epic",
-        variants=[
+    },
+    "bow": {
+        "emoji": "🏹",
+        "name": "Лук",
+        "base_dmg": 32,
+        "price": 1200,
+        "description": "Дальнобойное оружие охотника. Высокий урон на дистанции.",
+        "tier": "epic",
+        "variants": [
             AttackVariant(
                 name="Прицельный выстрел",
                 description="Стандартная атака из лука. Пробивает 30% брони",
@@ -703,15 +374,15 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
                 effect="pierce",
             ),
         ],
-    ),
-    "staff": dict(
-        emoji=E_FIRE,
-        name="Посох",
-        base_dmg=38,
-        price=1700,
-        description="Магическое оружие чародея. Стихийные атаки и эффекты.",
-        tier="epic",
-        variants=[
+    },
+    "staff": {
+        "emoji": E_FIRE,
+        "name": "Посох",
+        "base_dmg": 38,
+        "price": 1700,
+        "description": "Магическое оружие чародея. Стихийные атаки и эффекты.",
+        "tier": "epic",
+        "variants": [
             AttackVariant(
                 name="Магический импульс",
                 description="Базовая магическая атака. Игнорирует 40% брони",
@@ -737,15 +408,15 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
                 effect="burn",
             ),
         ],
-    ),
-    "hammer": dict(
-        emoji="🔨",
-        name="Молот",
-        base_dmg=46,
-        price=2500,
-        description="Тяжёлое оружие паладина. Сокрушительные удары и оглушение.",
-        tier="legendary",
-        variants=[
+    },
+    "hammer": {
+        "emoji": "🔨",
+        "name": "Молот",
+        "base_dmg": 46,
+        "price": 2500,
+        "description": "Тяжёлое оружие паладина. Сокрушительные удары и оглушение.",
+        "tier": "legendary",
+        "variants": [
             AttackVariant(
                 name="Удар молотом",
                 description="Тяжелая физическая атака. Пробивает 30% брони",
@@ -771,46 +442,306 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
                 effect=None,
             ),
         ],
-    ),
+    },
 }
 
 
-# ------------------------------------------------------------------------------
-# 4.4. БРОНЯ ПО СЛОТАМ
-# ------------------------------------------------------------------------------
-
 ARMOR_DATA: Dict[str, List[Dict[str, Any]]] = {
     "head": [
-        dict(key="head_none", name="Без шлема", emoji="👕", df=0, hp=0, price=0, chance=0, dmg_bonus=0, desc="Полная уязвимость головы. Рискованно!", tier="none"),
-        dict(key="head_leather", name="Кожаный капюшон", emoji="🧢", df=2, hp=3, price=120, chance=3, dmg_bonus=0, desc="+3% шанс спец-атаки. Лёгкая защита.", tier="common"),
-        dict(key="head_iron", name="Железный шлем", emoji="⛑", df=4, hp=8, price=380, chance=0, dmg_bonus=0, desc="Базовая защита головы. Надёжно и недорого.", tier="common"),
-        dict(key="head_steel", name="Стальной шлем", emoji="🪖", df=7, hp=15, price=850, chance=0, dmg_bonus=10, desc="+10% урон спец-атаки. Военный стандарт.", tier="uncommon"),
-        dict(key="head_dragon", name="Драконий шлем", emoji="🐲", df=11, hp=25, price=1800, chance=8, dmg_bonus=20, desc="+8% шанс, +20% урон спец-атаки. Чешуя дракона.", tier="rare"),
-        dict(key="head_crown", name="Корона Лорда", emoji="👑", df=14, hp=30, price=3000, chance=12, dmg_bonus=25, desc="Максимальная защита и престиж. Королевский артефакт.", tier="legendary"),
+        {
+            "key": "head_none",
+            "name": "Без шлема",
+            "emoji": "👕",
+            "df": 0,
+            "hp": 0,
+            "price": 0,
+            "chance": 0,
+            "dmg_bonus": 0,
+            "desc": "Полная уязвимость головы. Рискованно!",
+            "tier": "none",
+        },
+        {
+            "key": "head_leather",
+            "name": "Кожаный капюшон",
+            "emoji": "🧢",
+            "df": 2,
+            "hp": 3,
+            "price": 120,
+            "chance": 3,
+            "dmg_bonus": 0,
+            "desc": "+3% шанс спец-атаки. Лёгкая защита.",
+            "tier": "common",
+        },
+        {
+            "key": "head_iron",
+            "name": "Железный шлем",
+            "emoji": "⛑",
+            "df": 4,
+            "hp": 8,
+            "price": 380,
+            "chance": 0,
+            "dmg_bonus": 0,
+            "desc": "Базовая защита головы. Надёжно и недорого.",
+            "tier": "common",
+        },
+        {
+            "key": "head_steel",
+            "name": "Стальной шлем",
+            "emoji": "🪖",
+            "df": 7,
+            "hp": 15,
+            "price": 850,
+            "chance": 0,
+            "dmg_bonus": 10,
+            "desc": "+10% урон спец-атаки. Военный стандарт.",
+            "tier": "uncommon",
+        },
+        {
+            "key": "head_dragon",
+            "name": "Драконий шлем",
+            "emoji": "🐲",
+            "df": 11,
+            "hp": 25,
+            "price": 1800,
+            "chance": 8,
+            "dmg_bonus": 20,
+            "desc": "+8% шанс, +20% урон спец-атаки. Чешуя дракона.",
+            "tier": "rare",
+        },
+        {
+            "key": "head_crown",
+            "name": "Корона Лорда",
+            "emoji": "👑",
+            "df": 14,
+            "hp": 30,
+            "price": 3000,
+            "chance": 12,
+            "dmg_bonus": 25,
+            "desc": "Максимальная защита и престиж. Королевский артефакт.",
+            "tier": "legendary",
+        },
     ],
     "torso": [
-        dict(key="torso_none", name="Без брони", emoji="👕", df=0, hp=0, price=0, chance=0, dmg_bonus=0, desc="Полная уязвимость торса. Очень опасно!", tier="none"),
-        dict(key="torso_robe", name="Мантия", emoji="🥋", df=3, hp=5, price=150, chance=4, dmg_bonus=0, desc="+4% шанс спец-атаки. Одежда мага.", tier="common"),
-        dict(key="torso_chain", name="Кольчуга", emoji=E_SHIELD, df=6, hp=12, price=480, chance=0, dmg_bonus=0, desc="Надежная защита корпуса. Плетёная сталь.", tier="common"),
-        dict(key="torso_plate", name="Латный доспех", emoji="🏋️", df=11, hp=22, price=1000, chance=0, dmg_bonus=15, desc="+15% урон спец-атаки. Рыцарская броня.", tier="uncommon"),
-        dict(key="torso_titan", name="Титановый панцирь", emoji=E_STAR, df=17, hp=35, price=2200, chance=10, dmg_bonus=25, desc="+10% шанс, +25% урон спец-атаки. Сплав богов.", tier="rare"),
-        dict(key="torso_aegis", name="Эгида", emoji="🌟", df=22, hp=45, price=3500, chance=15, dmg_bonus=30, desc="Легендарная защита Зевса. Максимум статов.", tier="legendary"),
+        {
+            "key": "torso_none",
+            "name": "Без брони",
+            "emoji": "👕",
+            "df": 0,
+            "hp": 0,
+            "price": 0,
+            "chance": 0,
+            "dmg_bonus": 0,
+            "desc": "Полная уязвимость торса. Очень опасно!",
+            "tier": "none",
+        },
+        {
+            "key": "torso_robe",
+            "name": "Мантия",
+            "emoji": "🥋",
+            "df": 3,
+            "hp": 5,
+            "price": 150,
+            "chance": 4,
+            "dmg_bonus": 0,
+            "desc": "+4% шанс спец-атаки. Одежда мага.",
+            "tier": "common",
+        },
+        {
+            "key": "torso_chain",
+            "name": "Кольчуга",
+            "emoji": E_SHIELD,
+            "df": 6,
+            "hp": 12,
+            "price": 480,
+            "chance": 0,
+            "dmg_bonus": 0,
+            "desc": "Надежная защита корпуса. Плетёная сталь.",
+            "tier": "common",
+        },
+        {
+            "key": "torso_plate",
+            "name": "Латный доспех",
+            "emoji": "🏋️",
+            "df": 11,
+            "hp": 22,
+            "price": 1000,
+            "chance": 0,
+            "dmg_bonus": 15,
+            "desc": "+15% урон спец-атаки. Рыцарская броня.",
+            "tier": "uncommon",
+        },
+        {
+            "key": "torso_titan",
+            "name": "Титановый панцирь",
+            "emoji": E_STAR,
+            "df": 17,
+            "hp": 35,
+            "price": 2200,
+            "chance": 10,
+            "dmg_bonus": 25,
+            "desc": "+10% шанс, +25% урон спец-атаки. Сплав богов.",
+            "tier": "rare",
+        },
+        {
+            "key": "torso_aegis",
+            "name": "Эгида",
+            "emoji": "🌟",
+            "df": 22,
+            "hp": 45,
+            "price": 3500,
+            "chance": 15,
+            "dmg_bonus": 30,
+            "desc": "Легендарная защита Зевса. Максимум статов.",
+            "tier": "legendary",
+        },
     ],
     "arms": [
-        dict(key="arms_none", name="Без наручей", emoji="👕", df=0, hp=0, price=0, chance=0, dmg_bonus=0, desc="Полная уязвимость рук. Быстро, но рискованно.", tier="none"),
-        dict(key="arms_cloth", name="Тканевые бинты", emoji="🩹", df=2, hp=2, price=100, chance=3, dmg_bonus=0, desc="+3% шанс спец-атаки. Монашеская обмотка.", tier="common"),
-        dict(key="arms_iron", name="Железные наручи", emoji=E_SHIELD, df=4, hp=8, price=350, chance=0, dmg_bonus=0, desc="Базовая защита рук. Стандартное оснащение.", tier="common"),
-        dict(key="arms_steel", name="Стальные латы", emoji="⚙️", df=7, hp=14, price=800, chance=0, dmg_bonus=10, desc="+10% урон спец-атаки. Кованая сталь.", tier="uncommon"),
-        dict(key="arms_runic", name="Рунические наручи", emoji="🔮", df=11, hp=22, price=1700, chance=8, dmg_bonus=20, desc="+8% шанс, +20% урон спец-атаки. Магические руны.", tier="rare"),
-        dict(key="arms_berserk", name="Наручи Берсерка", emoji="🩸", df=9, hp=18, price=1500, chance=5, dmg_bonus=35, desc="-2 защиты, но +35% урона спец-атак. Для ярости.", tier="rare"),
+        {
+            "key": "arms_none",
+            "name": "Без наручей",
+            "emoji": "👕",
+            "df": 0,
+            "hp": 0,
+            "price": 0,
+            "chance": 0,
+            "dmg_bonus": 0,
+            "desc": "Полная уязвимость рук. Быстро, но рискованно.",
+            "tier": "none",
+        },
+        {
+            "key": "arms_cloth",
+            "name": "Тканевые бинты",
+            "emoji": "🩹",
+            "df": 2,
+            "hp": 2,
+            "price": 100,
+            "chance": 3,
+            "dmg_bonus": 0,
+            "desc": "+3% шанс спец-атаки. Монашеская обмотка.",
+            "tier": "common",
+        },
+        {
+            "key": "arms_iron",
+            "name": "Железные наручи",
+            "emoji": E_SHIELD,
+            "df": 4,
+            "hp": 8,
+            "price": 350,
+            "chance": 0,
+            "dmg_bonus": 0,
+            "desc": "Базовая защита рук. Стандартное оснащение.",
+            "tier": "common",
+        },
+        {
+            "key": "arms_steel",
+            "name": "Стальные латы",
+            "emoji": "⚙️",
+            "df": 7,
+            "hp": 14,
+            "price": 800,
+            "chance": 0,
+            "dmg_bonus": 10,
+            "desc": "+10% урон спец-атаки. Кованая сталь.",
+            "tier": "uncommon",
+        },
+        {
+            "key": "arms_runic",
+            "name": "Рунические наручи",
+            "emoji": "🔮",
+            "df": 11,
+            "hp": 22,
+            "price": 1700,
+            "chance": 8,
+            "dmg_bonus": 20,
+            "desc": "+8% шанс, +20% урон спец-атаки. Магические руны.",
+            "tier": "rare",
+        },
+        {
+            "key": "arms_berserk",
+            "name": "Наручи Берсерка",
+            "emoji": "🩸",
+            "df": 9,
+            "hp": 18,
+            "price": 1500,
+            "chance": 5,
+            "dmg_bonus": 35,
+            "desc": "-2 защиты, но +35% урона спец-атак. Для ярости.",
+            "tier": "rare",
+        },
     ],
     "legs": [
-        dict(key="legs_none", name="Без поножей", emoji="👕", df=0, hp=0, price=0, chance=0, dmg_bonus=0, desc="Полная уязвимость ног. Максимальная мобильность.", tier="none"),
-        dict(key="legs_cloth", name="Тканевые штаны", emoji="👖", df=2, hp=3, price=110, chance=3, dmg_bonus=0, desc="+3% шанс спец-атаки. Лёгкая одежда.", tier="common"),
-        dict(key="legs_iron", name="Железные поножи", emoji=E_SHIELD, df=5, hp=10, price=400, chance=0, dmg_bonus=0, desc="Базовая защита ног. Баланс веса и защиты.", tier="common"),
-        dict(key="legs_steel", name="Стальные поножи", emoji="⚙️", df=8, hp=16, price=900, chance=0, dmg_bonus=10, desc="+10% урон спец-атаки. Усиленная защита.", tier="uncommon"),
-        dict(key="legs_demon", name="Демонические поножи", emoji="😈", df=12, hp=25, price=1900, chance=8, dmg_bonus=20, desc="+8% шанс, +20% урон спец-атаки. Кожа демона.", tier="rare"),
-        dict(key="legs_wind", name="Поножи Ветра", emoji=E_ZONE_LEGS, df=6, hp=12, price=1100, chance=10, dmg_bonus=5, desc="+10% шанс уворота, +5% урона. Скорость ветра.", tier="rare"),
+        {
+            "key": "legs_none",
+            "name": "Без поножей",
+            "emoji": "👕",
+            "df": 0,
+            "hp": 0,
+            "price": 0,
+            "chance": 0,
+            "dmg_bonus": 0,
+            "desc": "Полная уязвимость ног. Максимальная мобильность.",
+            "tier": "none",
+        },
+        {
+            "key": "legs_cloth",
+            "name": "Тканевые штаны",
+            "emoji": "👖",
+            "df": 2,
+            "hp": 3,
+            "price": 110,
+            "chance": 3,
+            "dmg_bonus": 0,
+            "desc": "+3% шанс спец-атаки. Лёгкая одежда.",
+            "tier": "common",
+        },
+        {
+            "key": "legs_iron",
+            "name": "Железные поножи",
+            "emoji": E_SHIELD,
+            "df": 5,
+            "hp": 10,
+            "price": 400,
+            "chance": 0,
+            "dmg_bonus": 0,
+            "desc": "Базовая защита ног. Баланс веса и защиты.",
+            "tier": "common",
+        },
+        {
+            "key": "legs_steel",
+            "name": "Стальные поножи",
+            "emoji": "⚙️",
+            "df": 8,
+            "hp": 16,
+            "price": 900,
+            "chance": 0,
+            "dmg_bonus": 10,
+            "desc": "+10% урон спец-атаки. Усиленная защита.",
+            "tier": "uncommon",
+        },
+        {
+            "key": "legs_demon",
+            "name": "Демонические поножи",
+            "emoji": "😈",
+            "df": 12,
+            "hp": 25,
+            "price": 1900,
+            "chance": 8,
+            "dmg_bonus": 20,
+            "desc": "+8% шанс, +20% урон спец-атаки. Кожа демона.",
+            "tier": "rare",
+        },
+        {
+            "key": "legs_wind",
+            "name": "Поножи Ветра",
+            "emoji": E_ZONE_LEGS,
+            "df": 6,
+            "hp": 12,
+            "price": 1100,
+            "chance": 10,
+            "dmg_bonus": 5,
+            "desc": "+10% шанс уворота, +5% урона. Скорость ветра.",
+            "tier": "rare",
+        },
     ],
 }
 
@@ -822,304 +753,192 @@ START_ARMOR_KEYS: List[str] = [
     "legs_none",
 ]
 
-# Стартовое оружие для всех новых игроков
 START_WEAPON: str = "fists"
 
-# Базовые статы для всех игроков
-BASE_STATS: Dict[str, int] = dict(hp=BASE_HP)
+BASE_STATS: Dict[str, int] = {"hp": BASE_HP}
 
-
-# ==============================================================================
-# 5. АРЕНЫ И БОССЫ
-# ==============================================================================
-
-# ------------------------------------------------------------------------------
-# 5.1. АРЕНЫ (ЛИГИ)
-# ------------------------------------------------------------------------------
 
 ARENAS: Dict[str, Dict[str, Any]] = {
-    "bronze": dict(
-        name="Бронзовая арена",
-        emoji="🥉",
-        min_wins=0,
-        max_wins=9,
-        prize=50,
-        color="#cd7f32",
-        description="Арена для новичков. Здесь начинают свой путь все бойцы.",
-        min_level=1,
-        background="🟫",
-    ),
-    "silver": dict(
-        name="Серебряная арена",
-        emoji="🥈",
-        min_wins=10,
-        max_wins=29,
-        prize=100,
-        color="#c0c0c0",
-        description="Арена для опытных воинов. Серьёзные противники и награды.",
-        min_level=10,
-        background="⬜",
-    ),
-    "gold": dict(
-        name="Золотая арена",
-        emoji="🥇",
-        min_wins=30,
-        max_wins=10**9,
-        prize=200,
-        color="#ffd700",
-        description="Элитная арена для мастеров. Легенды сражаются здесь.",
-        min_level=30,
-        background="🟨",
-    ),
+    "bronze": {
+        "name": "Бронзовая арена",
+        "emoji": "🥉",
+        "min_wins": 0,
+        "max_wins": 9,
+        "prize": 50,
+        "color": "#cd7f32",
+        "description": "Арена для новичков. Здесь начинают свой путь все бойцы.",
+        "min_level": 1,
+        "background": "🟫",
+    },
+    "silver": {
+        "name": "Серебряная арена",
+        "emoji": "🥈",
+        "min_wins": 10,
+        "max_wins": 29,
+        "prize": 100,
+        "color": "#c0c0c0",
+        "description": "Арена для опытных воинов. Серьёзные противники и награды.",
+        "min_level": 10,
+        "background": "⬜",
+    },
+    "gold": {
+        "name": "Золотая арена",
+        "emoji": "🥇",
+        "min_wins": 30,
+        "max_wins": 10**9,
+        "prize": 200,
+        "color": "#ffd700",
+        "description": "Элитная арена для мастеров. Легенды сражаются здесь.",
+        "min_level": 30,
+        "background": "🟨",
+    },
 }
 
 ARENA_ORDER: List[str] = ["bronze", "silver", "gold"]
 
 
-# ------------------------------------------------------------------------------
-# 5.2. БОССЫ ДЛЯ СОЛО-РЕЖИМА
-# ------------------------------------------------------------------------------
-
 BOSSES: Dict[str, Dict[str, Any]] = {
-    "goblin": dict(
-        key="goblin",
-        name="👺 Гоблин-Вождь",
-        desc="Хитрый и злой. Бьёт по слабой броне, использует кинжал. Быстрый и ловкий.",
-        hp=160,
-        weapon="dagger",
-        armor_keys={
+    "goblin": {
+        "key": "goblin",
+        "name": "👺 Гоблин-Вождь",
+        "desc": "Хитрый и злой. Бьёт по слабой броне, использует кинжал. Быстрый и ловкий.",
+        "hp": 160,
+        "weapon": "dagger",
+        "armor_keys": {
             "head": "head_leather",
             "torso": "torso_robe",
             "arms": "arms_none",
             "legs": "legs_none",
         },
-        reward_mult=3,
-        min_wins=0,
-        difficulty="easy",
-        lore="Вождь лесных гоблинов, известный своей хитростью и жестокостью.",
-    ),
-    "dragon": dict(
-        key="dragon",
-        name="🐉 Древний Дракон",
-        desc="Огнедышащий ужас. Оружие — посох, драконья чешуя вместо брони.",
-        hp=260,
-        weapon="staff",
-        armor_keys={
+        "reward_mult": 3,
+        "min_wins": 0,
+        "difficulty": "easy",
+        "lore": "Вождь лесных гоблинов, известный своей хитростью и жестокостью.",
+    },
+    "dragon": {
+        "key": "dragon",
+        "name": "🐉 Древний Дракон",
+        "desc": "Огнедышащий ужас. Оружие — посох, драконья чешуя вместо брони.",
+        "hp": 260,
+        "weapon": "staff",
+        "armor_keys": {
             "head": "head_steel",
             "torso": "torso_plate",
             "arms": "arms_iron",
             "legs": "legs_iron",
         },
-        reward_mult=5,
-        min_wins=5,
-        difficulty="medium",
-        lore="Древний дракон, пробудившийся от тысячелетнего сна.",
-    ),
-    "lord": dict(
-        key="lord",
-        name="👹 Древний Лорд",
-        desc="Владыка арены. Молот разрушения и полная драконья экипировка.",
-        hp=380,
-        weapon="hammer",
-        armor_keys={
+        "reward_mult": 5,
+        "min_wins": 5,
+        "difficulty": "medium",
+        "lore": "Древний дракон, пробудившийся от тысячелетнего сна.",
+    },
+    "lord": {
+        "key": "lord",
+        "name": "👹 Древний Лорд",
+        "desc": "Владыка арены. Молот разрушения и полная драконья экипировка.",
+        "hp": 380,
+        "weapon": "hammer",
+        "armor_keys": {
             "head": "head_dragon",
             "torso": "torso_titan",
             "arms": "arms_runic",
             "legs": "legs_demon",
         },
-        reward_mult=10,
-        min_wins=15,
-        difficulty="hard",
-        lore="Павший лорд, ставший тёмным владыкой арены.",
-    ),
-    "titan": dict(
-        key="titan",
-        name="🗿 Каменный Титан",
-        desc="Неуязвимая глыба. Огромная защита, но медленные атаки.",
-        hp=500,
-        weapon="fists",
-        armor_keys={
+        "reward_mult": 10,
+        "min_wins": 15,
+        "difficulty": "hard",
+        "lore": "Павший лорд, ставший тёмным владыкой арены.",
+    },
+    "titan": {
+        "key": "titan",
+        "name": "🗿 Каменный Титан",
+        "desc": "Неуязвимая глыба. Огромная защита, но медленные атаки.",
+        "hp": 500,
+        "weapon": "fists",
+        "armor_keys": {
             "head": "head_crown",
             "torso": "torso_aegis",
             "arms": "arms_berserk",
             "legs": "legs_wind",
         },
-        reward_mult=15,
-        min_wins=35,
-        difficulty="extreme",
-        lore="Древний титан, пробуждённый магией. Его кожа — камень, его кулаки — горы.",
-    ),
-    "demon_king": dict(
-        key="demon_king",
-        name="😈 Король Демонов",
-        desc="Повелитель преисподней. Смесь всех стихий и максимальные статы.",
-        hp=750,
-        weapon="staff",
-        armor_keys={
+        "reward_mult": 15,
+        "min_wins": 35,
+        "difficulty": "extreme",
+        "lore": "Древний титан, пробуждённый магией. Его кожа — камень, его кулаки — горы.",
+    },
+    "demon_king": {
+        "key": "demon_king",
+        "name": "😈 Король Демонов",
+        "desc": "Повелитель преисподней. Смесь всех стихий и максимальные статы.",
+        "hp": 750,
+        "weapon": "staff",
+        "armor_keys": {
             "head": "head_crown",
             "torso": "torso_aegis",
             "arms": "arms_runic",
             "legs": "legs_demon",
         },
-        reward_mult=25,
-        min_wins=50,
-        difficulty="nightmare",
-        lore="Сам Король Демонов спустился в арену, чтобы испытать достойных.",
-    ),
+        "reward_mult": 25,
+        "min_wins": 50,
+        "difficulty": "nightmare",
+        "lore": "Сам Король Демонов спустился в арену, чтобы испытать достойных.",
+    },
 }
 
-
-# ------------------------------------------------------------------------------
-# 5.3. ЧАТОВЫЕ СОБЫТИЯ (БОССЫ, КАРАВАНЫ, НАБЕГИ)
-# ------------------------------------------------------------------------------
 
 CHAT_EVENT_TEMPLATES: Dict[str, Dict[str, Any]] = {
-    "boss": dict(
-        name_template="{emoji} Рейдовый Босс",
-        emoji=E_BOSS,
-        base_hp=2000,
-        duration_hours=2.0,
-        reward_per_participant=(50, 150),
-        description="Могущественное существо появилось в чате! Объединитесь, чтобы победить его.",
-        announce_text="🚨 <b>ВНИМАНИЕ!</b>\n\n{emoji} <b>Рейдовый Босс</b> появился в чате!\nHP: {hp}\n\nИспользуйте команду <code>атака</code>, чтобы нанести урон и получить награды!",
-    ),
-    "caravan": dict(
-        name_template="🐪 Золотой Караван",
-        emoji="🐪",
-        base_hp=1000,
-        duration_hours=1.0,
-        reward_per_participant=(30, 100),
-        description="Богатый караван проезжает через чат! Ограбьте его, пока он не ушёл.",
-        announce_text="🚨 <b>ВНИМАНИЕ!</b>\n\n🐪 <b>Золотой Караван</b> проезжает через чат!\nHP: {hp}\n\nИспользуйте команду <code>атака</code>, чтобы ограбить его!",
-    ),
-    "raid": dict(
-        name_template="⚔️ Набег Орков",
-        emoji="⚔️",
-        base_hp=3000,
-        duration_hours=3.0,
-        reward_per_participant=(80, 200),
-        description="Орда орков атакует чат! Отразите набег совместными усилиями.",
-        announce_text="🚨 <b>ВНИМАНИЕ!</b>\n\n⚔️ <b>Набег Орков</b> начался!\nHP: {hp}\n\nИспользуйте команду <code>атака</code>, чтобы защитить чат!",
-    ),
-    "dragon_raid": dict(
-        name_template="🐉 Нашествие Драконов",
-        emoji="🐉",
-        base_hp=5000,
-        duration_hours=4.0,
-        reward_per_participant=(150, 350),
-        description="Стая драконов атакует! Это самое сложное испытание.",
-        announce_text="🚨 <b>ВНИМАНИЕ!</b>\n\n🐉 <b>Нашествие Драконов</b> началось!\nHP: {hp}\n\nИспользуйте команду <code>атака</code>, чтобы победить драконов!",
-    ),
+    "boss": {
+        "name_template": "{emoji} Рейдовый Босс",
+        "emoji": E_BOSS,
+        "base_hp": 2000,
+        "duration_hours": 2.0,
+        "reward_per_participant": (50, 150),
+        "description": "Могущественное существо появилось в чате! Объединитесь, чтобы победить его.",
+        "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n{emoji} <b>Рейдовый Босс</b> появился в чате!\nHP: {hp}\n\nИспользуйте команду <code>атака</code>, чтобы нанести урон и получить награды!",
+    },
+    "caravan": {
+        "name_template": "🐪 Золотой Караван",
+        "emoji": "🐪",
+        "base_hp": 1000,
+        "duration_hours": 1.0,
+        "reward_per_participant": (30, 100),
+        "description": "Богатый караван проезжает через чат! Ограбьте его, пока он не ушёл.",
+        "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n🐪 <b>Золотой Караван</b> проезжает через чат!\nHP: {hp}\n\nИспользуйте команду <code>атака</code>, чтобы ограбить его!",
+    },
+    "raid": {
+        "name_template": "⚔️ Набег Орков",
+        "emoji": "⚔️",
+        "base_hp": 3000,
+        "duration_hours": 3.0,
+        "reward_per_participant": (80, 200),
+        "description": "Орда орков атакует чат! Отразите набег совместными усилиями.",
+        "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n⚔️ <b>Набег Орков</b> начался!\nHP: {hp}\n\nИспользуйте команду <code>атака</code>, чтобы защитить чат!",
+    },
+    "dragon_raid": {
+        "name_template": "🐉 Нашествие Драконов",
+        "emoji": "🐉",
+        "base_hp": 5000,
+        "duration_hours": 4.0,
+        "reward_per_participant": (150, 350),
+        "description": "Стая драконов атакует! Это самое сложное испытание.",
+        "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n🐉 <b>Нашествие Драконов</b> началось!\nHP: {hp}\n\nИспользуйте команду <code>атака</code>, чтобы победить драконов!",
+    },
 }
 
 
-# ==============================================================================
-# 6. УТИЛИТЫ И UI ХЕЛПЕРЫ
-# ==============================================================================
-
 def esc(text: Any) -> str:
-    """
-    Безопасное экранирование HTML-тегов в пользовательском вводе.
-
-    Функция преобразует любой входной объект в строку и экранирует специальные
-    HTML-символы (<, >, &, ", ') для предотвращения XSS-атак и ошибок парсинга.
-    Это критически важно при вставке пользовательского ввода в HTML-сообщения.
-
-    Args:
-        text: Любой объект, который нужно преобразовать в строку и экранировать.
-            Если передан None, вернётся строка "None".
-
-    Returns:
-        Безопасная для вставки в HTML строка, где:
-        - < заменено на &lt;
-        - > заменено на &gt;
-        - & заменено на &amp;
-        - " заменено на &quot;
-        - ' заменено на &#x27;
-
-    Example:
-        >>> esc("<script>alert('xss')</script>")
-        "&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;"
-        >>> esc(None)
-        "None"
-        >>> esc(123)
-        "123"
-    """
     return html.escape(str(text))
 
 
 def create_mention(user_id: int, name: str) -> str:
-    """
-    Создаёт HTML-ссылку на профиль пользователя Telegram для упоминания в RP.
-
-    Telegram поддерживает deep links вида tg://user?id=<user_id>, которые
-    при клике открывают профиль пользователя. Эта функция создаёт такую ссылку
-    с безопасным отображаемым именем.
-
-    Args:
-        user_id: Числовой идентификатор пользователя Telegram.
-            Должен быть положительным целым числом.
-        name: Отображаемое имя пользователя. Будет экранировано для
-            безопасности перед вставкой в HTML.
-
-    Returns:
-        Строка формата <a href="tg://user?id={user_id}">{name}</a>,
-        которая при отображении в Telegram превратится в кликабельное
-        упоминание пользователя.
-
-    Example:
-        >>> create_mention(123456789, "Иван")
-        '<a href="tg://user?id=123456789">Иван</a>'
-    """
     return f'<a href="tg://user?id={user_id}">{esc(name)}</a>'
 
 
 def create_button(text: str, callback_data: str) -> InlineKeyboardButton:
-    """
-    Создаёт Inline-кнопку для клавиатуры Telegram.
-
-    Inline-кнопки отображаются под сообщением и при нажатии отправляют
-    callback-запрос боту с указанными данными.
-
-    Args:
-        text: Текст, отображаемый на кнопке. Может содержать эмодзи.
-            Максимальная длина определяется Telegram (обычно 64 символа).
-        callback_data: Строка данных, которая будет отправлена боту при
-            нажатии кнопки. Максимальная длина: 64 байта.
-
-    Returns:
-        Объект InlineKeyboardButton, готовый к использованию в клавиатуре.
-
-    Note:
-        В aiogram 3.x параметр style был удалён из InlineKeyboardButton,
-        поэтому цветовая стилизация кнопок недоступна на уровне протокола.
-    """
     return InlineKeyboardButton(text=text, callback_data=callback_data)
 
 
 def build_inline_keyboard(*rows: List[Tuple[str, str]]) -> InlineKeyboardMarkup:
-    """
-    Строит Inline-клавиатуру из кортежей (текст, callback_data).
-
-    Удобная функция-обёртка для быстрого создания inline-клавиатур.
-    Принимает произвольное количество строк, где каждая строка - это
-    список кортежей (текст_кнопки, callback_data).
-
-    Args:
-        *rows: Переменное количество строк, где каждая строка - это список
-            кортежей вида (текст_кнопки, callback_data).
-            Пример:
-            [("Кнопка 1", "data1"), ("Кнопка 2", "data2")]
-
-    Returns:
-        Объект InlineKeyboardMarkup, готовый к отправке с сообщением.
-
-    Example:
-        >>> kb = build_inline_keyboard(
-        ...     [("Да", "yes"), ("Нет", "no")],
-        ...     [("Отмена", "cancel")]
-        ... )
-    """
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [create_button(item[0], item[1]) for item in row]
@@ -1133,31 +952,6 @@ async def safe_edit_message(
     text: str,
     markup: Optional[InlineKeyboardMarkup] = None
 ) -> bool:
-    """
-    Безопасно редактирует сообщение, обрабатывая типичные ошибки Telegram API.
-
-    Функция пытается отредактировать существующее сообщение. Если это не
-    удаётся (например, из-за ошибки "message is not modified"), пытается
-    отправить новое сообщение вместо редактирования.
-
-    Args:
-        cb: Объект CallbackQuery, содержащий исходное сообщение, которое
-            нужно отредактировать.
-        text: Новый текст сообщения. Будет обрезан до 4090 символов
-            (лимит Telegram - 4096, оставляем запас).
-        markup: Новая inline-клавиатура (опционально). Если None,
-            клавиатура будет удалена.
-
-    Returns:
-        True, если редактирование или отправка нового сообщения прошли успешно.
-        False в случае критической ошибки.
-
-    Note:
-        Функция обрабатывает следующие случаи:
-        - "message is not modified" - когда новый текст совпадает со старым
-        - Прочие TelegramBadRequest - fallback на отправку нового сообщения
-        - Любые другие исключения - логируются и возвращается False
-    """
     try:
         await cb.message.edit_text(
             text[:4090],
@@ -1184,114 +978,28 @@ async def safe_edit_message(
 
 
 def format_number(num: int) -> str:
-    """
-    Форматирует число с разделителями тысяч для удобного отображения.
-
-    Args:
-        num: Целое число для форматирования.
-
-    Returns:
-        Строка с числом, где тысячи разделены пробелами.
-
-    Example:
-        >>> format_number(1234567)
-        "1 234 567"
-        >>> format_number(500)
-        "500"
-    """
     return f"{num:,}".replace(",", " ")
 
 
 def truncate_text(text: str, max_length: int = 100, suffix: str = "...") -> str:
-    """
-    Обрезает текст до указанной длины, добавляя суффикс.
-
-    Args:
-        text: Исходный текст для обрезки.
-        max_length: Максимальная длина результирующей строки (включая суффикс).
-        suffix: Суффикс, добавляемый при обрезке (по умолчанию "...").
-
-    Returns:
-        Обрезанная строка, если исходная длиннее max_length, иначе исходная.
-    """
     if len(text) <= max_length:
         return text
     return text[:max_length - len(suffix)] + suffix
 
 
-# ==============================================================================
-# 7. СИСТЕМА БАЗЫ ДАННЫХ (SQLite Wrapper)
-# ==============================================================================
-
 class DatabaseManager:
-    """
-    Менеджер базы данных для управления состоянием игроков, уведомлений,
-    статистики, промокодов и глобальных чатовых событий.
-
-    Этот класс предоставляет ORM-подобный интерфейс для работы с SQLite,
-    оборачивая низкоуровневые операции в удобные методы с обработкой ошибок.
-    Использует sqlite3 с отключенной проверкой потока (check_same_thread=False)
-    для совместимости с асинхронным циклом asyncio. Включение isolation_level=None
-    обеспечивает режим autocommit для простых операций.
-
-    Attributes:
-        db_path: Путь к файлу базы данных SQLite.
-        _connection: Активное соединение с базой данных.
-
-    Methods:
-        fetch_one: Выполняет SELECT и возвращает одну строку.
-        fetch_all: Выполняет SELECT и возвращает все строки.
-        execute: Выполняет INSERT/UPDATE/DELETE.
-        close: Закрывает соединение с БД.
-    """
-
     def __init__(self, db_path: str):
-        """
-        Инициализирует менеджер базы данных.
-
-        При создании экземпляра автоматически:
-        1. Подключается к указанному файлу БД (создаёт, если не существует)
-        2. Настраивает row_factory для удобного доступа к полям по имени
-        3. Инициализирует схему БД (создаёт таблицы, если их нет)
-
-        Args:
-            db_path: Путь к файлу базы данных SQLite. Может быть абсолютным
-                или относительным. Если файл не существует, он будет создан.
-        """
         self.db_path = db_path
         self._connection = sqlite3.connect(
             db_path,
-            check_same_thread=False,  # Для работы с asyncio
-            isolation_level=None,     # Autocommit режим
+            check_same_thread=False,
+            isolation_level=None,
         )
-        self._connection.row_factory = sqlite3.Row  # Доступ по имени поля
+        self._connection.row_factory = sqlite3.Row
         self._init_schema()
 
     def _init_schema(self) -> None:
-        """
-        Инициализирует схему базы данных при первом запуске бота.
-
-        Создаёт все необходимые таблицы и индексы, если они ещё не существуют.
-        Использование CREATE TABLE IF NOT EXISTS гарантирует идемпотентность -
-        повторные запуски не вызовут ошибок.
-
-        Таблицы:
-            - players: основные данные игроков
-            - notifications: система уведомлений
-            - promo_codes: определение промокодов
-            - promo_activations: история активаций промокодов
-            - chat_events: активные чатовые события
-            - player_stats: расширенная статистика игроков
-            - daily_quests: ежедневные задания
-
-        Индексы:
-            - ix_notif_user: быстрый поиск уведомлений пользователя
-            - ix_players_wins: быстрая сортировка по победам
-            - ix_events_active: поиск активных событий
-            - ix_stats_user: быстрая выборка статистики
-        """
         schema = """
-            -- Таблица игроков (основная)
             CREATE TABLE IF NOT EXISTS players (
                 user_id INTEGER PRIMARY KEY,
                 username TEXT,
@@ -1316,8 +1024,6 @@ class DatabaseManager:
                 total_crystals_earned INTEGER NOT NULL DEFAULT 0,
                 total_crystals_spent INTEGER NOT NULL DEFAULT 0
             );
-
-            -- Таблица уведомлений
             CREATE TABLE IF NOT EXISTS notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -1325,8 +1031,6 @@ class DatabaseManager:
                 ts REAL NOT NULL,
                 seen INTEGER NOT NULL DEFAULT 0
             );
-
-            -- Таблица промокодов
             CREATE TABLE IF NOT EXISTS promo_codes (
                 code TEXT PRIMARY KEY,
                 reward_crystals INTEGER NOT NULL DEFAULT 0,
@@ -1338,16 +1042,12 @@ class DatabaseManager:
                 created_at REAL NOT NULL DEFAULT 0,
                 active INTEGER NOT NULL DEFAULT 1
             );
-
-            -- Таблица активаций промокодов
             CREATE TABLE IF NOT EXISTS promo_activations (
                 user_id INTEGER NOT NULL,
                 code TEXT NOT NULL,
                 activated_at REAL NOT NULL,
                 PRIMARY KEY (user_id, code)
             );
-
-            -- Таблица чатовых событий
             CREATE TABLE IF NOT EXISTS chat_events (
                 event_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 event_type TEXT NOT NULL,
@@ -1360,8 +1060,6 @@ class DatabaseManager:
                 active INTEGER NOT NULL DEFAULT 1,
                 participants TEXT NOT NULL DEFAULT '[]'
             );
-
-            -- Таблица расширенной статистики
             CREATE TABLE IF NOT EXISTS player_stats (
                 user_id INTEGER PRIMARY KEY,
                 best_weapon TEXT,
@@ -1374,8 +1072,6 @@ class DatabaseManager:
                 boss_kills INTEGER NOT NULL DEFAULT 0,
                 event_participations INTEGER NOT NULL DEFAULT 0
             );
-
-            -- Таблица ежедневных заданий
             CREATE TABLE IF NOT EXISTS daily_quests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -1387,8 +1083,6 @@ class DatabaseManager:
                 date TEXT NOT NULL,
                 UNIQUE(user_id, quest_type, date)
             );
-
-            -- Индексы для оптимизации запросов
             CREATE INDEX IF NOT EXISTS ix_notif_user ON notifications(user_id, seen);
             CREATE INDEX IF NOT EXISTS ix_players_wins ON players(wins, is_bot, banned);
             CREATE INDEX IF NOT EXISTS ix_players_crystals ON players(crystals DESC);
@@ -1406,23 +1100,6 @@ class DatabaseManager:
             raise
 
     def fetch_one(self, sql: str, args: tuple = ()) -> Optional[sqlite3.Row]:
-        """
-        Выполняет SELECT запрос и возвращает одну строку результата.
-
-        Args:
-            sql: SQL-запрос с плейсхолдерами (?). Использование плейсхолдеров
-                обязательно для защиты от SQL-инъекций.
-            args: Кортеж аргументов для подстановки в запрос. Количество
-                аргументов должно совпадать с количеством плейсхолдеров.
-
-        Returns:
-            Объект sqlite3.Row с доступом к полям по имени (row['field_name']),
-            или None, если ничего не найдено или произошла ошибка.
-
-        Example:
-            >>> db.fetch_one("SELECT * FROM players WHERE user_id=?", (123,))
-            <sqlite3.Row object>
-        """
         try:
             return self._connection.execute(sql, args).fetchone()
         except sqlite3.Error as e:
@@ -1430,21 +1107,6 @@ class DatabaseManager:
             return None
 
     def fetch_all(self, sql: str, args: tuple = ()) -> List[sqlite3.Row]:
-        """
-        Выполняет SELECT запрос и возвращает все строки результата.
-
-        Args:
-            sql: SQL-запрос с плейсхолдерами (?).
-            args: Кортеж аргументов для подстановки в запрос.
-
-        Returns:
-            Список объектов sqlite3.Row. Пустой список при ошибке или
-            отсутствии результатов.
-
-        Example:
-            >>> db.fetch_all("SELECT * FROM players WHERE wins > ?", (10,))
-            [<sqlite3.Row object>, ...]
-        """
         try:
             return self._connection.execute(sql, args).fetchall()
         except sqlite3.Error as e:
@@ -1452,21 +1114,6 @@ class DatabaseManager:
             return []
 
     def execute(self, sql: str, args: tuple = ()) -> bool:
-        """
-        Выполняет модифицирующий запрос (INSERT, UPDATE, DELETE).
-
-        Args:
-            sql: SQL-запрос с плейсхолдерами (?).
-            args: Кортеж аргументов для подстановки в запрос.
-
-        Returns:
-            True при успешном выполнении, False при ошибке.
-            Ошибки логируются, но не вызывают исключений.
-
-        Example:
-            >>> db.execute("UPDATE players SET crystals=crystals+? WHERE user_id=?", (100, 123))
-            True
-        """
         try:
             self._connection.execute(sql, args)
             return True
@@ -1475,52 +1122,16 @@ class DatabaseManager:
             return False
 
     def close(self) -> None:
-        """
-        Безопасно закрывает соединение с базой данных.
-
-        Вызывается при остановке бота для корректного освобождения ресурсов.
-        После вызова дальнейшая работа с БД невозможна.
-        """
         if self._connection:
             self._connection.close()
             logging.info("Database connection closed.")
 
 
-# Глобальный экземпляр менеджера базы данных
 db = DatabaseManager(Config.DB_PATH)
 
 
-# ==============================================================================
-# 8. МОДЕЛИ ДАННЫХ: БОЕЦ, ДУЭЛЬ, СОБЫТИЯ
-# ==============================================================================
-
 @dataclass
 class Fighter:
-    """
-    Представление бойца в бою с поддержкой кулдаунов вариантов атаки.
-
-    Этот класс инкапсулирует все характеристики бойца: здоровье, оружие,
-    броню, активные эффекты (DoT), статусы (оглушение) и кулдауны атак.
-    Автоматически рассчитывает бонусы от экипировки при создании.
-
-    Attributes:
-        name: Отображаемое имя бойца (должно быть экранировано).
-        max_hp: Максимальное здоровье (базовое + бонусы от брони).
-        hp: Текущее здоровье. Уменьшается при получении урона.
-        weapon: Ключ оружия из словаря WEAPONS.
-        armor_slots: Словарь слотов брони {zone: armor_key}.
-        dots: Список активных эффектов периодического урона (DoT).
-            Каждый элемент: {"name": str, "dmg": int, "left": int}
-        stun: Флаг оглушения. Если True, боец пропускает следующий ход.
-        attack_cooldowns: Словарь кулдаунов вариантов атаки
-            {variant_index: rounds_left}.
-
-    Methods:
-        is_alive: Проверяет, жив ли боец.
-        get_armor_def: Возвращает защиту для конкретной зоны.
-        get_weapon_dmg_for_zone: Рассчитывает урон по зоне.
-        reduce_cooldowns: Уменьшает кулдауны на 1 раунд.
-    """
     name: str
     max_hp: int
     hp: int
@@ -1531,35 +1142,21 @@ class Fighter:
     attack_cooldowns: Dict[int, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        """
-        Валидация и расчет бонусов после инициализации объекта.
-
-        Автоматически:
-        1. Проверяет корректность оружия (fallback на 'fists')
-        2. Фиксирует слоты брони (недостающие заполняются "none")
-        3. Рассчитывает защиту по зонам
-        4. Суммирует бонусы от брони (шанс спец-атаки, урон)
-        """
-        # Валидация оружия
         if self.weapon not in WEAPONS:
             logging.warning(f"Unknown weapon '{self.weapon}', fallback to 'fists'")
             self.weapon = "fists"
 
-        # Базовый урон оружия
         self.base_weapon_dmg = WEAPONS[self.weapon]["base_dmg"]
 
-        # Фиксация слотов брони
         slots = self.armor_slots or {}
         fixed_slots = {}
         for s in ZONES:
             key = slots.get(s) or f"{s}_none"
-            # Проверка существования предмета брони
             if not get_armor_item_by_key(key):
                 key = f"{s}_none"
             fixed_slots[s] = key
         self.armor_slots = fixed_slots
 
-        # Расчет защиты и бонусов
         self.armor_def = {}
         total_chance = 0
         total_bonus = 0
@@ -1570,80 +1167,32 @@ class Fighter:
             total_chance += item["chance"]
             total_bonus += item["dmg_bonus"]
 
-        # Ограничение шанса спец-атаки до 70%
         self.spec_chance = min(total_chance, 70)
         self.spec_dmg_bonus = total_bonus / 100.0
 
     def is_alive(self) -> bool:
-        """
-        Проверяет, жив ли боец (HP > 0).
-
-        Returns:
-            True если здоровье больше 0, False если боец мёртв.
-        """
         return self.hp > 0
 
     def get_armor_def(self, zone: str) -> int:
-        """
-        Возвращает значение защиты для конкретной зоны тела.
-
-        Args:
-            zone: Название зоны (head, torso, arms, legs).
-
-        Returns:
-            Целое число - значение защиты. 0 если зона не найдена.
-        """
         return self.armor_def.get(zone, 0)
 
     def get_weapon_dmg_for_zone(self, zone: str, variant_mult: float = 1.0) -> int:
-        """
-        Рассчитывает базовый урон оружия по конкретной зоне с учётом множителя
-        зоны и варианта атаки.
-
-        Args:
-            zone: Название зоны (head, torso, arms, legs).
-            variant_mult: Множитель от варианта атаки (по умолчанию 1.0).
-
-        Returns:
-            Целое число - рассчитанный урон. Минимум 1.
-        """
         zone_mult = ZONE_INFO.get(zone, {}).get("mult", 1.0)
         base = self.base_weapon_dmg * zone_mult * variant_mult
         return max(1, round(base))
 
     def reduce_cooldowns(self) -> None:
-        """
-        Уменьшает счетчики кулдаунов всех атак на 1 раунд.
-
-        Вызывается в конце каждого раунда. Атаки с КД <= 0 удаляются
-        из словаря и становятся доступными.
-        """
         for idx in list(self.attack_cooldowns.keys()):
             self.attack_cooldowns[idx] -= 1
             if self.attack_cooldowns[idx] <= 0:
                 del self.attack_cooldowns[idx]
 
     def get_available_variants(self) -> List[int]:
-        """
-        Возвращает список индексов доступных (не на кулдауне) вариантов атаки.
-
-        Returns:
-            Список индексов вариантов (0, 1, 2), которые можно использовать.
-        """
         all_variants = list(range(len(WEAPONS[self.weapon]["variants"])))
         return [i for i in all_variants if i not in self.attack_cooldowns]
 
 
 def get_armor_item_by_key(key: str) -> Optional[Dict[str, Any]]:
-    """
-    Поиск предмета брони по ключу во всём массиве данных.
-
-    Args:
-        key: Ключ предмета брони (например, "head_dragon").
-
-    Returns:
-        Словарь с данными предмета + поле "slot", или None если не найден.
-    """
     for slot, items in ARMOR_DATA.items():
         for it in items:
             if it["key"] == key:
@@ -1652,20 +1201,6 @@ def get_armor_item_by_key(key: str) -> Optional[Dict[str, Any]]:
 
 
 def generate_hp_bar(fighter: Fighter, width: int = 12) -> str:
-    """
-    Генерирует визуальную полосу здоровья (HP Bar) из эмодзи.
-
-    Args:
-        fighter: Боец, для которого генерируется полоса.
-        width: Ширина полосы в символах (по умолчанию 12).
-
-    Returns:
-        Строка из эмодзи 🟩🟨🟥⬛, визуализирующая текущее HP.
-        - 🟩 зеленая - HP > 60%
-        - 🟨 желтая - HP > 30%
-        - 🟥 красная - HP <= 30%
-        - ⬛ черная - пустая часть
-    """
     if fighter.max_hp <= 0:
         return "⬛" * width
 
@@ -1683,26 +1218,9 @@ def generate_hp_bar(fighter: Fighter, width: int = 12) -> str:
 
 
 def format_fighter_card(fighter: Fighter) -> str:
-    """
-    Форматирует информацию о бойце для отображения в чате.
-
-    Создаёт красивое текстовое представление бойца с:
-    - Именем
-    - HP bar
-    - Оружием и уроном
-    - Защитой по зонам
-    - Активными кулдаунами (если есть)
-
-    Args:
-        fighter: Боец для форматирования.
-
-    Returns:
-        Многострочная строка с информацией о бойце.
-    """
     w = WEAPONS[fighter.weapon]
     ad = fighter.armor_def
 
-    # Формируем строку кулдаунов, если они есть
     cd_str = ""
     if fighter.attack_cooldowns:
         cd_info = [f"Атака {i + 1}: {c}р" for i, c in fighter.attack_cooldowns.items()]
@@ -1719,35 +1237,6 @@ def format_fighter_card(fighter: Fighter) -> str:
 
 @dataclass
 class Duel:
-    """
-    Состояние активной дуэли с поддержкой выбора варианта атаки.
-
-    Этот класс управляет всем состоянием боя: ходами, таймерами, логами,
-    специальными состояниями и выбором вариантов атаки.
-
-    Attributes:
-        a_id: ID первого бойца (игрок или босс).
-        b_id: ID второго бойца (игрок, бот или -1 для босса).
-        a: Объект Fighter первого бойца.
-        b: Объект Fighter второго бойца.
-        attacker_is_a: True если сейчас атакует a, False если b.
-        round_no: Номер текущего раунда.
-        atk_zone: Выбранная зона атаки (None если ещё не выбрана).
-        def_zone: Выбранная зона защиты (None если ещё не выбрана).
-        chosen_variant_idx: Индекс выбранного варианта атаки.
-        log: Список строк лога боя.
-        started: Время начала боя (timestamp).
-        is_boss: True если это бой с боссом.
-        boss_key: Ключ босса из BOSSES (если is_boss=True).
-        reward_mult: Множитель награды.
-        finished: Флаг завершения боя.
-        bot_last_block_round: Раунд последнего блока ботом.
-        bot_block_streak: Серия блоков бота подряд.
-        timer_task: asyncio.Task таймера хода.
-        timer_deadline: Дедлайн таймера (timestamp).
-        timer_for: ID игрока, для которого запущен таймер.
-        timer_role: Роль игрока с таймером (attacker/defender).
-    """
     a_id: int
     b_id: int
     a: Fighter
@@ -1773,7 +1262,6 @@ class Duel:
     timer_role: Optional[str] = None
 
     def get_state_for(self, uid: int) -> str:
-        """Определяет роль пользователя в текущем раунде."""
         if uid == self.a_id:
             return "attacker" if self.attacker_is_a else "defender"
         if uid == self.b_id:
@@ -1781,23 +1269,18 @@ class Duel:
         return "none"
 
     def get_attacker(self) -> Fighter:
-        """Возвращает текущего атакующего бойца."""
         return self.a if self.attacker_is_a else self.b
 
     def get_defender(self) -> Fighter:
-        """Возвращает текущего защищающегося бойца."""
         return self.b if self.attacker_is_a else self.a
 
     def get_attacker_id(self) -> int:
-        """Возвращает ID текущего атакующего."""
         return self.a_id if self.attacker_is_a else self.b_id
 
     def get_defender_id(self) -> int:
-        """Возвращает ID текущего защищающегося."""
         return self.b_id if self.attacker_is_a else self.a_id
 
     def get_fighter(self, uid: int) -> Optional[Fighter]:
-        """Возвращает бойца по ID или None."""
         if uid == self.a_id:
             return self.a
         if uid == self.b_id:
@@ -1805,7 +1288,6 @@ class Duel:
         return None
 
     def get_opponent(self, uid: int) -> Optional[Fighter]:
-        """Возвращает противника для указанного ID."""
         if uid == self.a_id:
             return self.b
         if uid == self.b_id:
@@ -1813,37 +1295,16 @@ class Duel:
         return None
 
     def add_log(self, message: str) -> None:
-        """Добавляет сообщение в лог боя с ограничением размера."""
         self.log.append(message)
         if len(self.log) > DUEL_LOG_LIMIT:
             self.log = self.log[-DUEL_LOG_LIMIT:]
 
 
-# Глобальное хранилище активных дуэлей
 ACTIVE_DUELS: Dict[int, Duel] = {}
 
 
 @dataclass
 class ChatEvent:
-    """
-    Модель глобального чатового события (Рейдовый Босс, Караван, Набег).
-
-    Чатовые события - это глобальные PvE ивенты, в которых могут участвовать
-    все пользователи чата, атакуя общую цель командой "атака".
-
-    Attributes:
-        event_id: Уникальный идентификатор события.
-        event_type: Тип события (boss, caravan, raid, dragon_raid).
-        name: Отображаемое имя события.
-        hp: Текущее HP события.
-        max_hp: Максимальное HP события.
-        started_by: ID пользователя, запустившего событие.
-        started_at: Время начала (timestamp).
-        ends_at: Время окончания (timestamp).
-        active: Флаг активности события.
-        participants: Множество ID участников.
-        damage_log: Лог нанесённого урона.
-    """
     event_id: int
     event_type: str
     name: str
@@ -1858,22 +1319,9 @@ class ChatEvent:
     total_damage_dealt: int = 0
 
     def is_active(self) -> bool:
-        """Проверяет, активно ли событие."""
         return self.active and self.hp > 0 and time.time() < self.ends_at
 
     def take_damage(self, attacker_id: int, attacker_name: str, damage: int, is_crit: bool = False) -> str:
-        """
-        Наносит урон событию и обновляет статистику.
-
-        Args:
-            attacker_id: ID атакующего.
-            attacker_name: Имя атакующего.
-            damage: Нанесённый урон.
-            is_crit: Был ли это критический удар.
-
-        Returns:
-            Строка лога для отображения в чате.
-        """
         self.hp = max(0, self.hp - damage)
         self.participants.add(attacker_id)
         self.total_damage_dealt += damage
@@ -1884,21 +1332,14 @@ class ChatEvent:
         return log_entry
 
     def get_participants_count(self) -> int:
-        """Возвращает количество участников события."""
         return len(self.participants)
 
     def get_time_left(self) -> int:
-        """Возвращает оставшееся время в секундах."""
         return max(0, int(self.ends_at - time.time()))
 
 
-# Глобальное хранилище активного чатового события
 ACTIVE_CHAT_EVENT: Optional[ChatEvent] = None
 
-
-# ==============================================================================
-# 9. БОЕВАЯ ЛОГИКА И МЕХАНИКИ
-# ==============================================================================
 
 def calculate_damage(
     attacker: Fighter,
@@ -1907,88 +1348,34 @@ def calculate_damage(
     def_zone: Optional[str],
     variant: AttackVariant
 ) -> Tuple[int, str]:
-    """
-    Рассчитывает итоговый урон с учётом брони, зон и параметров варианта атаки.
-
-    Формула:
-        weapon_dmg = base_dmg * zone_mult * variant_mult
-        effective_armor = defender_armor * (1 - variant_armor_pen)
-        final_dmg = max(1, weapon_dmg - effective_armor)
-
-    Args:
-        attacker: Атакующий боец.
-        defender: Защищающийся боец.
-        atk_zone: Зона, по которой наносится удар.
-        def_zone: Зона, которую защищает противник (None если не защищается).
-        variant: Выбранный вариант атаки.
-
-    Returns:
-        Кортеж (нанесенный урон, строка примечания).
-        Примечание может быть "Блок!" если зоны совпали.
-    """
-    # Проверка на блок
     if def_zone == atk_zone:
         return 0, f"{E_SHIELD} <b>Блок!</b>"
 
-    # Расчет урона оружия с учётом зоны и варианта
     weapon_dmg = attacker.get_weapon_dmg_for_zone(atk_zone, variant.damage_mult)
-
-    # Применяем пробитие брони
     base_armor = defender.get_armor_def(atk_zone)
     effective_armor = max(0, round(base_armor * (1.0 - variant.armor_penetration)))
-
-    # Финальный урон (минимум 1)
     final_dmg = max(1, round(weapon_dmg - effective_armor))
 
     return final_dmg, ""
 
 
 def process_dots(fighter: Fighter, log: List[str]) -> None:
-    """
-    Обрабатывает периодический урон (DoT) в начале хода.
-
-    Проходит по всем активным эффектам (кровотечение, горение и т.д.),
-    наносит урон и уменьшает счётчик оставшихся раундов.
-    Если эффект закончился, удаляет его из списка.
-
-    Args:
-        fighter: Боец, получающий периодический урон.
-        log: Список строк лога боя для добавления сообщений.
-    """
     for dot in list(fighter.dots):
-        # Наносим урон
         fighter.hp = max(0, fighter.hp - dot["dmg"])
         log.append(f"{dot['name']}: {fighter.name} −{dot['dmg']} HP")
 
-        # Уменьшаем счётчик
         dot["left"] -= 1
 
-        # Удаляем закончившиеся эффекты
         if dot["left"] <= 0:
             fighter.dots.remove(dot)
 
-        # Проверка на смерть от DoT
         if fighter.hp <= 0:
             log.append(f"☠️ {fighter.name} гибнет от эффектов")
             return
 
 
 def apply_dot_effect(target: Fighter, name: str, dmg: int, rounds: int) -> None:
-    """
-    Накладывает или обновляет эффект периодического урона (DoT).
-
-    Если эффект с таким именем уже существует, он обновляется.
-    Иначе создаётся новый.
-
-    Args:
-        target: Боец, на которого накладывается эффект.
-        name: Название эффекта (например, "🩸 Кровотечение").
-        dmg: Урон за раунд.
-        rounds: Количество раундов действия.
-    """
-    # Удаляем существующий эффект с таким же именем
     target.dots = [d for d in target.dots if d["name"] != name]
-    # Добавляем новый
     target.dots.append({"name": name, "dmg": dmg, "left": rounds})
 
 
@@ -2000,29 +1387,6 @@ def resolve_special_attack(
     variant: AttackVariant,
     log: List[str]
 ) -> bool:
-    """
-    Применяет специальный эффект выбранного варианта атаки.
-
-    Обрабатывает следующие эффекты:
-    - triple: тройная атака
-    - exec: казнь (двойной урон)
-    - bleed: кровотечение
-    - pierce: пробитие
-    - burn: горение
-    - stun: оглушение
-
-    Args:
-        attacker: Атакующий боец.
-        defender: Защищающийся боец.
-        atk_zone: Зона атаки.
-        def_zone: Зона защиты.
-        variant: Выбранный вариант атаки.
-        log: Список лога боя.
-
-    Returns:
-        True если спецэффект был применён, False иначе.
-    """
-    # Блок отменяет спецэффект
     if def_zone == atk_zone:
         log.append(f"{E_SHIELD} {defender.name} заблокировал <b>{variant.name}</b>")
         return True
@@ -2030,7 +1394,6 @@ def resolve_special_attack(
     effect = variant.effect
 
     if effect == "triple":
-        # Тройная атака: 3 удара, каждый 1/3 от общего урона
         hits = [
             max(1, round(calculate_damage(attacker, defender, atk_zone, def_zone, variant)[0] / 3))
             for _ in range(3)
@@ -2041,7 +1404,6 @@ def resolve_special_attack(
         return True
 
     elif effect == "exec":
-        # Казнь: обычный урон от варианта (с множителем 2.0)
         dmg, _ = calculate_damage(attacker, defender, atk_zone, def_zone, variant)
         defender.hp = max(0, defender.hp - dmg)
         log.append(
@@ -2051,7 +1413,6 @@ def resolve_special_attack(
         return True
 
     elif effect == "bleed":
-        # Кровотечение: урон + DoT 4% от макс HP
         dmg, _ = calculate_damage(attacker, defender, atk_zone, def_zone, variant)
         defender.hp = max(0, defender.hp - dmg)
         bleed_dmg = max(1, round(defender.max_hp * 0.04))
@@ -2060,14 +1421,12 @@ def resolve_special_attack(
         return True
 
     elif effect == "pierce":
-        # Пробитие: урон с учётом пробития из варианта
         dmg, _ = calculate_damage(attacker, defender, atk_zone, def_zone, variant)
         defender.hp = max(0, defender.hp - dmg)
         log.append(f"🏹 <b>{variant.name}</b>: пробивает броню на <b>−{dmg}</b>")
         return True
 
     elif effect == "burn":
-        # Горение: урон + DoT 40% от урона
         dmg, _ = calculate_damage(attacker, defender, atk_zone, def_zone, variant)
         defender.hp = max(0, defender.hp - dmg)
         burn_dmg = max(1, round(dmg * 0.4))
@@ -2076,7 +1435,6 @@ def resolve_special_attack(
         return True
 
     elif effect == "stun":
-        # Оглушение: урон + пропуск хода
         dmg, _ = calculate_damage(attacker, defender, atk_zone, def_zone, variant)
         defender.hp = max(0, defender.hp - dmg)
         defender.stun = True
@@ -2094,43 +1452,21 @@ def execute_attack_phase(
     variant_idx: int,
     log: List[str]
 ) -> None:
-    """
-    Выполняет полный цикл атаки с учётом выбранного варианта.
-
-    Этапы:
-    1. Проверка оглушения атакующего
-    2. Установка кулдауна варианта
-    3. Попытка спецэффекта (если есть и прошёл шанс)
-    4. Обычная атака
-
-    Args:
-        attacker: Атакующий боец.
-        defender: Защищающийся боец.
-        atk_zone: Зона атаки.
-        def_zone: Зона защиты.
-        variant_idx: Индекс выбранного варианта атаки.
-        log: Список лога боя.
-    """
-    # Проверка оглушения
     if attacker.stun:
         attacker.stun = False
         log.append(f"💫 {attacker.name} оглушён и пропускает ход!")
         return
 
-    # Получаем вариант атаки
     weapon_data = WEAPONS[attacker.weapon]
     variant = weapon_data["variants"][variant_idx]
 
-    # Устанавливаем кулдаун
     if variant.cooldown_rounds > 0:
         attacker.attack_cooldowns[variant_idx] = variant.cooldown_rounds
 
-    # Попытка спецэффекта
     if variant.effect and random.random() * 100 < attacker.spec_chance:
         if resolve_special_attack(attacker, defender, atk_zone, def_zone, variant, log):
             return
 
-    # Обычная атака
     dmg, note = calculate_damage(attacker, defender, atk_zone, def_zone, variant)
     if note:
         log.append(f"{ZONE_INFO[atk_zone]['emoji']} {attacker.name} бьёт в «{ZONE_INFO[atk_zone]['name']}» — {note}")
@@ -2142,19 +1478,7 @@ def execute_attack_phase(
         )
 
 
-# ==============================================================================
-# 10. УПРАВЛЕНИЕ ДУЭЛЬЮ И ТАЙМЕРАМИ
-# ==============================================================================
-
 def stop_duel_timer(duel: Duel) -> None:
-    """
-    Безопасно останавливает и очищает задачу таймера дуэли.
-
-    Отменяет запущенную asyncio.Task и обнуляет все поля таймера.
-
-    Args:
-        duel: Объект дуэли, таймер которой нужно остановить.
-    """
     if duel.timer_task and not duel.timer_task.done():
         duel.timer_task.cancel()
     duel.timer_task = None
@@ -2164,15 +1488,6 @@ def stop_duel_timer(duel: Duel) -> None:
 
 
 def terminate_duel(duel: Duel) -> None:
-    """
-    Завершает дуэль и удаляет её из глобального хранилища.
-
-    Устанавливает флаг finished, останавливает таймер и удаляет
-    дуэль из ACTIVE_DUELS для обоих участников.
-
-    Args:
-        duel: Объект дуэли для завершения.
-    """
     duel.finished = True
     stop_duel_timer(duel)
     ACTIVE_DUELS.pop(duel.a_id, None)
@@ -2181,19 +1496,6 @@ def terminate_duel(duel: Duel) -> None:
 
 
 def start_duel_timer(duel: Duel, uid: int, role: str, bot: Bot) -> None:
-    """
-    Инициализирует таймер хода для конкретного игрока.
-
-    Создаёт новую asyncio.Task, которая будет отслеживать время хода.
-    Если предыдущий таймер был запущен, он останавливается.
-
-    Args:
-        duel: Объект дуэли.
-        uid: ID игрока, для которого запускается таймер.
-        role: Роль игрока (attacker или defender).
-        bot: Объект бота для отправки сообщений при таймауте.
-    """
-    # Для ботов (uid < 0) таймер не нужен
     if uid < 0:
         return
 
@@ -2205,36 +1507,17 @@ def start_duel_timer(duel: Duel, uid: int, role: str, bot: Bot) -> None:
 
 
 async def _timer_runner_task(duel: Duel, uid: int, role: str, bot: Bot) -> None:
-    """
-    Асинхронная задача, отслеживающая истечение времени хода.
-
-    Каждую секунду проверяет:
-    - Не завершена ли дуэль
-    - Не истекло ли время
-    - Не изменилась ли роль игрока
-
-    При истечении времени вызывает handle_timeout_defeat.
-
-    Args:
-        duel: Объект дуэли.
-        uid: ID игрока с таймером.
-        role: Ожидаемая роль игрока.
-        bot: Объект бота.
-    """
     try:
         while True:
-            # Проверка завершения дуэли
             if duel.finished:
                 return
 
-            # Проверка истечения времени
             time_left = int(round(duel.timer_deadline - time.time()))
             if time_left <= 0:
                 break
 
             await asyncio.sleep(1)
 
-        # Дополнительные проверки перед наказанием
         if duel.finished:
             return
         if duel.timer_for != uid:
@@ -2244,52 +1527,26 @@ async def _timer_runner_task(duel: Duel, uid: int, role: str, bot: Bot) -> None:
         if uid not in ACTIVE_DUELS:
             return
 
-        # Наказание за таймаут
         await handle_timeout_defeat(duel, uid, bot)
 
     except asyncio.CancelledError:
-        # Нормальное завершение при отмене задачи
         pass
     except Exception as e:
         logging.error(f"Critical error in duel timer for user {uid}: {e}\n{traceback.format_exc()}")
 
 
 async def handle_timeout_defeat(duel: Duel, loser_uid: int, bot: Bot) -> None:
-    """
-    Обрабатывает автоматическое поражение из-за таймаута.
-
-    Добавляет сообщение в лог и завершает дуэль с указанием причины.
-
-    Args:
-        duel: Объект дуэли.
-        loser_uid: ID проигравшего (не успел за время).
-        bot: Объект бота для отправки сообщений.
-    """
     loser = duel.get_fighter(loser_uid)
     loser_name = loser.name if loser else "Неизвестный"
     duel.log.append(
         f"⏱ <b>{loser_name} не успел за {Config.TURN_TIMEOUT} сек — авто-поражение!</b>"
     )
 
-    # Победитель - противоположная сторона
     winner_is_a = not (loser_uid == duel.a_id)
     await finalize_duel(duel, winner_is_a=winner_is_a, bot=bot, reason="timeout")
 
 
-# ==============================================================================
-# 11. ИИ БОТА И ГЕНЕРАЦИЯ СОПЕРНИКОВ
-# ==============================================================================
-
 def get_player_armor_slots(player_row: sqlite3.Row) -> Dict[str, str]:
-    """
-    Извлекает и валидирует слоты брони из записи БД.
-
-    Args:
-        player_row: Строка из таблицы players.
-
-    Returns:
-        Словарь {zone: armor_key} для всех 4 зон.
-    """
     if not player_row:
         return {s: f"{s}_none" for s in ZONES}
 
@@ -2302,27 +1559,14 @@ def get_player_armor_slots(player_row: sqlite3.Row) -> Dict[str, str]:
 
 
 def create_fighter_from_db(player_row: sqlite3.Row) -> Fighter:
-    """
-    Создаёт объект Fighter на основе данных из БД.
-
-    Рассчитывает полное HP с учётом бонусов от брони.
-
-    Args:
-        player_row: Строка из таблицы players.
-
-    Returns:
-        Готовый объект Fighter.
-    """
     slots = get_player_armor_slots(player_row)
 
-    # Базовое HP + бонусы от брони
     total_hp = BASE_STATS["hp"]
     for key in slots.values():
         item = get_armor_item_by_key(key)
         if item:
             total_hp += item.get("hp", 0)
 
-    # Валидация оружия
     weapon = player_row["weapon"] if player_row["weapon"] in WEAPONS else "fists"
 
     return Fighter(
@@ -2335,22 +1579,12 @@ def create_fighter_from_db(player_row: sqlite3.Row) -> Fighter:
 
 
 def determine_arena(wins: int) -> str:
-    """
-    Определяет текущую арену игрока на основе количества побед.
-
-    Args:
-        wins: Количество побед игрока.
-
-    Returns:
-        Ключ арены (bronze, silver, gold).
-    """
     for k in ARENA_ORDER:
         if ARENAS[k]["min_wins"] <= wins <= ARENAS[k]["max_wins"]:
             return k
     return "gold"
 
 
-# Имена для генерации скрытых ботов
 HUMAN_NAMES: List[str] = [
     "Максим", "Артём", "Данил", "Кирилл", "Егор", "Иван", "Никита", "Рома",
     "Саня", "Дима", "Влад", "Серёга", "Паша", "Толя", "Женя", "Костя",
@@ -2359,7 +1593,6 @@ HUMAN_NAMES: List[str] = [
     "Крис", "Милана", "Аня", "Юля", "Оля", "Маша", "Ксюша", "Ника",
 ]
 
-# Суффиксы для имён ботов
 HUMAN_TITLES: List[str] = [
     "", "", "", "xd", "pro", "god", "real", "top", "_", "007", "tvoy", "cz",
     "boss", "king", "elite", "master", "legend", "hero", "dark", "light",
@@ -2367,21 +1600,11 @@ HUMAN_TITLES: List[str] = [
 
 
 def ensure_masked_bots_exist(target_count: int = 50) -> None:
-    """
-    Гарантирует наличие минимального количества скрытых ботов для матчмейкинга.
-
-    Генерирует ботов с именами, похожими на человеческие, и распределяет
-    их по аренам для быстрого подбора соперников.
-
-    Args:
-        target_count: Целевое количество ботов в БД.
-    """
     existing_names = {r["name"].lower() for r in db.fetch_all("SELECT name FROM players")}
     bots = db.fetch_all("SELECT user_id, wins FROM players WHERE is_bot=1")
     need = max(0, target_count - len(bots))
 
     for _ in range(need):
-        # Генерация уникального имени
         name = ""
         for _ in range(BOT_NAME_GENERATION_ATTEMPTS):
             base = random.choice(HUMAN_NAMES)
@@ -2397,10 +1620,8 @@ def ensure_masked_bots_exist(target_count: int = 50) -> None:
         if not name:
             name = f"Игрок{random.randint(1000, 9999)}"
 
-        # Генерация UID (отрицательный для ботов)
         uid = -random.randint(10_000_000, 99_999_999)
 
-        # Распределение побед по аренам
         arena_rand = random.random()
         if arena_rand < Config.BOT_WIN_DISTRIBUTION["bronze"]:
             wins = random.randint(0, 9)
@@ -2412,7 +1633,6 @@ def ensure_masked_bots_exist(target_count: int = 50) -> None:
         losses = random.randint(max(0, wins // 2), wins * 2 + 3)
         arena_key = determine_arena(wins)
 
-        # Выбор оружия по арене
         if arena_key == "bronze":
             weapon = random.choice(["fists", "dagger", "sword"])
             tier_max = 2
@@ -2423,7 +1643,6 @@ def ensure_masked_bots_exist(target_count: int = 50) -> None:
             weapon = random.choice(["bow", "staff", "hammer", "axe", "sword"])
             tier_max = 4
 
-        # Генерация слотов брони
         slots = {}
         for s in ZONES:
             items = ARMOR_DATA[s]
@@ -2449,25 +1668,9 @@ def ensure_masked_bots_exist(target_count: int = 50) -> None:
 
 
 def pick_balanced_opponent(player_uid: int, player_wins: int) -> Optional[int]:
-    """
-    Подбирает соперника строго того же уровня (арены), что и игрок.
-
-    Приоритет:
-    1. Реальные игроки той же арены
-    2. Скрытые боты той же арены
-    3. Генерация нового бота
-
-    Args:
-        player_uid: ID игрока, для которого ищем соперника.
-        player_wins: Количество побед игрока.
-
-    Returns:
-        ID соперника или None если не удалось найти.
-    """
     arena = determine_arena(player_wins)
     limits = ARENAS[arena]
 
-    # Поиск реальных игроков
     humans = [
         r["user_id"] for r in db.fetch_all(
             """SELECT user_id FROM players
@@ -2478,7 +1681,6 @@ def pick_balanced_opponent(player_uid: int, player_wins: int) -> Optional[int]:
         )
     ]
 
-    # Поиск ботов
     bots = [
         r["user_id"] for r in db.fetch_all(
             """SELECT user_id FROM players
@@ -2489,7 +1691,6 @@ def pick_balanced_opponent(player_uid: int, player_wins: int) -> Optional[int]:
         )
     ]
 
-    # Приоритетный выбор
     if humans and bots:
         return random.choice(bots if random.random() < 0.6 else humans)
     if humans:
@@ -2497,7 +1698,6 @@ def pick_balanced_opponent(player_uid: int, player_wins: int) -> Optional[int]:
     if bots:
         return random.choice(bots)
 
-    # Fallback: генерируем нового бота
     ensure_masked_bots_exist(10)
     rows = db.fetch_all(
         """SELECT user_id FROM players
@@ -2509,35 +1709,13 @@ def pick_balanced_opponent(player_uid: int, player_wins: int) -> Optional[int]:
     return rows[0]["user_id"] if rows else None
 
 
-# ==============================================================================
-# ИИ БОТА В БОЮ
-# ==============================================================================
-
 def bot_decide_attack_zone(attacker: Fighter, defender: Fighter) -> str:
-    """
-    ИИ выбора зоны атаки для бота.
-
-    Логика:
-    - 10% шанс случайного выбора (имитация ошибки)
-    - При HP < 30% - добивание (зона с макс уроном)
-    - Иначе - зона с лучшим соотношением урон-броня
-
-    Args:
-        attacker: Бот-атакующий.
-        defender: Цель атаки.
-
-    Returns:
-        Название зоны для атаки.
-    """
-    # Случайный выбор (ошибка ИИ)
     if random.random() < 0.10:
         return random.choice(ZONES)
 
-    # Добивание слабого противника
     if defender.hp <= defender.max_hp * 0.30:
         return max(ZONES, key=lambda z: attacker.get_weapon_dmg_for_zone(z))
 
-    # Оптимальный выбор
     def score_zone(z: str) -> tuple:
         dmg = attacker.get_weapon_dmg_for_zone(z) - defender.get_armor_def(z)
         return (dmg, ZONE_INFO[z]["mult"])
@@ -2546,54 +1724,24 @@ def bot_decide_attack_zone(attacker: Fighter, defender: Fighter) -> str:
 
 
 def bot_decide_attack_variant(attacker: Fighter) -> int:
-    """
-    ИИ выбора варианта атаки для бота.
-
-    Предпочитает варианты с большим уроном, но учитывает кулдауны.
-
-    Args:
-        attacker: Бот-атакующий.
-
-    Returns:
-        Индекс варианта атаки (0, 1 или 2).
-    """
     weapon_data = WEAPONS[attacker.weapon]
     variants = weapon_data["variants"]
     available = attacker.get_available_variants()
 
     if not available:
-        return 0  # Fallback
+        return 0
 
-    # Выбираем вариант с максимальным уроном среди доступных
     best_idx = max(available, key=lambda i: variants[i].damage_mult)
     return best_idx
 
 
 def bot_decide_to_defend(duel: Duel, bot_is_a: bool) -> bool:
-    """
-    Определяет, будет ли бот пытаться блокировать атаку.
-
-    Вероятность блока зависит от:
-    - Текущего HP (чем меньше, тем выше шанс блока)
-    - Серии блоков подряд
-    - Раундов с последнего блока
-
-    Args:
-        duel: Объект дуэли.
-        bot_is_a: True если бот - это fighter.a.
-
-    Returns:
-        True если бот решает защищаться.
-    """
-    # Ограничение на серию блоков
     if duel.bot_block_streak >= 2:
         return False
 
-    # Кулдаун после блока
     if duel.round_no - duel.bot_last_block_round < 3:
         return False
 
-    # Расчёт вероятности на основе HP
     bot_fighter = duel.a if bot_is_a else duel.b
     hp_ratio = bot_fighter.hp / bot_fighter.max_hp
 
@@ -2608,71 +1756,34 @@ def bot_decide_to_defend(duel: Duel, bot_is_a: bool) -> bool:
 
 
 def bot_decide_defend_zone(attacker: Fighter, defender: Fighter) -> str:
-    """
-    Выбирает зону для защиты, основываясь на наиболее опасной зоне атаки.
-
-    25% шанс ошибиться и защитить вторую по опасности зону.
-
-    Args:
-        attacker: Атакующий (для расчёта урона).
-        defender: Защищающийся бот.
-
-    Returns:
-        Название зоны для защиты.
-    """
     def danger_level(z: str) -> int:
         return attacker.get_weapon_dmg_for_zone(z) - defender.get_armor_def(z)
 
     sorted_zones = sorted(ZONES, key=danger_level, reverse=True)
 
-    # Шанс ошибки
     if random.random() < 0.25 and len(sorted_zones) > 1:
         return sorted_zones[1]
 
     return sorted_zones[0]
 
 
-# ==============================================================================
-# 12. КАЗИНО И ЭКОНОМИКА
-# ==============================================================================
-
 def play_casino_slots(uid: int, bet: int) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Логика игры в слоты.
-
-    Выплаты:
-    - 3 одинаковых: x5 (обычные), x8 (💎), x10 (7️⃣)
-    - 2 одинаковых: x2
-    - Иначе: проигрыш
-
-    Args:
-        uid: ID игрока.
-        bet: Размер ставки.
-
-    Returns:
-        Кортеж (результат, ошибка). Если ошибка - результат None.
-    """
     p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (uid,))
     if not p or p["crystals"] < bet:
         return None, "Недостаточно кристаллов."
 
-    # Валидация ставки
     if bet < Config.CASINO_MIN_BET:
         return None, f"Минимальная ставка: {Config.CASINO_MIN_BET} {E_CRYSTAL}"
     if bet > Config.CASINO_MAX_BET:
         return None, f"Максимальная ставка: {Config.CASINO_MAX_BET} {E_CRYSTAL}"
 
-    # Символы и их веса
     symbols = ["🍒", "🍋", "🍊", "🍇", "💎", "7️⃣"]
     weights = [25, 22, 20, 15, 12, 6]
 
-    # Крутим слоты
     spin = random.choices(symbols, weights=weights, k=3)
 
-    # Ставка
     db.execute("UPDATE players SET crystals=crystals-? WHERE user_id=?", (bet, uid))
 
-    # Проверка джекпота (3 одинаковых)
     if spin[0] == spin[1] == spin[2]:
         mult = {"7️⃣": 10, "💎": 8}.get(spin[0], 5)
         win = bet * mult
@@ -2682,7 +1793,6 @@ def play_casino_slots(uid: int, bet: int) -> Tuple[Optional[str], Optional[str]]
             None
         )
 
-    # Проверка пары (2 одинаковых)
     if spin[0] == spin[1] or spin[1] == spin[2] or spin[0] == spin[2]:
         win = int(bet * 2)
         db.execute("UPDATE players SET crystals=crystals+? WHERE user_id=?", (win, uid))
@@ -2691,7 +1801,6 @@ def play_casino_slots(uid: int, bet: int) -> Tuple[Optional[str], Optional[str]]
             None
         )
 
-    # Проигрыш
     return (
         f"{' | '.join(spin)}\n\n{E_SKULL} <b>Мимо.</b>\nВы проиграли: −{bet} {E_CRYSTAL}",
         None
@@ -2699,21 +1808,6 @@ def play_casino_slots(uid: int, bet: int) -> Tuple[Optional[str], Optional[str]]
 
 
 def play_casino_dice(uid: int, bet: int) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Логика игры в кости (сравнение с дилером).
-
-    Выплаты:
-    - Победа (игрок > дилер): x2
-    - Ничья: возврат ставки
-    - Поражение: проигрыш
-
-    Args:
-        uid: ID игрока.
-        bet: Размер ставки.
-
-    Returns:
-        Кортеж (результат, ошибка).
-    """
     p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (uid,))
     if not p or p["crystals"] < bet:
         return None, "Недостаточно кристаллов."
@@ -2721,15 +1815,12 @@ def play_casino_dice(uid: int, bet: int) -> Tuple[Optional[str], Optional[str]]:
     if bet < Config.CASINO_MIN_BET:
         return None, f"Минимальная ставка: {Config.CASINO_MIN_BET} {E_CRYSTAL}"
 
-    # Бросаем кости
     player_roll = random.randint(1, 6)
     dealer_roll = random.randint(1, 6)
 
-    # Ставка
     db.execute("UPDATE players SET crystals=crystals-? WHERE user_id=?", (bet, uid))
 
     if player_roll > dealer_roll:
-        # Победа
         db.execute("UPDATE players SET crystals=crystals+? WHERE user_id=?", (bet * 2, uid))
         return (
             f"{E_DICE} Ты: {player_roll} · Дилер: {dealer_roll}\n\n"
@@ -2737,7 +1828,6 @@ def play_casino_dice(uid: int, bet: int) -> Tuple[Optional[str], Optional[str]]:
             None
         )
     elif player_roll == dealer_roll:
-        # Ничья - возврат
         db.execute("UPDATE players SET crystals=crystals+? WHERE user_id=?", (bet, uid))
         return (
             f"{E_DICE} Ты: {player_roll} · Дилер: {dealer_roll}\n\n"
@@ -2745,7 +1835,6 @@ def play_casino_dice(uid: int, bet: int) -> Tuple[Optional[str], Optional[str]]:
             None
         )
     else:
-        # Поражение
         return (
             f"{E_DICE} Ты: {player_roll} · Дилер: {dealer_roll}\n\n"
             f"{E_SKULL} <b>Поражение.</b> −{bet} {E_CRYSTAL}",
@@ -2754,21 +1843,6 @@ def play_casino_dice(uid: int, bet: int) -> Tuple[Optional[str], Optional[str]]:
 
 
 def play_casino_coin(uid: int, bet: int, choice: str = "heads") -> Tuple[Optional[str], Optional[str]]:
-    """
-    Логика игры в монетку (Орёл или Решка).
-
-    Выплаты:
-    - Угадал: x2
-    - Не угадал: проигрыш
-
-    Args:
-        uid: ID игрока.
-        bet: Размер ставки.
-        choice: Выбор игрока ("heads" или "tails").
-
-    Returns:
-        Кортеж (результат, ошибка).
-    """
     p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (uid,))
     if not p or p["crystals"] < bet:
         return None, "Недостаточно кристаллов."
@@ -2776,16 +1850,13 @@ def play_casino_coin(uid: int, bet: int, choice: str = "heads") -> Tuple[Optiona
     if bet < Config.CASINO_MIN_BET:
         return None, f"Минимальная ставка: {Config.CASINO_MIN_BET} {E_CRYSTAL}"
 
-    # Бросаем монетку
     result = random.choice(["heads", "tails"])
 
-    # Ставка
     db.execute("UPDATE players SET crystals=crystals-? WHERE user_id=?", (bet, uid))
 
     result_text = "Орёл" if result == "heads" else "Решка"
 
     if result == choice:
-        # Победа
         db.execute("UPDATE players SET crystals=crystals+? WHERE user_id=?", (bet * 2, uid))
         return (
             f"{E_COIN} Выпало: <b>{result_text}</b>\n\n"
@@ -2793,7 +1864,6 @@ def play_casino_coin(uid: int, bet: int, choice: str = "heads") -> Tuple[Optiona
             None
         )
     else:
-        # Поражение
         return (
             f"{E_COIN} Выпало: <b>{result_text}</b>\n\n"
             f"{E_SKULL} <b>Поражение.</b> −{bet} {E_CRYSTAL}",
@@ -2802,22 +1872,6 @@ def play_casino_coin(uid: int, bet: int, choice: str = "heads") -> Tuple[Optiona
 
 
 def play_casino_roulette(uid: int, bet: int, color: str = "red") -> Tuple[Optional[str], Optional[str]]:
-    """
-    Логика игры в упрощённую рулетку.
-
-    Выплаты:
-    - Угадал цвет (красное/чёрное): x2
-    - Угадал зеро (зелёное): x14
-    - Не угадал: проигрыш
-
-    Args:
-        uid: ID игрока.
-        bet: Размер ставки.
-        color: Выбор цвета ("red", "black", "green").
-
-    Returns:
-        Кортеж (результат, ошибка).
-    """
     p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (uid,))
     if not p or p["crystals"] < bet:
         return None, "Недостаточно кристаллов."
@@ -2825,13 +1879,10 @@ def play_casino_roulette(uid: int, bet: int, color: str = "red") -> Tuple[Option
     if bet < Config.CASINO_MIN_BET:
         return None, f"Минимальная ставка: {Config.CASINO_MIN_BET} {E_CRYSTAL}"
 
-    # Красные числа в рулетке
     reds = {1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
 
-    # Крутим рулетку
     num = random.randint(0, 36)
 
-    # Определяем цвет
     if num == 0:
         res_color = "green"
     elif num in reds:
@@ -2839,11 +1890,9 @@ def play_casino_roulette(uid: int, bet: int, color: str = "red") -> Tuple[Option
     else:
         res_color = "black"
 
-    # Ставка
     db.execute("UPDATE players SET crystals=crystals-? WHERE user_id=?", (bet, uid))
 
     if color == res_color:
-        # Победа
         mult = 14 if color == "green" else 2
         db.execute("UPDATE players SET crystals=crystals+? WHERE user_id=?", (bet * mult, uid))
         return (
@@ -2852,7 +1901,6 @@ def play_casino_roulette(uid: int, bet: int, color: str = "red") -> Tuple[Option
             None
         )
     else:
-        # Поражение
         return (
             f"🎡 Выпало: <b>{num} ({res_color})</b>\n\n"
             f"{E_SKULL} <b>Поражение.</b> −{bet} {E_CRYSTAL}",
@@ -2861,22 +1909,6 @@ def play_casino_roulette(uid: int, bet: int, color: str = "red") -> Tuple[Option
 
 
 def play_casino_highlow(uid: int, bet: int, choice: str = "high") -> Tuple[Optional[str], Optional[str]]:
-    """
-    Логика игры Больше/Меньше (число от 1 до 100).
-
-    Выплаты:
-    - Угадал (high: >50, low: <50): x1.9
-    - Ровно 50: возврат ставки
-    - Не угадал: проигрыш
-
-    Args:
-        uid: ID игрока.
-        bet: Размер ставки.
-        choice: Выбор ("high" или "low").
-
-    Returns:
-        Кортеж (результат, ошибка).
-    """
     p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (uid,))
     if not p or p["crystals"] < bet:
         return None, "Недостаточно кристаллов."
@@ -2884,15 +1916,11 @@ def play_casino_highlow(uid: int, bet: int, choice: str = "high") -> Tuple[Optio
     if bet < Config.CASINO_MIN_BET:
         return None, f"Минимальная ставка: {Config.CASINO_MIN_BET} {E_CRYSTAL}"
 
-    # Генерируем число
     result_num = random.randint(1, 100)
 
-    # Ставка
     db.execute("UPDATE players SET crystals=crystals-? WHERE user_id=?", (bet, uid))
 
-    # Проверка результата
     if result_num == 50:
-        # Возврат
         db.execute("UPDATE players SET crystals=crystals+? WHERE user_id=?", (bet, uid))
         return (
             f"📊 Выпало число: <b>{result_num}</b>\n\n"
@@ -2918,41 +1946,22 @@ def play_casino_highlow(uid: int, bet: int, choice: str = "high") -> Tuple[Optio
         )
 
 
-# ==============================================================================
-# 13. ЧАТОВЫЕ СОБЫТИЯ (БОССЫ И КАРАВАНЫ)
-# ==============================================================================
-
 def spawn_chat_event(
     event_type: str,
     started_by: int,
     custom_hp: Optional[int] = None,
     custom_duration: Optional[float] = None
 ) -> Optional[ChatEvent]:
-    """
-    Создаёт новое чатовое событие (босс, караван, набег).
-
-    Args:
-        event_type: Тип события (ключ из CHAT_EVENT_TEMPLATES).
-        started_by: ID пользователя, запустившего событие.
-        custom_hp: Пользовательское HP (None = использовать базовое).
-        custom_duration: Пользовательская длительность в часах.
-
-    Returns:
-        Объект ChatEvent или None если событие уже активно.
-    """
     global ACTIVE_CHAT_EVENT
 
-    # Проверка на активное событие
     if ACTIVE_CHAT_EVENT and ACTIVE_CHAT_EVENT.is_active():
         return None
 
-    # Получаем шаблон
     template = CHAT_EVENT_TEMPLATES.get(event_type)
     if not template:
         logging.error(f"Unknown event type: {event_type}")
         return None
 
-    # Параметры события
     hp = custom_hp or template["base_hp"]
     duration = custom_duration or template["duration_hours"]
     name = template["name_template"].format(emoji=template["emoji"])
@@ -2960,7 +1969,6 @@ def spawn_chat_event(
     now = time.time()
     ends_at = now + (duration * 3600)
 
-    # Создаём событие
     event = ChatEvent(
         event_id=int(now),
         event_type=event_type,
@@ -2974,7 +1982,6 @@ def spawn_chat_event(
 
     ACTIVE_CHAT_EVENT = event
 
-    # Сохраняем в БД
     db.execute(
         """INSERT INTO chat_events
            (event_type, name, hp, max_hp, started_by, started_at, ends_at, active)
@@ -2987,44 +1994,23 @@ def spawn_chat_event(
 
 
 def attack_chat_event(attacker_id: int, attacker_name: str) -> Optional[str]:
-    """
-    Обрабатывает атаку чатового события игроком.
-
-    Рассчитывает урон с учётом:
-    - Базового диапазона урона
-    - Шанса критического удара
-    - Множителя крита
-
-    Args:
-        attacker_id: ID атакующего.
-        attacker_name: Имя атакующего.
-
-    Returns:
-        Строка лога атаки или None если нет активного события.
-    """
     global ACTIVE_CHAT_EVENT
 
-    # Проверка активного события
     if not ACTIVE_CHAT_EVENT or not ACTIVE_CHAT_EVENT.is_active():
         return None
 
-    # Расчёт урона
     base_dmg = random.randint(Config.EVENT_MIN_DAMAGE, Config.EVENT_MAX_DAMAGE)
 
-    # Проверка крита
     is_crit = random.random() < Config.EVENT_CRIT_CHANCE
     if is_crit:
         base_dmg = int(base_dmg * Config.EVENT_CRIT_MULT)
 
-    # Наносим урон
     log_entry = ACTIVE_CHAT_EVENT.take_damage(attacker_id, attacker_name, base_dmg, is_crit)
 
-    # Проверка завершения события
     if ACTIVE_CHAT_EVENT.hp <= 0:
         ACTIVE_CHAT_EVENT.active = False
         db.execute("UPDATE chat_events SET active=0 WHERE event_id=?", (ACTIVE_CHAT_EVENT.event_id,))
 
-        # Начисление наград участникам
         template = CHAT_EVENT_TEMPLATES.get(ACTIVE_CHAT_EVENT.event_type, {})
         reward_range = template.get("reward_per_participant", (30, 100))
 
@@ -3046,12 +2032,6 @@ def attack_chat_event(attacker_id: int, attacker_name: str) -> Optional[str]:
 
 
 def get_chat_event_status() -> Optional[str]:
-    """
-    Возвращает статус активного чатового события.
-
-    Returns:
-        Строка со статусом события или None если нет активного.
-    """
     global ACTIVE_CHAT_EVENT
 
     if not ACTIVE_CHAT_EVENT or not ACTIVE_CHAT_EVENT.is_active():
@@ -3072,10 +2052,6 @@ def get_chat_event_status() -> Optional[str]:
     )
 
 
-# ==============================================================================
-# 14. ПРОМОКОДЫ
-# ==============================================================================
-
 def create_promo_code(
     code: str,
     reward_crystals: int,
@@ -3084,23 +2060,8 @@ def create_promo_code(
     hours_valid: int,
     created_by: int
 ) -> Tuple[bool, str]:
-    """
-    Создаёт новый промокод.
-
-    Args:
-        code: Код промокода (будет приведён к верхнему регистру).
-        reward_crystals: Награда в кристаллах.
-        reward_wins: Награда в победах.
-        max_uses: Максимум активаций.
-        hours_valid: Срок действия в часах.
-        created_by: ID создателя.
-
-    Returns:
-        Кортеж (успех, сообщение).
-    """
     code = code.strip().upper()
 
-    # Валидация кода
     if not code:
         return False, "Код не может быть пустым."
     if len(code) < Config.PROMO_MIN_CODE_LENGTH:
@@ -3110,22 +2071,18 @@ def create_promo_code(
     if not re.match(r'^[A-Z0-9_-]+$', code):
         return False, "Код может содержать только буквы, цифры, _ и -"
 
-    # Валидация наград
     if reward_crystals < 0 or reward_wins < 0:
         return False, "Награды не могут быть отрицательными."
 
-    # Валидация лимитов
     if max_uses < 1 or max_uses > Config.PROMO_MAX_USES:
         return False, f"Максимум активаций: от 1 до {Config.PROMO_MAX_USES}."
     if hours_valid < 1 or hours_valid > Config.PROMO_MAX_HOURS:
         return False, f"Срок действия: от 1 до {Config.PROMO_MAX_HOURS} часов."
 
-    # Проверка уникальности
     existing = db.fetch_one("SELECT code FROM promo_codes WHERE code=?", (code,))
     if existing:
         return False, f"Промокод <code>{code}</code> уже существует."
 
-    # Создание
     now = time.time()
     expires_at = now + (hours_valid * 3600)
 
@@ -3146,26 +2103,14 @@ def create_promo_code(
 
 
 def activate_promo_code(user_id: int, code: str) -> Tuple[bool, str]:
-    """
-    Активирует промокод для игрока.
-
-    Args:
-        user_id: ID игрока.
-        code: Код для активации.
-
-    Returns:
-        Кортеж (успех, сообщение).
-    """
     code = code.strip().upper()
 
-    # Проверка регистрации
     player = db.fetch_one("SELECT * FROM players WHERE user_id=?", (user_id,))
     if not player:
         return False, "Сначала отправь /start в ЛС бота."
     if player["banned"]:
         return False, "🚫 Тебе недоступна активация промокодов."
 
-    # Проверка промокода
     promo = db.fetch_one("SELECT * FROM promo_codes WHERE code=?", (code,))
     if not promo:
         return False, f"❌ Промокод <code>{code}</code> не найден."
@@ -3176,7 +2121,6 @@ def activate_promo_code(user_id: int, code: str) -> Tuple[bool, str]:
     if promo["current_uses"] >= promo["max_uses"]:
         return False, f"❌ Промокод <code>{code}</code> исчерпан."
 
-    # Проверка повторной активации
     already = db.fetch_one(
         "SELECT 1 FROM promo_activations WHERE user_id=? AND code=?",
         (user_id, code)
@@ -3184,7 +2128,6 @@ def activate_promo_code(user_id: int, code: str) -> Tuple[bool, str]:
     if already:
         return False, f"❌ Ты уже активировал промокод <code>{code}</code>."
 
-    # Активация
     now = time.time()
 
     db.execute(
@@ -3196,7 +2139,6 @@ def activate_promo_code(user_id: int, code: str) -> Tuple[bool, str]:
         (code,)
     )
 
-    # Начисление наград
     rewards = []
     if promo["reward_crystals"] > 0:
         db.execute(
@@ -3223,12 +2165,7 @@ def activate_promo_code(user_id: int, code: str) -> Tuple[bool, str]:
     )
 
 
-# ==============================================================================
-# 15. RP СИСТЕМА
-# ==============================================================================
-
 RP_ACTIONS: Dict[str, Tuple[str, str]] = {
-    # Основные действия
     "ударить": ("👊", "ударил(а)"),
     "обнять": ("🤗", "обнял(а)"),
     "поцеловать": ("😘", "поцеловал(а)"),
@@ -3239,8 +2176,6 @@ RP_ACTIONS: Dict[str, Tuple[str, str]] = {
     "толкнуть": ("💥", "толкнул(а)"),
     "кинуть": ("🥊", "кинул(а) в"),
     "лечить": ("💊", "подлечил(а)"),
-
-    # Эмоциональные
     "игнорировать": ("💅", "проигнорировал(а)"),
     "смеяться": ("😂", "посмеялся(ась) над"),
     "плакать": ("😭", "заплакал(а) у ног"),
@@ -3251,8 +2186,6 @@ RP_ACTIONS: Dict[str, Tuple[str, str]] = {
     "испугаться": ("😱", "испугался(ась)"),
     "подмигнуть": ("😉", "подмигнул(а)"),
     "пожать_плечами": ("🤷", "пожал(а) плечами при виде"),
-
-    # Дополнительные
     "покормить": ("🍕", "покормил(а)"),
     "напоить": ("🍺", "напоил(а)"),
     "щекотать": ("🤣", "пощекотал(а)"),
@@ -3270,66 +2203,29 @@ def generate_rp_text(
     target_name: str,
     action_key: str
 ) -> str:
-    """
-    Генерирует отформатированный текст RP-действия с упоминаниями.
-
-    Args:
-        actor_id: ID действующего лица.
-        actor_name: Имя действующего лица.
-        target_id: ID цели действия.
-        target_name: Имя цели.
-        action_key: Ключ действия из RP_ACTIONS.
-
-    Returns:
-        Строка с HTML-упоминаниями и эмодзи.
-    """
     emoji, verb = RP_ACTIONS.get(action_key, ("✨", "взаимодействовал(а) с"))
     actor_mention = create_mention(actor_id, actor_name)
     target_mention = create_mention(target_id, target_name)
     return f"{emoji} {actor_mention} {verb} {target_mention}!"
 
 
-# ==============================================================================
-# 16. УНИВЕРСАЛЬНЫЙ ПАРСЕР ЦЕЛЕЙ
-# ==============================================================================
-
 def resolve_command_target(
     m: Message,
     command_word: str
 ) -> Tuple[Optional[int], Optional[str]]:
-    """
-    Универсальная функция для определения цели команды в чате.
-
-    Поддерживает:
-    1. Reply (ответ на сообщение)
-    2. @username упоминание
-    3. Числовой ID
-
-    Args:
-        m: Объект сообщения.
-        command_word: Слово-команда (для очистки строки).
-
-    Returns:
-        Кортеж (user_id цели, сообщение об ошибке).
-        Если цель найдена, ошибка = None.
-    """
-    # Приоритет 1: Ответ на сообщение (Reply)
     if m.reply_to_message and m.reply_to_message.from_user and not m.reply_to_message.from_user.is_bot:
         return m.reply_to_message.from_user.id, None
 
-    # Приоритет 2: Парсинг текста на наличие @username или ID
     text = m.text or ""
     if text.lower().startswith(command_word.lower()):
         rest_of_text = text[len(command_word):].strip()
     else:
         rest_of_text = text
 
-    # Поиск @username или числа
     match = re.search(r'@(\w+)|(-?\d+)', rest_of_text)
     if match:
         val = match.group(1) or match.group(2)
 
-        # Проверка на числовой ID
         if val.lstrip('-').isdigit():
             row = db.fetch_one(
                 "SELECT user_id FROM players WHERE user_id=? AND banned=0",
@@ -3338,7 +2234,6 @@ def resolve_command_target(
             if row:
                 return row["user_id"], None
         else:
-            # Проверка на username или имя
             row = db.fetch_one(
                 """SELECT user_id FROM players
                    WHERE (LOWER(username)=LOWER(?) OR LOWER(name)=LOWER(?))
@@ -3348,7 +2243,6 @@ def resolve_command_target(
             if row:
                 return row["user_id"], None
 
-    # Формирование ошибки
     if m.chat.type == "private":
         return None, (
             f"Укажи цель: ответь на сообщение или напиши "
@@ -3361,20 +2255,22 @@ def resolve_command_target(
         )
 
 
-# ==============================================================================
-# 17. ГЕНЕРАТОРЫ UI ЭКРАНОВ
-# ==============================================================================
+BTN_ARENA = "⚔️ Арена"
+BTN_CASINO = "🎰 Казино"
+BTN_GEAR = "🎒 Снаряжение"
+BTN_TOP = "🏆 Топ"
+MENU_TEXTS = {BTN_ARENA, BTN_CASINO, BTN_GEAR, BTN_TOP}
+
+MENU_KB = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text=BTN_ARENA), KeyboardButton(text=BTN_CASINO)],
+        [KeyboardButton(text=BTN_GEAR), KeyboardButton(text=BTN_TOP)],
+    ],
+    resize_keyboard=True,
+)
+
 
 def generate_arena_menu_screen(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]:
-    """
-    Генерирует главное меню арены для ЛС.
-
-    Args:
-        uid: ID пользователя.
-
-    Returns:
-        Кортеж (текст, клавиатура).
-    """
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (uid,))
     if not p:
         return "Профиль не найден.", None
@@ -3399,29 +2295,244 @@ def generate_arena_menu_screen(uid: int) -> Tuple[str, Optional[InlineKeyboardMa
     return text, kb
 
 
+def generate_bosses_menu_screen(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]:
+    p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (uid,))
+    if not p:
+        return "Профиль не найден.", None
+
+    lines = ["╔══════════════════════════╗\n      👹 <b>БОССЫ АРЕНЫ</b>\n╚══════════════════════════╝\n"]
+    rows = []
+
+    for bkey, b in BOSSES.items():
+        locked = p["wins"] < b["min_wins"]
+        lock_text = f"🔒 нужен {b['min_wins']} {E_TROPHY}" if locked else f"награда ×{b['reward_mult']}"
+        lines.append(f"{b['name']}\n  ❤️ HP {b['hp']} · ⚔️ {WEAPONS[b['weapon']]['name']}\n  {b['desc']}\n  → {lock_text}\n")
+        rows.append([(b["name"] if not locked else f"{b['name']} 🔒", f"arena:boss:{bkey}")])
+
+    rows.append([("⬅️ Назад", "arena:menu")])
+    return "\n".join(lines), build_inline_keyboard(*rows)
+
+
+def generate_gear_screen(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]:
+    p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (uid,))
+    if not p:
+        return "Профиль не найден.", None
+
+    w = WEAPONS[p["weapon"]]
+    f = create_fighter_from_db(p)
+    slots = get_player_armor_slots(p)
+
+    lines = [
+        f"🎒 <b>{esc(p['name'])}</b>", "",
+        f"{E_TROPHY} Победы: <b>{p['wins']}</b>  ·  {E_SKULL} Поражения: {p['losses']}",
+        f"{E_CRYSTAL} Кристаллы: <b>{format_number(p['crystals'])}</b>",
+        f"📍 {ARENAS[determine_arena(p['wins'])]['emoji']} {ARENAS[determine_arena(p['wins'])]['name']}", "",
+        f"❤️ HP: <b>{f.max_hp}</b>   ⚔️ Атака: <b>{f.base_weapon_dmg}</b>", "",
+        "<b>⚔️ Оружие:</b>",
+        f"  {w['emoji']} {w['name']} — <i>{w['description']}</i>",
+        f"  Базовый урон: <b>{w['base_dmg']}</b>", "",
+        "<b>🛡 Броня по слотам:</b>"
+    ]
+
+    for slot in ZONES:
+        item = get_armor_item_by_key(slots[slot]) or get_armor_item_by_key(f"{slot}_none")
+        lines.append(f"  {ZONE_INFO[slot]['emoji']} {ZONE_INFO[slot]['name']}: {item['emoji']} <b>{item['name']}</b> (защита {item['df']})")
+
+    kb = build_inline_keyboard(
+        [("⚔️ Оружие", "gear:w"), ("🛡 Броня", "gear:armor_menu")],
+        [("👤 Мой профиль", "duel:myprofile")]
+    )
+    return "\n".join(lines), kb
+
+
+def generate_weapon_list(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]:
+    p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (uid,))
+    if not p:
+        return "Профиль не найден.", None
+
+    equipped = p["weapon"]
+    owned = set((p["weapons_owned"] or "").split(","))
+
+    lines = ["⚔️ <b>Оружие</b>", f"{E_CRYSTAL} Кристаллы: <b>{format_number(p['crystals'])}</b>", ""]
+    rows = []
+
+    for key, it in WEAPONS.items():
+        lines.append(f"{it['emoji']} <b>{it['name']}</b> — <i>{it['description']}</i>")
+        lines.append(f"  Базовый урон: {it['base_dmg']} · Цена: {it['price']}💎")
+        lines.append("  Варианты атаки:")
+        for i, v in enumerate(it["variants"]):
+            effect_text = f" [{v.effect}]" if v.effect else ""
+            lines.append(f"    {i+1}. {v.name} ×{v.damage_mult}{effect_text} (КД: {v.cooldown_rounds})")
+        lines.append("")
+
+        if key == equipped:
+            label = "✅ надето"
+        elif key in owned:
+            label = "🎒 надеть"
+        else:
+            label = f"{it['price']}💎"
+        rows.append([(f"{it['emoji']} {it['name']} · {label}", f"buy_weapon:{key}")])
+
+    rows.append([("⬅️ Назад", "gear:menu")])
+    return "\n".join(lines), build_inline_keyboard(*rows)
+
+
+def generate_armor_slot_menu(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]:
+    p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (uid,))
+    if not p:
+        return "Профиль не найден.", None
+
+    slots = get_player_armor_slots(p)
+    lines = ["🛡 <b>Броня — выбери часть тела</b>", f"{E_CRYSTAL} Кристаллы: <b>{format_number(p['crystals'])}</b>", ""]
+
+    for slot in ZONES:
+        item = get_armor_item_by_key(slots[slot]) or get_armor_item_by_key(f"{slot}_none")
+        lines.append(f"{ZONE_INFO[slot]['emoji']} <b>{ZONE_INFO[slot]['name']}</b> — {item['emoji']} {item['name']} (защита {item['df']})")
+
+    kb = build_inline_keyboard(
+        [("🧠 Голова", "gear:head"), ("🫀 Торс", "gear:torso")],
+        [("💪 Руки", "gear:arms"), ("🦵 Ноги", "gear:legs")],
+        [("⬅️ Назад", "gear:menu")]
+    )
+    return "\n".join(lines), kb
+
+
+def generate_armor_slot_list(uid: int, slot: str) -> Tuple[str, Optional[InlineKeyboardMarkup]]:
+    p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (uid,))
+    if not p or slot not in ZONES:
+        return "Ошибка.", None
+
+    slots = get_player_armor_slots(p)
+    equipped = slots.get(slot, f"{slot}_none")
+    owned = set((p["armors_owned"] or "").split(","))
+
+    lines = [f"🛡 <b>Броня на {ZONE_INFO[slot]['name'].lower()}</b>", f"{E_CRYSTAL} Кристаллы: <b>{format_number(p['crystals'])}</b>", ""]
+    rows = []
+
+    for item in ARMOR_DATA[slot]:
+        key = item["key"]
+        lines.append(f"{item['emoji']} <b>{item['name']}</b> — защита <b>{item['df']}</b>, HP +{item['hp']}")
+        lines.append(f"    {item['desc']}")
+
+        if key == equipped:
+            label = "✅ надето"
+        elif key in owned:
+            label = "🎒 надеть"
+        else:
+            label = f"{item['price']}💎"
+        rows.append([(f"{item['emoji']} {item['name']} · {label}", f"buy_armor:{slot}:{key}")])
+
+    rows.append([("⬅️ К слотам", "gear:armor_menu")])
+    return "\n".join(lines), build_inline_keyboard(*rows)
+
+
+def generate_top_screen(uid: int, arena_key: str) -> Tuple[str, Optional[InlineKeyboardMarkup]]:
+    a = ARENAS[arena_key]
+    rows = db.fetch_all(
+        """SELECT user_id, name, wins, losses FROM players
+           WHERE is_bot=0 AND banned=0 AND wins BETWEEN ? AND ?
+           ORDER BY wins DESC, losses ASC LIMIT ?""",
+        (a["min_wins"], a["max_wins"], Config.TOP_LEADERBOARD_SIZE)
+    )
+
+    medals = ["🥇", "🥈", "🥉"]
+    lines = [f"{a['emoji']} <b>{a['name']}</b> — топ по победам", ""]
+
+    if not rows:
+        lines.append("<i>Пока никого нет на этой арене.</i>")
+
+    for i, r in enumerate(rows):
+        mark = medals[i] if i < 3 else f"{i + 1}."
+        you = " ← ты" if r["user_id"] == uid else ""
+        lines.append(f"{mark} <b>{esc(r['name'])}</b> — {r['wins']} {E_TROPHY} / {r['losses']} {E_SKULL}{you}")
+
+    me = db.fetch_one("SELECT * FROM players WHERE user_id=?", (uid,))
+    if me and all(r["user_id"] != uid for r in rows) and a["min_wins"] <= me["wins"] <= a["max_wins"]:
+        rank_row = db.fetch_one(
+            """SELECT COUNT(*) c FROM players
+               WHERE is_bot=0 AND banned=0 AND wins BETWEEN ? AND ? AND wins > ?""",
+            (a["min_wins"], a["max_wins"], me["wins"])
+        )
+        rank = (rank_row["c"] if rank_row else 0) + 1
+        lines += ["…", f"{rank}. <b>{esc(me['name'])}</b> — {me['wins']} {E_TROPHY} / {me['losses']} {E_SKULL} ← ты"]
+
+    lines += ["", f"{E_TROPHY} Победа: +1 и деньги. {E_SKULL} Поражение: −1 без награды."]
+
+    kb = build_inline_keyboard(
+        [("🥉 Бронза", "top:bronze"), ("🥈 Серебро", "top:silver"), ("🥇 Золото", "top:gold")],
+        [("⬅️ Назад", "arena:menu")]
+    )
+    return "\n".join(lines), kb
+
+
+def generate_arena_list_screen(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]:
+    p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (uid,))
+    if not p:
+        return "Профиль не найден.", None
+
+    key = determine_arena(p["wins"])
+    a = ARENAS[key]
+
+    rows = db.fetch_all(
+        """SELECT user_id, name, wins, losses FROM players
+           WHERE user_id != ? AND banned=0 AND wins BETWEEN ? AND ?
+           ORDER BY RANDOM() LIMIT 8""",
+        (uid, a["min_wins"], a["max_wins"])
+    )
+
+    if not rows:
+        return (
+            "Сейчас на твоей арене никого нет — жми «Найти соперника».",
+            build_inline_keyboard([("🎲 Найти", "arena:find")], [("⬅️ Назад", "arena:menu")])
+        )
+
+    kb_rows = []
+    for r in rows:
+        kb_rows.append([
+            (f"{r['name'][:16]} · {r['wins']}{E_TROPHY}/{r['losses']}{E_SKULL}", f"duel:pick:{r['user_id']}"),
+            ("👁", f"duel:profile:{r['user_id']}"),
+        ])
+    kb_rows.append([("⬅️ Назад", "arena:menu")])
+
+    return f"{a['emoji']} <b>{a['name']}</b> — соперники:", build_inline_keyboard(*kb_rows)
+
+
+def generate_profile_text(row: sqlite3.Row) -> str:
+    if not row:
+        return "Профиль не найден."
+
+    w = WEAPONS[row["weapon"]] if row["weapon"] in WEAPONS else WEAPONS["fists"]
+    f = create_fighter_from_db(row)
+    slots = get_player_armor_slots(row)
+    arena = ARENAS[determine_arena(row["wins"])]
+
+    lines = [
+        f"👤 <b>{esc(row['name'])}</b>", "",
+        f"{E_TROPHY} Победы: {row['wins']}  ·  {E_SKULL} Поражения: {row['losses']}",
+        f"{E_CRYSTAL} Кристаллы: {format_number(row['crystals'])}",
+        f"📍 {arena['emoji']} {arena['name']}", "",
+        f"❤️ HP: <b>{f.max_hp}</b>",
+        f"{w['emoji']} {w['name']} — баз. урон <b>{w['base_dmg']}</b>", "",
+        "<b>🛡 Броня:</b>"
+    ]
+
+    for slot in ZONES:
+        item = get_armor_item_by_key(slots[slot]) or get_armor_item_by_key(f"{slot}_none")
+        lines.append(f"  {ZONE_INFO[slot]['emoji']} {ZONE_INFO[slot]['name']}: {item['emoji']} {item['name']} ({item['df']})")
+
+    return "\n".join(lines)
+
+
 def generate_duel_status_text(
     duel: Duel,
     for_uid: int,
     extra: str = "",
     timer_left: Optional[int] = None
 ) -> str:
-    """
-    Генерирует статус боя для конкретного участника.
-
-    Args:
-        duel: Объект дуэли.
-        for_uid: ID пользователя, для которого генерируется статус.
-        extra: Дополнительный текст (подсказка).
-        timer_left: Оставшееся время на ход.
-
-    Returns:
-        Отформатированная строка статуса.
-    """
     role = duel.get_state_for(for_uid)
     me = duel.get_fighter(for_uid) or duel.a
     opp = duel.get_opponent(for_uid) or duel.b
 
-    # Определяем подсказку
     if role == "attacker" and duel.chosen_variant_idx is None:
         prompt = "🎯 <b>Твой ход</b> — выбери вариант атаки"
     elif role == "attacker":
@@ -3431,14 +2542,11 @@ def generate_duel_status_text(
     else:
         prompt = "⏳ Бой идёт…"
 
-    # Добавляем таймер
     if timer_left is not None and role in ("attacker", "defender"):
         prompt += f"\n⏱ Осталось: <b>{timer_left} сек</b>"
 
-    # Лог последних действий
     body = "\n".join(f"  {ln}" for ln in duel.log[-DUEL_LOG_DISPLAY_LIMIT:]) if duel.log else "  <i>Бой начинается…</i>"
 
-    # Заголовок босса
     boss_line = f"{E_BOSS} <b>БОЙ С БОССОМ</b>  ·  награда ×{duel.reward_mult}\n\n" if duel.is_boss else ""
 
     return (
@@ -3461,17 +2569,6 @@ def generate_duel_status_text(
 
 
 def get_attack_variant_kb(uid: int) -> InlineKeyboardMarkup:
-    """
-    Создаёт клавиатуру выбора варианта атаки.
-
-    Показывает доступные варианты с их параметрами и кулдаунами.
-
-    Args:
-        uid: ID игрока.
-
-    Returns:
-        InlineKeyboardMarkup с кнопками вариантов.
-    """
     duel = ACTIVE_DUELS.get(uid)
     if not duel:
         return build_inline_keyboard()
@@ -3483,11 +2580,9 @@ def get_attack_variant_kb(uid: int) -> InlineKeyboardMarkup:
         cd = duel.get_attacker().attack_cooldowns.get(i, 0)
 
         if cd > 0:
-            # На перезарядке
             text = f"⏳ {i + 1}. {v.name} (КД: {cd}р)"
             rows.append([(text, f"duel:variant_disabled:{i}")])
         else:
-            # Доступна
             effect_text = f" [{v.effect}]" if v.effect else ""
             text = f"{i + 1}. {v.name} · x{v.damage_mult}{effect_text}"
             rows.append([(text, f"duel:variant:{i}")])
@@ -3496,7 +2591,6 @@ def get_attack_variant_kb(uid: int) -> InlineKeyboardMarkup:
 
 
 def get_attack_zone_kb() -> InlineKeyboardMarkup:
-    """Создаёт клавиатуру выбора зоны атаки."""
     return build_inline_keyboard(
         [
             (f"{E_ZONE_HEAD} Голова ×1.5", "duel:atk:head"),
@@ -3510,7 +2604,6 @@ def get_attack_zone_kb() -> InlineKeyboardMarkup:
 
 
 def get_defend_zone_kb() -> InlineKeyboardMarkup:
-    """Создаёт клавиатуру выбора зоны защиты."""
     return build_inline_keyboard(
         [
             (f"{E_ZONE_HEAD} Голова", "duel:def:head"),
@@ -3524,59 +2617,45 @@ def get_defend_zone_kb() -> InlineKeyboardMarkup:
 
 
 def get_finish_duel_kb() -> InlineKeyboardMarkup:
-    """Создаёт клавиатуру окончания боя."""
     return build_inline_keyboard(
         [("🔁 Ещё раз", "duel:again")],
         [("🏠 В главное меню", "arena:menu")],
     )
 
 
-# ==============================================================================
-# 18. ХЕНДЛЕРЫ: СТАРТ, МЕНЮ, ПОМОЩЬ
-# ==============================================================================
-
 router = Router()
 
 
 class RegistrationState(StatesGroup):
-    """Состояния FSM для регистрации нового игрока."""
     waiting_for_name = State()
 
 
 class DuelFindState(StatesGroup):
-    """Состояния FSM для поиска соперника по нику."""
     waiting_for_target = State()
 
 
-# Развёрнутый текст помощи
 HELP_TEXT = (
     "╔══════════════════════════╗\n"
     "   ⚔️ <b>АРЕНА ДУЭЛЯНТОВ</b>\n"
     "╚══════════════════════════╝\n\n"
-
     "<b>📌 Как использовать команды в чате:</b>\n"
     "• Ответь на сообщение игрока командой\n"
     "• Или: <code>команда @user</code> / <code>команда ID</code>\n\n"
-
     "<b>⚔️ Дуэли:</b>\n"
     "• <code>перчатка</code> или <code>перч</code> — вызвать на бой\n"
     "• <code>профиль</code> или <code>фото</code> — статистика\n\n"
-
     "<b>💎 Экономика:</b>\n"
     "• <code>перевод [сумма]</code> — перевести кристаллы\n"
     "• <code>баланс</code> — проверить баланс\n\n"
-
     "<b>🎰 Казино (сокращения):</b>\n"
     "• <code>сл [сумма]</code> — слоты\n"
     "• <code>кост [сумма]</code> — кости\n"
     "• <code>мон [сумма] [о/р]</code> — монетка\n"
     "• <code>рул [сумма] [к/ч/з]</code> — рулетка\n"
     "• <code>больше [сумма]</code> / <code>меньше [сумма]</code>\n\n"
-
     "<b>👹 Чатовые события:</b>\n"
     "• <code>атака</code> — ударить босса/караван\n"
     "• <code>событие</code> — статус текущего события\n\n"
-
     "<b>🎭 RP действия:</b>\n"
     "• <code>ударить</code>, <code>обнять</code>, <code>поцеловать</code>\n"
     "• <code>пнуть</code>, <code>погладить</code>, <code>укусить</code>\n"
@@ -3584,7 +2663,6 @@ HELP_TEXT = (
     "• <code>лечить</code>, <code>игнор</code>, <code>смеяться</code>\n"
     "• <code>танцевать</code>, <code>шлепнуть</code>, <code>обозвать</code>\n"
     "• <code>покормить</code>, <code>напоить</code>, <code>щекотать</code>\n\n"
-
     "<b>👑 Админ:</b>\n"
     "• <code>бан</code> / <code>разбан</code>\n"
     "• <code>выдать [сумма]</code>\n"
@@ -3595,19 +2673,12 @@ HELP_TEXT = (
 
 @router.message(CommandStart())
 async def handle_start_command(m: Message, state: FSMContext) -> None:
-    """
-    Обрабатывает команду /start.
-
-    Для существующих игроков: приветствие и меню.
-    Для новых: запуск регистрации.
-    """
     await state.clear()
     ensure_masked_bots_exist(Config.BOT_GENERATION_COUNT)
 
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (m.from_user.id,))
 
     if p:
-        # Обновляем username и last_active
         db.execute(
             "UPDATE players SET username=?, last_active=? WHERE user_id=?",
             (m.from_user.username, time.time(), m.from_user.id)
@@ -3616,13 +2687,7 @@ async def handle_start_command(m: Message, state: FSMContext) -> None:
         if m.chat.type == "private":
             await m.answer(
                 f"С возвращением, <b>{esc(p['name'])}</b>! Арена ждёт 👇",
-                reply_markup=ReplyKeyboardMarkup(
-                    keyboard=[
-                        [KeyboardButton(text="⚔️ Арена"), KeyboardButton(text="🎰 Казино")],
-                        [KeyboardButton(text="🎒 Снаряжение"), KeyboardButton(text="🏆 Топ")],
-                    ],
-                    resize_keyboard=True,
-                )
+                reply_markup=MENU_KB
             )
             await flush_notifications(m)
         else:
@@ -3632,7 +2697,6 @@ async def handle_start_command(m: Message, state: FSMContext) -> None:
             )
         return
 
-    # Новый игрок - запускаем регистрацию
     await state.set_state(RegistrationState.waiting_for_name)
     await m.answer(
         "⚔️ <b>Добро пожаловать на Арену Дуэлянтов!</b>\n\n"
@@ -3645,14 +2709,8 @@ async def handle_start_command(m: Message, state: FSMContext) -> None:
 
 @router.message(RegistrationState.waiting_for_name, F.text)
 async def handle_registration_name(m: Message, state: FSMContext) -> None:
-    """
-    Обрабатывает ввод имени при регистрации.
-
-    Валидирует имя и создаёт нового игрока.
-    """
     name = " ".join(m.text.split())
 
-    # Валидация длины
     if not MIN_NAME_LENGTH <= len(name) <= MAX_NAME_LENGTH:
         await m.answer(
             f"Имя должно быть от {MIN_NAME_LENGTH} до {MAX_NAME_LENGTH} символов. "
@@ -3660,16 +2718,13 @@ async def handle_registration_name(m: Message, state: FSMContext) -> None:
         )
         return
 
-    # Проверка на слэш в начале
     if name.startswith("/"):
         await m.answer("Имя не может начинаться с '/'. Попробуй ещё раз:")
         return
 
-    # Проверка уникальности
     if db.fetch_one("SELECT 1 FROM players WHERE LOWER(name)=LOWER(?)", (name,)):
         name = f"{name}{random.randint(1, 99)}"
 
-    # Создание игрока
     now = time.time()
     db.execute(
         """INSERT OR IGNORE INTO players
@@ -3691,7 +2746,6 @@ async def handle_registration_name(m: Message, state: FSMContext) -> None:
         )
     )
 
-    # Инициализация статистики
     db.execute(
         """INSERT OR IGNORE INTO player_stats (user_id) VALUES (?)""",
         (m.from_user.id,)
@@ -3704,41 +2758,21 @@ async def handle_registration_name(m: Message, state: FSMContext) -> None:
         f"Боец <b>{esc(name)}</b> создан! 🎉\n\n"
         f"{E_CRYSTAL} Стартовый баланс: {Config.START_CRYSTALS}\n"
         f"⚔️ Оружие: {WEAPONS[START_WEAPON]['emoji']} {WEAPONS[START_WEAPON]['name']}",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="⚔️ Арена"), KeyboardButton(text="🎰 Казино")],
-                [KeyboardButton(text="🎒 Снаряжение"), KeyboardButton(text="🏆 Топ")],
-            ],
-            resize_keyboard=True,
-        ) if m.chat.type == "private" else None
+        reply_markup=MENU_KB if m.chat.type == "private" else None
     )
 
 
 @router.message(F.text.regexp(r"(?i)^(help|помощь|хелп)$"))
 async def handle_help_command(m: Message) -> None:
-    """Обрабатывает команду помощи."""
     if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (m.from_user.id,)):
         await m.answer("Сначала отправь /start в ЛС бота.")
         return
 
-    kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="⚔️ Арена"), KeyboardButton(text="🎰 Казино")],
-            [KeyboardButton(text="🎒 Снаряжение"), KeyboardButton(text="🏆 Топ")],
-        ],
-        resize_keyboard=True,
-    ) if m.chat.type == "private" else None
-
+    kb = MENU_KB if m.chat.type == "private" else None
     await m.answer(HELP_TEXT, reply_markup=kb)
 
 
 async def flush_notifications(m: Message) -> None:
-    """
-    Выводит непрочитанные уведомления игрока и помечает их как прочитанные.
-
-    Args:
-        m: Объект сообщения для ответа.
-    """
     rows = db.fetch_all(
         "SELECT id, text FROM notifications WHERE user_id=? AND seen=0 ORDER BY id LIMIT ?",
         (m.from_user.id, MAX_NOTIFICATIONS_PER_USER)
@@ -3757,29 +2791,16 @@ async def flush_notifications(m: Message) -> None:
     )
 
 
-# ==============================================================================
-# 19. ХЕНДЛЕРЫ: ЧАТОВЫЕ КОМАНДЫ
-# ==============================================================================
-
 def is_admin(uid: int) -> bool:
-    """Проверяет, является ли пользователь администратором."""
     return uid == Config.ADMIN_ID
 
 
 def is_user_banned(uid: int) -> bool:
-    """Проверяет, забанен ли пользователь."""
     p = db.fetch_one("SELECT banned FROM players WHERE user_id=?", (uid,))
     return bool(p and p["banned"])
 
 
 def notify_player(uid: int, text: str) -> None:
-    """
-    Добавляет уведомление для игрока в БД.
-
-    Args:
-        uid: ID получателя уведомления.
-        text: Текст уведомления.
-    """
     if uid <= 0:
         return
     db.execute(
@@ -3788,11 +2809,57 @@ def notify_player(uid: int, text: str) -> None:
     )
 
 
-# --- ДУЭЛИ ---
+@router.message(F.text.in_(MENU_TEXTS))
+async def on_menu_button(m: Message, state: FSMContext) -> None:
+    if m.chat.type != "private":
+        return
+
+    await state.clear()
+
+    if is_user_banned(m.from_user.id):
+        await m.answer("🚫 Доступ закрыт.")
+        return
+
+    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (m.from_user.id,)):
+        await m.answer("Сначала отправь /start.")
+        return
+
+    db.execute(
+        "UPDATE players SET last_active=? WHERE user_id=?",
+        (time.time(), m.from_user.id)
+    )
+
+    await flush_notifications(m)
+
+    if m.text == BTN_ARENA:
+        text, kb = generate_arena_menu_screen(m.from_user.id)
+        await m.answer(text, reply_markup=kb)
+    elif m.text == BTN_CASINO:
+        text = (
+            "╔══════════════════════════╗\n"
+            f"   {E_SLOT} <b>КАЗИНО</b>\n"
+            "╚══════════════════════════╝\n\n"
+            f"{E_CRYSTAL} Баланс: <b>{format_number(db.fetch_one('SELECT crystals FROM players WHERE user_id=?', (m.from_user.id,))['crystals'])}</b>\n\n"
+            "Выбери игру в чате:\n"
+            "• <code>сл 100</code> — слоты\n"
+            "• <code>кост 100</code> — кости\n"
+            "• <code>мон 100 о</code> — монетка (о/р)\n"
+            "• <code>рул 100 к</code> — рулетка (к/ч/з)\n"
+            "• <code>больше 100</code> / <code>меньше 100</code>"
+        )
+        await m.answer(text)
+    elif m.text == BTN_GEAR:
+        text, kb = generate_gear_screen(m.from_user.id)
+        await m.answer(text, reply_markup=kb)
+    elif m.text == BTN_TOP:
+        p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (m.from_user.id,))
+        if p:
+            text, kb = generate_top_screen(m.from_user.id, determine_arena(p["wins"]))
+            await m.answer(text, reply_markup=kb)
+
 
 @router.message(F.text.regexp(r"(?i)^(перчатка|перч|glove|вызов)(\s|$)"))
 async def cmd_challenge_duel(m: Message, bot: Bot) -> None:
-    """Обработка вызова на дуэль."""
     if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (m.from_user.id,)):
         await m.answer("Сначала отправь /start в ЛС бота.")
         return
@@ -3812,10 +2879,8 @@ async def cmd_challenge_duel(m: Message, bot: Bot) -> None:
         return
 
     if tid < 0:
-        # Вызов бота - сразу начинаем бой
         await initiate_duel_message(m.from_user.id, tid, m, bot)
     else:
-        # Вызов игрока - отправляем уведомление
         attacker = db.fetch_one("SELECT name FROM players WHERE user_id=?", (m.from_user.id,))
         notify_player(
             tid,
@@ -3825,11 +2890,27 @@ async def cmd_challenge_duel(m: Message, bot: Bot) -> None:
         await m.answer(f"{E_GLOVE} Ты кинул перчатку <b>{esc(target['name'])}</b>.")
 
 
-# --- ПЕРЕВОДЫ ---
+@router.message(F.text.regexp(r"(?i)^(фото|профиль|stat)(\s|$)"))
+async def cmd_show_profile(m: Message) -> None:
+    row = db.fetch_one("SELECT * FROM players WHERE user_id=?", (m.from_user.id,))
+    if not row:
+        await m.answer("Сначала /start в ЛС бота.")
+        return
+
+    command_word = m.text.split()[0]
+    tid, err = resolve_command_target(m, command_word)
+
+    if tid:
+        target_row = db.fetch_one("SELECT * FROM players WHERE user_id=?", (tid,))
+        if target_row:
+            await m.answer(generate_profile_text(target_row))
+            return
+
+    await m.answer(generate_profile_text(row))
+
 
 @router.message(F.text.regexp(r"(?i)^перевод(\s|$)"))
 async def cmd_transfer(m: Message) -> None:
-    """Обработка перевода кристаллов."""
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (m.from_user.id,))
     if not p:
         await m.answer("Сначала /start в ЛС бота.")
@@ -3849,14 +2930,12 @@ async def cmd_transfer(m: Message) -> None:
         await m.answer("Игрок не найден или забанен.")
         return
 
-    # Извлекаем сумму
     amount = next((int(x) for x in (m.text or "").split() if x.lstrip("-").isdigit()), None)
 
     if not amount or amount <= 0:
         await m.answer("Укажи сумму: <code>перевод 100 @user</code>")
         return
 
-    # Валидация суммы
     if amount < Config.MIN_TRANSFER:
         await m.answer(f"Минимальная сумма перевода: {Config.MIN_TRANSFER} {E_CRYSTAL}")
         return
@@ -3865,16 +2944,13 @@ async def cmd_transfer(m: Message) -> None:
         await m.answer(f"Максимальная сумма перевода: {Config.MAX_TRANSFER} {E_CRYSTAL}")
         return
 
-    # Проверка баланса
     if p["crystals"] < amount:
         await m.answer(f"Недостаточно кристаллов: у тебя {p['crystals']} {E_CRYSTAL}")
         return
 
-    # Расчёт налога
     tax = int(amount * Config.TRANSFER_TAX)
     net_amount = amount - tax
 
-    # Выполняем перевод
     db.execute("UPDATE players SET crystals=crystals-? WHERE user_id=?", (amount, m.from_user.id))
     db.execute("UPDATE players SET crystals=crystals+? WHERE user_id=?", (net_amount, tid))
 
@@ -3889,11 +2965,8 @@ async def cmd_transfer(m: Message) -> None:
     )
 
 
-# --- ЧАТОВЫЕ СОБЫТИЯ ---
-
 @router.message(F.text.regexp(r"(?i)^атака(\s|$)"))
 async def cmd_attack_event(m: Message) -> None:
-    """Обработка атаки чатового события."""
     p = db.fetch_one("SELECT name FROM players WHERE user_id=?", (m.from_user.id,))
     if not p:
         await m.answer("Сначала /start в ЛС бота.")
@@ -3910,7 +2983,6 @@ async def cmd_attack_event(m: Message) -> None:
 
 @router.message(F.text.regexp(r"(?i)^событие(\s|$)"))
 async def cmd_event_status(m: Message) -> None:
-    """Показывает статус текущего чатового события."""
     status = get_chat_event_status()
 
     if not status:
@@ -3920,11 +2992,8 @@ async def cmd_event_status(m: Message) -> None:
     await m.answer(f"📋 <b>Текущее событие:</b>\n\n{status}")
 
 
-# --- БАЛАНС ---
-
 @router.message(F.text.regexp(r"(?i)^(баланс|balance|бал)(\s|$)"))
 async def cmd_balance(m: Message) -> None:
-    """Показывает баланс игрока."""
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (m.from_user.id,))
     if not p:
         await m.answer("Сначала /start в ЛС бота.")
@@ -3938,16 +3007,7 @@ async def cmd_balance(m: Message) -> None:
     )
 
 
-# --- RP ДЕЙСТВИЯ ---
-
 async def process_rp_action(m: Message, action_key: str) -> None:
-    """
-    Обрабатывает RP-действие с проверкой кулдаунов.
-
-    Args:
-        m: Объект сообщения.
-        action_key: Ключ действия из RP_ACTIONS.
-    """
     if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (m.from_user.id,)):
         await m.answer("Сначала /start в ЛС бота.")
         return
@@ -3966,7 +3026,6 @@ async def process_rp_action(m: Message, action_key: str) -> None:
         await m.answer("Игрок не найден или забанен.")
         return
 
-    # Проверка кулдауна
     cooldown_key = (m.from_user.id, tid, action_key)
     now = time.time()
 
@@ -3984,7 +3043,6 @@ async def process_rp_action(m: Message, action_key: str) -> None:
     )
 
 
-# Динамическая регистрация RP handlers
 RP_MAPPINGS: Dict[str, List[str]] = {
     "ударить": ["ударить", "уд", "hit"],
     "обнять": ["обнять", "обн", "hug"],
@@ -4015,7 +3073,6 @@ RP_MAPPINGS: Dict[str, List[str]] = {
 
 
 def _create_rp_handler(action: str) -> Callable:
-    """Фабрика хендлеров для RP-действий (исправляет проблему замыкания)."""
     async def handler(m: Message) -> None:
         await process_rp_action(m, action)
     return handler
@@ -4026,11 +3083,8 @@ for action, variants in RP_MAPPINGS.items():
     router.message(F.text.regexp(pattern))(_create_rp_handler(action))
 
 
-# --- КАЗИНО (С СОКРАЩЕНИЯМИ) ---
-
 @router.message(F.text.regexp(r"(?i)^(слоты|slot|сл)(\s+)(\d+)$"))
 async def cmd_chat_slots(m: Message) -> None:
-    """Обработка команды слотов."""
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (m.from_user.id,))
     if not p:
         await m.answer("Сначала /start в ЛС бота.")
@@ -4047,7 +3101,6 @@ async def cmd_chat_slots(m: Message) -> None:
 
 @router.message(F.text.regexp(r"(?i)^(кости|dice|кост)(\s+)(\d+)$"))
 async def cmd_chat_dice(m: Message) -> None:
-    """Обработка команды костей."""
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (m.from_user.id,))
     if not p:
         await m.answer("Сначала /start в ЛС бота.")
@@ -4064,7 +3117,6 @@ async def cmd_chat_dice(m: Message) -> None:
 
 @router.message(F.text.regexp(r"(?i)^(монетка|coin|мон)(\s+)(\d+)(\s+)(орел|решка|о|р)$"))
 async def cmd_chat_coin(m: Message) -> None:
-    """Обработка команды монетки."""
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (m.from_user.id,))
     if not p:
         await m.answer("Сначала /start в ЛС бота.")
@@ -4084,7 +3136,6 @@ async def cmd_chat_coin(m: Message) -> None:
 
 @router.message(F.text.regexp(r"(?i)^(рулетка|roulette|рул)(\s+)(\d+)(\s+)(красное|черное|зеленое|к|ч|з)$"))
 async def cmd_chat_roulette(m: Message) -> None:
-    """Обработка команды рулетки."""
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (m.from_user.id,))
     if not p:
         await m.answer("Сначала /start в ЛС бота.")
@@ -4105,7 +3156,6 @@ async def cmd_chat_roulette(m: Message) -> None:
 
 @router.message(F.text.regexp(r"(?i)^(больше|high)(\s+)(\d+)$"))
 async def cmd_chat_highlow_high(m: Message) -> None:
-    """Обработка команды Больше."""
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (m.from_user.id,))
     if not p:
         await m.answer("Сначала /start в ЛС бота.")
@@ -4122,7 +3172,6 @@ async def cmd_chat_highlow_high(m: Message) -> None:
 
 @router.message(F.text.regexp(r"(?i)^(меньше|low)(\s+)(\d+)$"))
 async def cmd_chat_highlow_low(m: Message) -> None:
-    """Обработка команды Меньше."""
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (m.from_user.id,))
     if not p:
         await m.answer("Сначала /start в ЛС бота.")
@@ -4137,11 +3186,8 @@ async def cmd_chat_highlow_low(m: Message) -> None:
     await m.answer(f"{result}\n\n{E_CRYSTAL} Баланс: <b>{format_number(balance['crystals'])}</b>")
 
 
-# --- АДМИН: СОБЫТИЯ ---
-
 @router.message(F.text.regexp(r"(?i)^событие босс$"))
 async def adm_spawn_boss(m: Message) -> None:
-    """Админ: создание рейдового босса."""
     if not is_admin(m.from_user.id):
         return
 
@@ -4156,7 +3202,6 @@ async def adm_spawn_boss(m: Message) -> None:
 
 @router.message(F.text.regexp(r"(?i)^событие караван$"))
 async def adm_spawn_caravan(m: Message) -> None:
-    """Админ: создание каравана."""
     if not is_admin(m.from_user.id):
         return
 
@@ -4171,7 +3216,6 @@ async def adm_spawn_caravan(m: Message) -> None:
 
 @router.message(F.text.regexp(r"(?i)^событие набег$"))
 async def adm_spawn_raid(m: Message) -> None:
-    """Админ: создание набега."""
     if not is_admin(m.from_user.id):
         return
 
@@ -4186,7 +3230,6 @@ async def adm_spawn_raid(m: Message) -> None:
 
 @router.message(F.text.regexp(r"(?i)^событие дракон$"))
 async def adm_spawn_dragon_raid(m: Message) -> None:
-    """Админ: создание нашествия драконов."""
     if not is_admin(m.from_user.id):
         return
 
@@ -4199,11 +3242,8 @@ async def adm_spawn_dragon_raid(m: Message) -> None:
     await m.answer(template["announce_text"].format(emoji=template["emoji"], hp=event.hp))
 
 
-# --- АДМИН: ПРОЧЕЕ ---
-
 @router.message(F.text.regexp(r"(?i)^бан(\s|$)"))
 async def adm_cmd_ban(m: Message) -> None:
-    """Админ: бан игрока."""
     if not is_admin(m.from_user.id):
         return
 
@@ -4219,7 +3259,6 @@ async def adm_cmd_ban(m: Message) -> None:
 
 @router.message(F.text.regexp(r"(?i)^разбан(\s|$)"))
 async def adm_cmd_unban(m: Message) -> None:
-    """Админ: разбан игрока."""
     if not is_admin(m.from_user.id):
         return
 
@@ -4234,7 +3273,6 @@ async def adm_cmd_unban(m: Message) -> None:
 
 @router.message(F.text.regexp(r"(?i)^выдать(\s|$)"))
 async def adm_cmd_give(m: Message) -> None:
-    """Админ: выдача кристаллов."""
     if not is_admin(m.from_user.id):
         return
 
@@ -4255,7 +3293,6 @@ async def adm_cmd_give(m: Message) -> None:
 
 @router.message(F.text.regexp(r"(?i)^рассылка\s+"))
 async def adm_cmd_broadcast(m: Message, bot: Bot) -> None:
-    """Админ: рассылка сообщения всем игрокам."""
     if not is_admin(m.from_user.id):
         return
 
@@ -4280,10 +3317,6 @@ async def adm_cmd_broadcast(m: Message, bot: Bot) -> None:
     await m.answer(f"✅ Рассылка завершена. Доставлено: {ok_count} игрокам.")
 
 
-# ==============================================================================
-# 20. ЛОГИКА ДУЭЛИ: ЗАПУСК, РАУНДЫ, ЗАВЕРШЕНИЕ
-# ==============================================================================
-
 def initiate_duel(
     a_id: int,
     b_id: int,
@@ -4291,26 +3324,12 @@ def initiate_duel(
     boss_key: Optional[str] = None,
     reward_mult: int = 1
 ) -> Optional[Duel]:
-    """
-    Создаёт и инициализирует объект дуэли.
-
-    Args:
-        a_id: ID первого бойца.
-        b_id: ID второго бойца (-1 для босса).
-        is_boss: True если это бой с боссом.
-        boss_key: Ключ босса из BOSSES.
-        reward_mult: Множитель награды.
-
-    Returns:
-        Объект Duel или None при ошибке.
-    """
     a_row = db.fetch_one("SELECT * FROM players WHERE user_id=?", (a_id,))
     if not a_row:
         return None
 
     fa = create_fighter_from_db(a_row)
 
-    # Создание второго бойца
     if is_boss and boss_key and boss_key in BOSSES:
         boss_data = BOSSES[boss_key]
         fb = Fighter(
@@ -4326,7 +3345,6 @@ def initiate_duel(
             return None
         fb = create_fighter_from_db(b_row)
 
-    # Создание дуэли
     duel = Duel(
         a_id=a_id,
         b_id=b_id,
@@ -4338,12 +3356,10 @@ def initiate_duel(
         reward_mult=reward_mult,
     )
 
-    # Начальное сообщение в лог
     first_attacker = fa.name if duel.attacker_is_a else fb.name
     prefix = f"{E_BOSS} <b>БОСС</b> " if is_boss else ""
     duel.add_log(f"{prefix}Бой начался! Первым атакует <b>{first_attacker}</b>.")
 
-    # Регистрация в глобальном хранилище
     ACTIVE_DUELS[a_id] = duel
     if b_id > 0:
         ACTIVE_DUELS[b_id] = duel
@@ -4360,19 +3376,6 @@ async def initiate_duel_message(
     boss_key: Optional[str] = None,
     reward_mult: int = 1
 ) -> None:
-    """
-    Отправляет начальные сообщения о дуэли и запускает таймеры.
-
-    Args:
-        aid: ID инициатора.
-        bid: ID противника.
-        m: Исходное сообщение.
-        bot: Объект бота.
-        is_boss: Бой с боссом.
-        boss_key: Ключ босса.
-        reward_mult: Множитель награды.
-    """
-    # Проверки
     if bid == aid:
         await m.answer("🤨 Нельзя драться с самим собой.")
         return
@@ -4381,28 +3384,23 @@ async def initiate_duel_message(
         await m.answer("У тебя уже идёт активный бой.")
         return
 
-    # Создание дуэли
     duel = initiate_duel(aid, bid, is_boss, boss_key, reward_mult)
     if not duel:
         await m.answer("Не удалось начать бой (соперник недоступен).")
         return
 
-    # Определение роли
     role = duel.get_state_for(aid)
 
     if role == "attacker":
-        # Атакующий - выбор варианта атаки
         await m.answer(
             generate_duel_status_text(duel, aid, timer_left=Config.TURN_TIMEOUT),
             reply_markup=get_attack_variant_kb(aid)
         )
         start_duel_timer(duel, aid, "attacker", bot)
     else:
-        # Защищающийся
         atk_id = duel.get_attacker_id()
 
         if atk_id < 0:
-            # Бот атакует первым
             variant_idx = bot_decide_attack_variant(duel.get_attacker())
             duel.chosen_variant_idx = variant_idx
             duel.atk_zone = bot_decide_attack_zone(duel.get_attacker(), duel.get_defender())
@@ -4417,13 +3415,11 @@ async def initiate_duel_message(
             )
             start_duel_timer(duel, aid, "defender", bot)
         else:
-            # Ожидание хода противника
             await m.answer(
                 generate_duel_status_text(duel, aid, extra="⏳ Соперник выбирает удар…"),
                 reply_markup=build_inline_keyboard([("🔄 Обновить", "duel:refresh")])
             )
 
-    # Уведомление противника
     if bid > 0 and not is_boss:
         attacker_name = db.fetch_one("SELECT name FROM players WHERE user_id=?", (aid,))["name"]
         notify_player(
@@ -4440,16 +3436,6 @@ async def process_duel_round(
     atk_zone: str,
     def_zone: Optional[str]
 ) -> None:
-    """
-    Обрабатывает один раунд боя.
-
-    Args:
-        duel: Объект дуэли.
-        bot: Объект бота.
-        cb: CallbackQuery (если из inline-кнопки).
-        atk_zone: Зона атаки.
-        def_zone: Зона защиты.
-    """
     if duel.finished:
         return
 
@@ -4458,39 +3444,32 @@ async def process_duel_round(
     attacker = duel.get_attacker()
     defender = duel.get_defender()
 
-    # Лог раунда
     duel.add_log(f"── Раунд {duel.round_no} ──")
     duel.add_log(f"⚔️ {attacker.name} → {ZONE_INFO[atk_zone]['emoji']} {ZONE_INFO[atk_zone]['name']}")
 
     if def_zone:
         duel.add_log(f"🛡 {defender.name} → {ZONE_INFO[def_zone]['emoji']} {ZONE_INFO[def_zone]['name']}")
 
-    # Обработка DoT в начале хода
     process_dots(attacker, duel.log)
     if not attacker.is_alive():
         await finalize_duel(duel, winner_is_a=(attacker is duel.b), bot=bot)
         return
 
-    # Выполнение атаки
     execute_attack_phase(attacker, defender, atk_zone, def_zone, duel.chosen_variant_idx, duel.log)
 
-    # Проверка смерти защищающегося
     if not defender.is_alive():
         await finalize_duel(duel, winner_is_a=(defender is duel.a), bot=bot)
         return
 
-    # Подготовка следующего раунда
     duel.atk_zone = None
     duel.def_zone = None
     duel.chosen_variant_idx = None
     duel.attacker_is_a = not duel.attacker_is_a
     duel.round_no += 1
 
-    # Уменьшение кулдаунов
     attacker.reduce_cooldowns()
     defender.reduce_cooldowns()
 
-    # Сброс серии блоков
     if duel.round_no - duel.bot_last_block_round > 4:
         duel.bot_block_streak = 0
 
@@ -4498,13 +3477,6 @@ async def process_duel_round(
 
 
 async def start_next_duel_round(duel: Duel, bot: Bot) -> None:
-    """
-    Инициализирует следующий раунд.
-
-    Args:
-        duel: Объект дуэли.
-        bot: Объект бота.
-    """
     if duel.finished:
         return
 
@@ -4512,7 +3484,6 @@ async def start_next_duel_round(duel: Duel, bot: Bot) -> None:
     def_id = duel.get_defender_id()
 
     if atk_id > 0:
-        # Игрок атакует
         await bot.send_message(
             atk_id,
             generate_duel_status_text(
@@ -4524,7 +3495,6 @@ async def start_next_duel_round(duel: Duel, bot: Bot) -> None:
         )
         start_duel_timer(duel, atk_id, "attacker", bot)
     else:
-        # Бот атакует
         variant_idx = bot_decide_attack_variant(duel.get_attacker())
         duel.chosen_variant_idx = variant_idx
         duel.atk_zone = bot_decide_attack_zone(duel.get_attacker(), duel.get_defender())
@@ -4552,15 +3522,6 @@ async def finalize_duel(
     bot: Bot,
     reason: str = "ko"
 ) -> None:
-    """
-    Завершает дуэль, начисляет награды и отправляет итоги.
-
-    Args:
-        duel: Объект дуэли.
-        winner_is_a: True если победил a_id.
-        bot: Объект бота.
-        reason: Причина завершения (ko/timeout).
-    """
     if duel.finished:
         return
 
@@ -4574,13 +3535,14 @@ async def finalize_duel(
     mult = duel.reward_mult if duel.is_boss else 1
 
     if winner_is_a:
-        # Победил A
         db.execute("UPDATE players SET wins=wins+1, total_duels=total_duels+1 WHERE user_id=?", (aid,))
 
         current_wins = db.fetch_one("SELECT wins FROM players WHERE user_id=?", (aid,))["wins"]
         prize = ARENAS[determine_arena(current_wins)]["prize"] * mult
-        db.execute("UPDATE players SET crystals=crystals+?, total_crystals_earned=total_crystals_earned+? WHERE user_id=?",
-                   (prize, prize, aid))
+        db.execute(
+            "UPDATE players SET crystals=crystals+?, total_crystals_earned=total_crystals_earned+? WHERE user_id=?",
+            (prize, prize, aid)
+        )
 
         if bid and bid > 0:
             db.execute(
@@ -4593,14 +3555,15 @@ async def finalize_duel(
 
         result_line = f"{E_TROPHY} <b>ТЫ ПОБЕДИЛ!</b>  +1 {E_TROPHY}  ·  +{prize} {E_CRYSTAL}"
     else:
-        # Победил B
         if bid and bid > 0:
             db.execute("UPDATE players SET wins=wins+1, total_duels=total_duels+1 WHERE user_id=?", (bid,))
 
             current_wins_b = db.fetch_one("SELECT wins FROM players WHERE user_id=?", (bid,))["wins"]
             prize_b = ARENAS[determine_arena(current_wins_b)]["prize"] * mult
-            db.execute("UPDATE players SET crystals=crystals+?, total_crystals_earned=total_crystals_earned+? WHERE user_id=?",
-                       (prize_b, prize_b, bid))
+            db.execute(
+                "UPDATE players SET crystals=crystals+?, total_crystals_earned=total_crystals_earned+? WHERE user_id=?",
+                (prize_b, prize_b, bid)
+            )
 
             a_name = a_row["name"]
             notify_player(bid, f"{E_TROPHY} <b>{esc(a_name)}</b> проиграл тебе! +1 {E_TROPHY}, +{prize_b} {E_CRYSTAL}")
@@ -4614,7 +3577,6 @@ async def finalize_duel(
 
     terminate_duel(duel)
 
-    # Формирование итогового сообщения
     reason_line = f"\n⏱ Соперник не успел за {Config.TURN_TIMEOUT} сек." if reason == "timeout" else ""
 
     new_a = db.fetch_one("SELECT * FROM players WHERE user_id=?", (aid,))
@@ -4638,7 +3600,6 @@ async def finalize_duel(
     except Exception as e:
         logging.error(f"Failed to send duel result to {aid}: {e}")
 
-    # Сообщение для B
     if bid and bid > 0:
         new_b = db.fetch_one("SELECT * FROM players WHERE user_id=?", (bid,))
         if new_b:
@@ -4666,13 +3627,8 @@ async def finalize_duel(
                 logging.error(f"Failed to send duel result to {bid}: {e}")
 
 
-# ==============================================================================
-# 21. CALLBACK HANDLERS (INLINE КНОПКИ)
-# ==============================================================================
-
 @router.callback_query(F.data == "arena:menu")
 async def cb_arena_menu(cb: CallbackQuery, state: FSMContext) -> None:
-    """Callback: главное меню арены."""
     await state.clear()
     if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
         await cb.answer("Сначала /start", show_alert=True)
@@ -4681,9 +3637,52 @@ async def cb_arena_menu(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
 
 
+@router.callback_query(F.data == "arena:bosses")
+async def cb_arena_bosses(cb: CallbackQuery) -> None:
+    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
+        await cb.answer("Сначала /start", show_alert=True)
+        return
+    await safe_edit_message(cb, *generate_bosses_menu_screen(cb.from_user.id))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^arena:boss:\w+$"))
+async def cb_arena_boss_fight(cb: CallbackQuery, bot: Bot) -> None:
+    p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (cb.from_user.id,))
+    if not p or cb.from_user.id in ACTIVE_DUELS:
+        await cb.answer("Сначала /start или бой уже идёт", show_alert=True)
+        return
+
+    bkey = cb.data.split(":")[2]
+    if bkey not in BOSSES or p["wins"] < BOSSES[bkey]["min_wins"]:
+        await cb.answer(f"Нужно {BOSSES[bkey]['min_wins']} {E_TROPHY} для этого босса.", show_alert=True)
+        return
+
+    duel = initiate_duel(cb.from_user.id, -1, is_boss=True, boss_key=bkey, reward_mult=BOSSES[bkey]["reward_mult"])
+    if not duel:
+        await cb.answer("Ошибка запуска боя.", show_alert=True)
+        return
+
+    role = duel.get_state_for(cb.from_user.id)
+    if role == "attacker":
+        await safe_edit_message(cb, generate_duel_status_text(duel, cb.from_user.id, timer_left=Config.TURN_TIMEOUT), get_attack_variant_kb(cb.from_user.id))
+        start_duel_timer(duel, cb.from_user.id, "attacker", bot)
+    else:
+        variant_idx = bot_decide_attack_variant(duel.get_attacker())
+        duel.chosen_variant_idx = variant_idx
+        duel.atk_zone = bot_decide_attack_zone(duel.get_attacker(), duel.get_defender())
+        await safe_edit_message(
+            cb,
+            generate_duel_status_text(duel, cb.from_user.id, extra="⚔️ Босс уже выбрал удар.", timer_left=Config.TURN_TIMEOUT),
+            get_defend_zone_kb()
+        )
+        start_duel_timer(duel, cb.from_user.id, "defender", bot)
+
+    await cb.answer(f"Бой с {BOSSES[bkey]['name']} начался!")
+
+
 @router.callback_query(F.data == "arena:find")
 async def cb_arena_find(cb: CallbackQuery, bot: Bot) -> None:
-    """Callback: поиск соперника."""
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (cb.from_user.id,))
     if not p or cb.from_user.id in ACTIVE_DUELS:
         await cb.answer("Сначала /start или бой уже идёт", show_alert=True)
@@ -4698,27 +3697,78 @@ async def cb_arena_find(cb: CallbackQuery, bot: Bot) -> None:
     await cb.answer()
 
 
+@router.callback_query(F.data == "arena:list")
+async def cb_arena_list(cb: CallbackQuery) -> None:
+    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
+        await cb.answer("Сначала /start", show_alert=True)
+        return
+    await safe_edit_message(cb, *generate_arena_list_screen(cb.from_user.id))
+    await cb.answer()
+
+
+@router.callback_query(F.data == "arena:find_name")
+async def cb_arena_find_name(cb: CallbackQuery, state: FSMContext) -> None:
+    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
+        await cb.answer("Сначала /start", show_alert=True)
+        return
+    await state.set_state(DuelFindState.waiting_for_target)
+    await cb.message.answer("🔎 Отправь @username, ID или имя бойца.")
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^duel:pick:-?\d+$"))
+async def cb_duel_pick(cb: CallbackQuery, bot: Bot) -> None:
+    p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (cb.from_user.id,))
+    if not p or cb.from_user.id in ACTIVE_DUELS:
+        await cb.answer("Сначала /start или бой уже идёт", show_alert=True)
+        return
+
+    tid = int(cb.data.split(":")[2])
+    if tid == cb.from_user.id:
+        await cb.answer("Нельзя драться с собой.", show_alert=True)
+        return
+
+    await initiate_duel_message(cb.from_user.id, tid, cb.message, bot)
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^duel:profile:-?\d+$"))
+async def cb_duel_profile(cb: CallbackQuery) -> None:
+    tid = int(cb.data.split(":")[2])
+    row = db.fetch_one("SELECT * FROM players WHERE user_id=?", (tid,))
+    if not row:
+        await cb.answer("Игрок не найден.", show_alert=True)
+        return
+    await safe_edit_message(
+        cb,
+        generate_profile_text(row),
+        build_inline_keyboard(
+            [("⬅️ Назад", "arena:list")],
+            [("⚔️ Вызвать на бой", f"duel:pick:{tid}")]
+        )
+    )
+    await cb.answer()
+
+
 @router.callback_query(F.data == "duel:myprofile")
 async def cb_my_profile(cb: CallbackQuery) -> None:
-    """Callback: мой профиль."""
     row = db.fetch_one("SELECT * FROM players WHERE user_id=?", (cb.from_user.id,))
     if not row:
         await cb.answer("Сначала /start", show_alert=True)
         return
-
-    text = (
-        f"👤 <b>{esc(row['name'])}</b>\n\n"
-        f"{E_TROPHY} Победы: {row['wins']}\n"
-        f"{E_SKULL} Поражения: {row['losses']}\n"
-        f"{E_CRYSTAL} Кристаллы: {format_number(row['crystals'])}"
+    await safe_edit_message(
+        cb,
+        generate_profile_text(row),
+        build_inline_keyboard(
+            [("⬅️ Назад", "arena:menu")],
+            [("🎒 Снаряжение", "gear:menu")]
+        )
     )
-    await safe_edit_message(cb, text, build_inline_keyboard([("⬅️ Назад", "arena:menu")]))
     await cb.answer()
 
 
 @router.callback_query(F.data == "duel:again")
 async def cb_duel_again(cb: CallbackQuery, bot: Bot) -> None:
-    """Callback: ещё раз (новый бой)."""
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (cb.from_user.id,))
     if not p or cb.from_user.id in ACTIVE_DUELS:
         await cb.answer("Сначала /start или бой уже идёт", show_alert=True)
@@ -4735,7 +3785,6 @@ async def cb_duel_again(cb: CallbackQuery, bot: Bot) -> None:
 
 @router.callback_query(F.data.regexp(r"^duel:variant:\d+$"))
 async def cb_duel_variant(cb: CallbackQuery, bot: Bot) -> None:
-    """Callback: выбор варианта атаки."""
     duel = ACTIVE_DUELS.get(cb.from_user.id)
     if not duel or duel.finished or duel.get_state_for(cb.from_user.id) != "attacker":
         await cb.answer("Неверное состояние боя.", show_alert=True)
@@ -4747,12 +3796,10 @@ async def cb_duel_variant(cb: CallbackQuery, bot: Bot) -> None:
 
     variant_idx = int(cb.data.split(":")[2])
 
-    # Проверка кулдауна
     if variant_idx in duel.get_attacker().attack_cooldowns:
         await cb.answer("Эта атака на перезарядке!", show_alert=True)
         return
 
-    # Валидация индекса
     weapon_data = WEAPONS[duel.get_attacker().weapon]
     if variant_idx >= len(weapon_data["variants"]):
         await cb.answer("Неверный вариант атаки.", show_alert=True)
@@ -4774,13 +3821,11 @@ async def cb_duel_variant(cb: CallbackQuery, bot: Bot) -> None:
 
 @router.callback_query(F.data.regexp(r"^duel:variant_disabled:\d+$"))
 async def cb_duel_variant_disabled(cb: CallbackQuery) -> None:
-    """Callback: попытка выбрать недоступный вариант."""
     await cb.answer("Эта атака на перезарядке!", show_alert=True)
 
 
 @router.callback_query(F.data.regexp(r"^duel:atk:(head|torso|arms|legs)$"))
 async def cb_duel_attack(cb: CallbackQuery, bot: Bot) -> None:
-    """Callback: выбор зоны атаки."""
     duel = ACTIVE_DUELS.get(cb.from_user.id)
     if not duel or duel.finished:
         await cb.answer("Бой не найден или завершён.", show_alert=True)
@@ -4799,7 +3844,6 @@ async def cb_duel_attack(cb: CallbackQuery, bot: Bot) -> None:
     def_id = duel.get_defender_id()
 
     if def_id < 0:
-        # Бот защищается
         bot_is_a = (def_id == duel.a_id)
         bot_fighter = duel.a if bot_is_a else duel.b
 
@@ -4814,7 +3858,6 @@ async def cb_duel_attack(cb: CallbackQuery, bot: Bot) -> None:
 
         await process_duel_round(duel, bot, cb=cb, atk_zone=duel.atk_zone, def_zone=duel.def_zone)
     else:
-        # Игрок защищается
         await bot.send_message(
             def_id,
             generate_duel_status_text(
@@ -4837,7 +3880,6 @@ async def cb_duel_attack(cb: CallbackQuery, bot: Bot) -> None:
 
 @router.callback_query(F.data.regexp(r"^duel:def:(head|torso|arms|legs)$"))
 async def cb_duel_defend(cb: CallbackQuery, bot: Bot) -> None:
-    """Callback: выбор зоны защиты."""
     duel = ACTIVE_DUELS.get(cb.from_user.id)
     if not duel or duel.finished:
         await cb.answer("Бой не найден или завершён.", show_alert=True)
@@ -4859,7 +3901,6 @@ async def cb_duel_defend(cb: CallbackQuery, bot: Bot) -> None:
 
 @router.callback_query(F.data == "duel:refresh")
 async def cb_duel_refresh(cb: CallbackQuery) -> None:
-    """Callback: обновление статуса боя."""
     duel = ACTIVE_DUELS.get(cb.from_user.id)
     if not duel or duel.finished:
         await cb.answer("Бой не найден или завершён.", show_alert=True)
@@ -4910,14 +3951,130 @@ async def cb_duel_refresh(cb: CallbackQuery) -> None:
     await cb.answer("Обновлено")
 
 
-# ==============================================================================
-# 22. FALLBACK И ЗАПУСК
-# ==============================================================================
+@router.callback_query(F.data == "gear:menu")
+async def cb_gear_menu(cb: CallbackQuery) -> None:
+    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
+        await cb.answer("Сначала /start", show_alert=True)
+        return
+    await safe_edit_message(cb, *generate_gear_screen(cb.from_user.id))
+    await cb.answer()
+
+
+@router.callback_query(F.data == "gear:w")
+async def cb_gear_weapon(cb: CallbackQuery) -> None:
+    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
+        await cb.answer("Сначала /start", show_alert=True)
+        return
+    await safe_edit_message(cb, *generate_weapon_list(cb.from_user.id))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^buy_weapon:(\w+)$"))
+async def cb_buy_weapon(cb: CallbackQuery) -> None:
+    p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (cb.from_user.id,))
+    if not p:
+        await cb.answer("Сначала /start", show_alert=True)
+        return
+
+    key = cb.data.split(":")[1]
+    if key not in WEAPONS:
+        await cb.answer()
+        return
+
+    item = WEAPONS[key]
+    owned = set((p["weapons_owned"] or "").split(","))
+
+    if key in owned:
+        db.execute("UPDATE players SET weapon=? WHERE user_id=?", (key, cb.from_user.id))
+        toast = f"Надето: {item['name']}"
+    elif p["crystals"] >= item["price"]:
+        db.execute(
+            "UPDATE players SET crystals=chips-?, weapons_owned=?, weapon=? WHERE user_id=?",
+            (item["price"], ",".join(owned | {key}), key, cb.from_user.id)
+        )
+        toast = f"Куплено: {item['name']}"
+    else:
+        await cb.answer(f"Нужно {item['price']}💎", show_alert=True)
+        return
+
+    await safe_edit_message(cb, *generate_weapon_list(cb.from_user.id))
+    await cb.answer(toast)
+
+
+@router.callback_query(F.data == "gear:armor_menu")
+async def cb_gear_armor_menu(cb: CallbackQuery) -> None:
+    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
+        await cb.answer("Сначала /start", show_alert=True)
+        return
+    await safe_edit_message(cb, *generate_armor_slot_menu(cb.from_user.id))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^gear:(head|torso|arms|legs)$"))
+async def cb_gear_armor_slot(cb: CallbackQuery) -> None:
+    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
+        await cb.answer("Сначала /start", show_alert=True)
+        return
+    slot = cb.data.split(":")[1]
+    await safe_edit_message(cb, *generate_armor_slot_list(cb.from_user.id, slot))
+    await cb.answer()
+
+
+@router.callback_query(F.data.regexp(r"^buy_armor:(head|torso|arms|legs):(\w+)$"))
+async def cb_buy_armor(cb: CallbackQuery) -> None:
+    p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (cb.from_user.id,))
+    if not p:
+        await cb.answer("Сначала /start", show_alert=True)
+        return
+
+    _, slot, key = cb.data.split(":")
+    item = get_armor_item_by_key(key)
+    if not item or item["slot"] != slot:
+        await cb.answer("Предмет не найден.", show_alert=True)
+        return
+
+    owned = set((p["armors_owned"] or "").split(","))
+    col = f"armor_{slot}"
+
+    if key in owned:
+        db.execute(f"UPDATE players SET {col}=? WHERE user_id=?", (key, cb.from_user.id))
+        toast = f"Надето: {item['name']}"
+    elif p["crystals"] >= item["price"]:
+        db.execute(
+            f"UPDATE players SET crystals=chips-?, armors_owned=?, {col}=? WHERE user_id=?",
+            (item["price"], ",".join(owned | {key}), key, cb.from_user.id)
+        )
+        toast = f"Куплено: {item['name']}"
+    else:
+        await cb.answer(f"Нужно {item['price']}💎", show_alert=True)
+        return
+
+    await safe_edit_message(cb, *generate_armor_slot_list(cb.from_user.id, slot))
+    await cb.answer(toast)
+
+
+@router.callback_query(F.data.regexp(r"^top:(cur|bronze|silver|gold)$"))
+async def cb_top_leaderboard(cb: CallbackQuery) -> None:
+    p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (cb.from_user.id,))
+    if not p:
+        await cb.answer("Сначала /start", show_alert=True)
+        return
+
+    key = cb.data.split(":")[1]
+    if key == "cur":
+        key = determine_arena(p["wins"])
+
+    await safe_edit_message(cb, *generate_top_screen(cb.from_user.id, key))
+    await cb.answer()
+
 
 @router.message(DuelFindState.waiting_for_target, F.text)
 async def duel_find_target_handler(m: Message, state: FSMContext, bot: Bot) -> None:
-    """Обработчик FSM для поиска соперника по нику."""
     if m.chat.type != "private":
+        await state.clear()
+        return
+
+    if m.text in MENU_TEXTS:
         await state.clear()
         return
 
@@ -4930,13 +4087,11 @@ async def duel_find_target_handler(m: Message, state: FSMContext, bot: Bot) -> N
 
     key = m.text.strip().lstrip("@")
 
-    # Поиск по ID
     if key.isdigit():
         row = db.fetch_one("SELECT user_id FROM players WHERE user_id=? AND banned=0", (int(key),))
     else:
         row = None
 
-    # Поиск по имени/username
     if not row:
         row = db.fetch_one(
             """SELECT user_id FROM players
@@ -4956,7 +4111,6 @@ async def duel_find_target_handler(m: Message, state: FSMContext, bot: Bot) -> N
 
 @router.message()
 async def fallback_handler(m: Message) -> None:
-    """Fallback-обработчик для нераспознанных сообщений."""
     if not m.from_user:
         return
 
@@ -4969,7 +4123,6 @@ async def fallback_handler(m: Message) -> None:
         await m.answer("🚫 Доступ закрыт.")
         return
 
-    # Обновляем last_active
     db.execute(
         "UPDATE players SET last_active=? WHERE user_id=?",
         (time.time(), m.from_user.id)
@@ -4978,13 +4131,7 @@ async def fallback_handler(m: Message) -> None:
     if m.chat.type == "private":
         await m.answer(
             "Пиши <code>help</code> или пользуйся меню внизу 👇",
-            reply_markup=ReplyKeyboardMarkup(
-                keyboard=[
-                    [KeyboardButton(text="⚔️ Арена"), KeyboardButton(text="🎰 Казино")],
-                    [KeyboardButton(text="🎒 Снаряжение"), KeyboardButton(text="🏆 Топ")],
-                ],
-                resize_keyboard=True,
-            )
+            reply_markup=MENU_KB
         )
     else:
         await m.answer(
@@ -4994,61 +4141,34 @@ async def fallback_handler(m: Message) -> None:
         )
 
 
-# ==============================================================================
-# ГЛАВНАЯ ФУНКЦИЯ ЗАПУСКА
-# ==============================================================================
-
 async def scheduled_event_spawner(bot: Bot) -> None:
-    """
-    Фоновая задача для периодического запуска чатовых событий.
-
-    Запускает случайное событие каждые N часов (если нет активного).
-    """
     while True:
         try:
-            # Ждём 4 часа
             await asyncio.sleep(4 * 3600)
 
-            # Проверяем, нет ли активного события
             if ACTIVE_CHAT_EVENT and ACTIVE_CHAT_EVENT.is_active():
                 continue
 
-            # Выбираем случайный тип события
             event_types = list(CHAT_EVENT_TEMPLATES.keys())
             event_type = random.choice(event_types)
 
-            # Запускаем событие (от имени "системы" = 0)
             event = spawn_chat_event(event_type, 0)
 
             if event:
-                template = CHAT_EVENT_TEMPLATES[event_type]
-                announce = template["announce_text"].format(
-                    emoji=template["emoji"],
-                    hp=event.hp
-                )
-
-                # Отправляем во все чаты (здесь можно добавить список чатов)
                 logging.info(f"Scheduled event spawned: {event.name}")
 
         except Exception as e:
             logging.error(f"Error in scheduled_event_spawner: {e}")
-            await asyncio.sleep(60)  # Ждём минуту перед повтором
+            await asyncio.sleep(60)
 
 
 async def main() -> None:
-    """
-    Основная точка входа в приложение.
-
-    Инициализирует базу данных, создаёт бота и запускает polling.
-    """
-    # Настройка логирования
     logging.basicConfig(
         level=Config.LOG_LEVEL,
         format=Config.LOG_FORMAT,
         datefmt=Config.LOG_DATE_FORMAT,
     )
 
-    # Проверка токена
     if not Config.BOT_TOKEN or Config.BOT_TOKEN == "ВАШ_ТОКЕН_ЗДЕСЬ":
         logging.critical("❌ ОШИБКА: Задай BOT_TOKEN в переменных окружения или в коде!")
         raise SystemExit("Missing BOT_TOKEN")
@@ -5058,8 +4178,6 @@ async def main() -> None:
     logging.info("=" * 60)
 
     logging.info("Initializing database...")
-    # БД инициализируется при создании экземпляра DatabaseManager
-
     logging.info("Generating masked bots...")
     ensure_masked_bots_exist(Config.BOT_GENERATION_COUNT)
 
@@ -5073,19 +4191,16 @@ async def main() -> None:
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
 
-    # Установка команд меню
     await bot.set_my_commands([
         BotCommand(command="start", description="Начать / вернуться"),
         BotCommand(command="help", description="Правила и команды"),
     ])
 
-    # Удаление webhook
     await bot.delete_webhook(drop_pending_updates=True)
 
     logging.info("✅ Bot successfully started and polling!")
     logging.info("=" * 60)
 
-    # Запускаем фоновую задачу для событий
     event_task = asyncio.create_task(scheduled_event_spawner(bot))
 
     try:
@@ -5101,7 +4216,6 @@ async def main() -> None:
         logging.info("Bot shutdown complete.")
 
 
-# Точка входа
 if __name__ == "__main__":
     try:
         asyncio.run(main())

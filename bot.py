@@ -4169,10 +4169,7 @@ async def main() -> None:
         datefmt=Config.LOG_DATE_FORMAT,
     )
 
-    if not Config.BOT_TOKEN or Config.BOT_TOKEN == "ВАШ_ТОКЕН_ЗДЕСЬ":
-        logging.critical("❌ ОШИБКА: Задай BOT_TOKEN в переменных окружения или в коде!")
-        raise SystemExit("Missing BOT_TOKEN")
-
+    
     logging.info("=" * 60)
     logging.info("⚔️ АРЕНА ДУЭЛЯНТОВ — Ultimate Edition v7.1")
     logging.info("=" * 60)

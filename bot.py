@@ -35,8 +35,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
 class Config:
-    BOT_TOKEN: str = os.getenv("BOT_TOKEN", "ВАШ_ТОКЕН_ЗДЕСЬ")
-    ADMIN_ID: int = int(os.getenv("ADMIN_ID", "5356400377"))
+    BOT_TOKEN=  "8996813076:AAGq74gyRRW5fMxvHaIE190_B-tmzXk8aNA"
+    ADMIN_ID = "5356400377"
     DB_PATH: str = os.getenv("DB_PATH", "arena_ultimate.db")
     START_CRYSTALS: int = 500
     TURN_TIMEOUT: int = 45
@@ -4851,9 +4851,7 @@ async def scheduled_event_spawner(bot: Bot) -> None:
 
 async def main() -> None:
     logging.basicConfig(level=Config.LOG_LEVEL, format=Config.LOG_FORMAT, datefmt=Config.LOG_DATE_FORMAT)
-    if not Config.BOT_TOKEN or Config.BOT_TOKEN == "ВАШ_ТОКЕН_ЗДЕСЬ":
-        logging.critical("❌ ОШИБКА: Задай BOT_TOKEN!")
-        raise SystemExit("Missing BOT_TOKEN")
+    
     logging.info("=" * 60)
     logging.info("⚔️ АРЕНА ДУЭЛЯНТОВ — Ultimate Edition v10.0")
     logging.info("=" * 60)

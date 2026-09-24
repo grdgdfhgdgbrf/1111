@@ -34,8 +34,8 @@ from aiogram.types import (
 
 
 class Config:
-    BOT_TOKEN: str = os.getenv("8996813076:AAGq74gyRRW5fMxvHaIE190_B-tmzXk8aNA", "ВАШ_ТОКЕН_ЗДЕСЬ")
-    ADMIN_ID: int = int(os.getenv("ADMIN_ID", "5356400377"))
+    BOT_TOKEN = "8996813076:AAGq74gyRRW5fMxvHaIE190_B-tmzXk8aNA"
+    ADMIN_ID =  "5356400377"
     DB_PATH: str = os.getenv("DB_PATH", "arena_ultimate.db")
     START_CRYSTALS: int = 500
     TURN_TIMEOUT: int = 45

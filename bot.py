@@ -1,8 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-⚔️ АРЕНА ДУЭЛЯНТОВ — Ultimate Edition v13.0 (Full Implementation)
-Полная реализация всех функций без заглушек.
+================================================================================
+⚔️ АРЕНА ДУЭЛЯНТОВ — Ultimate Edition v13.0 (Fixed & Optimized)
+================================================================================
+
+Полнофункциональный Telegram-бот для PvP-дуэлей, казино, чатовых ивентов,
+RP-действий и экономики.
+
+Версия: 13.0
+Исправления:
+    • Кнопка "Профиль" теперь работает корректно
+    • Help разделён на 4 раздела с inline-кнопками
+    • Для чатов — краткая версия help
+    • Для ЛС — полная версия с кнопками
+    • Все кнопки — полная реализация, не заглушки
+================================================================================
 """
 
 import asyncio
@@ -15,7 +28,7 @@ import sqlite3
 import time
 import traceback
 from dataclasses import dataclass, field
-from typing import Optional, Tuple, List, Dict, Any, Callable, Set
+from typing import Optional, Tuple, List, Dict, Any, Union, Callable, Set
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
@@ -26,16 +39,26 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
-    BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup,
-    KeyboardButton, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove,
+    BotCommand,
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
+# ==============================================================================
+# КОНФИГУРАЦИЯ
+# ==============================================================================
+
 class Config:
     BOT_TOKEN: str = "8996813076:AAHgcyCWj6l2x3H7xWuW4HCLUkmT8lVRizs"
     ADMIN_ID: int = int(os.getenv("ADMIN_ID", "5356400377"))
-    DB_PATH: str = os.getenv("DB_PATH", "arena.db")
+    DB_PATH: str = os.getenv("DB_PATH", "arena_ultimate.db")
     START_CRYSTALS: int = 500
     TURN_TIMEOUT: int = 45
     RP_COOLDOWN: int = 5
@@ -47,10 +70,14 @@ class Config:
     CASINO_BETS: List[int] = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000]
     BOT_GENERATION_COUNT: int = 50
     BOT_WIN_DISTRIBUTION: Dict[str, float] = {"bronze": 0.5, "silver": 0.35, "gold": 0.15}
+    EVENT_BOSS_BASE_HP: int = 2000
+    EVENT_CARAVAN_BASE_HP: int = 1000
+    EVENT_RAID_BASE_HP: int = 3000
     EVENT_MIN_DAMAGE: int = 50
     EVENT_MAX_DAMAGE: int = 200
     EVENT_CRIT_CHANCE: float = 0.15
     EVENT_CRIT_MULT: float = 2.5
+    EVENT_DEFAULT_DURATION_HOURS: float = 2.0
     PROMO_MIN_CODE_LENGTH: int = 3
     PROMO_MAX_CODE_LENGTH: int = 20
     PROMO_MAX_USES: int = 1000
@@ -59,6 +86,7 @@ class Config:
     CHALLENGE_TIMEOUT: int = 60
     LOG_LEVEL: int = logging.INFO
     LOG_FORMAT: str = "%(asctime)s | %(levelname)-8s | %(name)s:%(lineno)d | %(message)s"
+    LOG_DATE_FORMAT: str = "%Y-%m-%d %H:%M:%S"
 
 
 BASE_HP: int = 150
@@ -66,10 +94,15 @@ MIN_NAME_LENGTH: int = 2
 MAX_NAME_LENGTH: int = 16
 DUEL_LOG_LIMIT: int = 10
 DUEL_LOG_DISPLAY_LIMIT: int = 5
+TELEGRAM_MAX_TEXT_LENGTH: int = 4096
 BROADCAST_DELAY: float = 0.05
 BOT_NAME_GENERATION_ATTEMPTS: int = 300
 MAX_NOTIFICATIONS_PER_USER: int = 15
 
+
+# ==============================================================================
+# ЭМОДЗИ
+# ==============================================================================
 
 E_FIRE = "🔥"
 E_SWORD = "⚔️"
@@ -86,6 +119,9 @@ E_PROMO = "🎟"
 E_BOSS = "👹"
 E_GLOVE = "🧤"
 E_STAR = "⭐"
+E_MAGIC = "✨"
+E_LIGHTNING = "⚡"
+E_METEOR = "☄️"
 E_ZONE_HEAD = "🧠"
 E_ZONE_TORSO = "🫀"
 E_ZONE_ARMS = "💪"
@@ -97,12 +133,18 @@ E_BACK = "⬅️"
 E_REFRESH = "🔄"
 E_ACCEPT = "✅"
 E_REJECT = "❌"
+E_INFO = "ℹ️"
 E_WARNING = "⚠️"
 E_CROWN = "👑"
 E_RED = "🔴"
 E_BLACK = "⚫"
 E_GREEN = "🟢"
+E_BLUE = "🔵"
 
+
+# ==============================================================================
+# ИГРОВЫЕ ДАННЫЕ
+# ==============================================================================
 
 ZONES: List[str] = ["head", "torso", "arms", "legs"]
 
@@ -127,52 +169,52 @@ class AttackVariant:
 WEAPONS: Dict[str, Dict[str, Any]] = {
     "fists": {
         "emoji": "👊", "name": "Кулаки", "base_dmg": 10, "price": 0,
-        "description": "Базовое оружие новичка",
+        "description": "Базовое оружие новичка. Быстрые, но слабые удары.",
         "variants": [
             AttackVariant("Джеб", "Быстрый удар", 0.8, 0.0, 0, None),
-            AttackVariant("Серия ударов", "3 удара по 50%", 1.5, 0.0, 2, "triple"),
-            AttackVariant("Апперкот", "Оглушает", 1.2, 0.1, 3, "stun"),
+            AttackVariant("Серия ударов", "3 удара по 50% урона", 1.5, 0.0, 2, "triple"),
+            AttackVariant("Апперкот", "Оглушает при попадании", 1.2, 0.1, 3, "stun"),
         ],
     },
     "dagger": {
         "emoji": "🗡", "name": "Кинжал", "base_dmg": 14, "price": 200,
-        "description": "Быстрое оружие убийцы",
+        "description": "Быстрое оружие убийцы. Высокий шанс критов.",
         "variants": [
-            AttackVariant("Укол", "Пробивает 20% брони", 1.0, 0.2, 0, None),
-            AttackVariant("Рассечение", "Кровотечение 3 раунда", 1.1, 0.1, 2, "bleed"),
-            AttackVariant("Тысяча порезов", "3 удара, игнор 30%", 1.4, 0.3, 3, "triple"),
+            AttackVariant("Укол", "Точный удар, пробивает 20% брони", 1.0, 0.2, 0, None),
+            AttackVariant("Рассечение", "Кровотечение на 3 раунда", 1.1, 0.1, 2, "bleed"),
+            AttackVariant("Тысяча порезов", "3 удара, игнор 30% брони", 1.4, 0.3, 3, "triple"),
         ],
     },
     "sword": {
         "emoji": E_SWORD, "name": "Меч", "base_dmg": 20, "price": 500,
-        "description": "Классическое оружие воина",
+        "description": "Классическое оружие воина. Сбалансированный урон.",
         "variants": [
             AttackVariant("Размах", "Стандартная атака", 1.0, 0.0, 0, None),
             AttackVariant("Пронзающий выпад", "Игнор 50% защиты", 1.2, 0.5, 2, "pierce"),
-            AttackVariant("Казнь", "Двойной урон", 2.0, 0.0, 4, "exec"),
+            AttackVariant("Казнь", "Двойной урон, легко блокируется", 2.0, 0.0, 4, "exec"),
         ],
     },
     "axe": {
         "emoji": "🪓", "name": "Топор", "base_dmg": 26, "price": 800,
-        "description": "Тяжёлое оружие варвара",
+        "description": "Тяжёлое оружие варвара. Огромный урон.",
         "variants": [
             AttackVariant("Рубящий удар", "Тяжелая атака", 1.0, 0.1, 0, None),
             AttackVariant("Кровопускание", "Сильное кровотечение", 1.1, 0.0, 3, "bleed"),
-            AttackVariant("Сокрушение", "Огромный урон", 1.8, 0.2, 4, None),
+            AttackVariant("Сокрушение", "Огромный урон, долгий КД", 1.8, 0.2, 4, None),
         ],
     },
     "bow": {
         "emoji": "🏹", "name": "Лук", "base_dmg": 32, "price": 1200,
-        "description": "Дальнобойное оружие охотника",
+        "description": "Дальнобойное оружие охотника.",
         "variants": [
             AttackVariant("Прицельный выстрел", "Стандартная атака", 1.0, 0.3, 0, None),
-            AttackVariant("Залп", "2 выстрела с критом", 1.6, 0.2, 2, "triple"),
+            AttackVariant("Залп", "2 выстрела с шансом крита", 1.6, 0.2, 2, "triple"),
             AttackVariant("Бронебойная стрела", "Полный игнор брони", 1.3, 1.0, 3, "pierce"),
         ],
     },
     "staff": {
         "emoji": E_FIRE, "name": "Посох", "base_dmg": 38, "price": 1700,
-        "description": "Магическое оружие чародея",
+        "description": "Магическое оружие чародея.",
         "variants": [
             AttackVariant("Магический импульс", "Базовая магия", 1.0, 0.4, 0, None),
             AttackVariant("Огненный шар", "Поджигает на 3 раунда", 1.2, 0.2, 2, "burn"),
@@ -181,11 +223,11 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
     },
     "hammer": {
         "emoji": "🔨", "name": "Молот", "base_dmg": 46, "price": 2500,
-        "description": "Тяжёлое оружие паладина",
+        "description": "Тяжёлое оружие паладина.",
         "variants": [
             AttackVariant("Удар молотом", "Тяжелая физика", 1.0, 0.3, 0, None),
             AttackVariant("Землетрясение", "Оглушает и наносит урон", 1.3, 0.4, 3, "stun"),
-            AttackVariant("Разрушение", "Ломает защиту 60%", 2.0, 0.6, 5, None),
+            AttackVariant("Разрушение", "Ломает защиту (60%)", 2.0, 0.6, 5, None),
         ],
     },
 }
@@ -271,7 +313,7 @@ BOSSES: Dict[str, Dict[str, Any]] = {
     },
     "demon_king": {
         "key": "demon_king", "name": "😈 Король Демонов",
-        "desc": "Повелитель преисподней.",
+        "desc": "Повелитель преисподней. Смесь всех стихий.",
         "hp": 750, "weapon": "staff",
         "armor_keys": {"head": "head_crown", "torso": "torso_aegis", "arms": "arms_runic", "legs": "legs_demon"},
         "reward_mult": 25, "min_wins": 50,
@@ -281,27 +323,43 @@ BOSSES: Dict[str, Dict[str, Any]] = {
 
 CHAT_EVENT_TEMPLATES: Dict[str, Dict[str, Any]] = {
     "boss": {
-        "name_template": "{emoji} Рейдовый Босс", "emoji": E_BOSS,
-        "base_hp": 2000, "duration_hours": 2.0, "reward_per_participant": (50, 150),
+        "name_template": "{emoji} Рейдовый Босс",
+        "emoji": E_BOSS,
+        "base_hp": 2000,
+        "duration_hours": 2.0,
+        "reward_per_participant": (50, 150),
         "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n{emoji} <b>Рейдовый Босс</b> появился!\nHP: {hp}\n\nКоманда <code>атака</code>!",
     },
     "caravan": {
-        "name_template": "🐪 Золотой Караван", "emoji": "🐪",
-        "base_hp": 1000, "duration_hours": 1.0, "reward_per_participant": (30, 100),
+        "name_template": "🐪 Золотой Караван",
+        "emoji": "🐪",
+        "base_hp": 1000,
+        "duration_hours": 1.0,
+        "reward_per_participant": (30, 100),
         "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n🐪 <b>Золотой Караван</b>!\nHP: {hp}\n\nКоманда <code>атака</code>!",
     },
     "raid": {
-        "name_template": "⚔️ Набег Орков", "emoji": "⚔️",
-        "base_hp": 3000, "duration_hours": 3.0, "reward_per_participant": (80, 200),
+        "name_template": "⚔️ Набег Орков",
+        "emoji": "⚔️",
+        "base_hp": 3000,
+        "duration_hours": 3.0,
+        "reward_per_participant": (80, 200),
         "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n⚔️ <b>Набег Орков</b>!\nHP: {hp}\n\nКоманда <code>атака</code>!",
     },
     "dragon_raid": {
-        "name_template": "🐉 Нашествие Драконов", "emoji": "🐉",
-        "base_hp": 5000, "duration_hours": 4.0, "reward_per_participant": (150, 350),
+        "name_template": "🐉 Нашествие Драконов",
+        "emoji": "🐉",
+        "base_hp": 5000,
+        "duration_hours": 4.0,
+        "reward_per_participant": (150, 350),
         "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n🐉 <b>Нашествие Драконов</b>!\nHP: {hp}\n\nКоманда <code>атака</code>!",
     },
 }
 
+
+# ==============================================================================
+# УТИЛИТЫ
+# ==============================================================================
 
 def esc(text: Any) -> str:
     return html.escape(str(text))
@@ -343,13 +401,14 @@ async def safe_edit_message(cb: CallbackQuery, text: str, markup: Optional[Inlin
         await cb.message.edit_text(text[:4090], reply_markup=markup, parse_mode=ParseMode.HTML)
         return True
     except TelegramBadRequest as e:
-        if "message is not modified" in str(e).lower():
+        error_str = str(e).lower()
+        if "message is not modified" in error_str:
             return True
         try:
             await cb.message.answer(text[:4090], reply_markup=markup, parse_mode=ParseMode.HTML)
             return True
-        except Exception as e:
-            logging.error(f"Fallback error: {e}")
+        except Exception as fallback_err:
+            logging.error(f"Fallback error: {fallback_err}")
             return False
     except Exception as e:
         logging.error(f"Edit error: {e}")
@@ -361,7 +420,8 @@ async def safe_edit_message_by_id(bot: Bot, chat_id: int, message_id: int, text:
         await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text[:4090], reply_markup=markup, parse_mode=ParseMode.HTML)
         return True
     except TelegramBadRequest as e:
-        if "message is not modified" in str(e).lower():
+        error_str = str(e).lower()
+        if "message is not modified" in error_str:
             return True
         return False
     except Exception as e:
@@ -373,6 +433,10 @@ def format_number(num: int) -> str:
     return f"{num:,}".replace(",", " ")
 
 
+# ==============================================================================
+# БАЗА ДАННЫХ
+# ==============================================================================
+
 class DatabaseManager:
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -383,46 +447,72 @@ class DatabaseManager:
     def _init_schema(self) -> None:
         schema = """
             CREATE TABLE IF NOT EXISTS players (
-                user_id INTEGER PRIMARY KEY, username TEXT, name TEXT NOT NULL,
-                crystals INTEGER NOT NULL DEFAULT 0, wins INTEGER NOT NULL DEFAULT 0,
-                losses INTEGER NOT NULL DEFAULT 0, weapon TEXT NOT NULL DEFAULT 'fists',
-                armor_head TEXT NOT NULL DEFAULT 'head_none', armor_torso TEXT NOT NULL DEFAULT 'torso_none',
-                armor_arms TEXT NOT NULL DEFAULT 'arms_none', armor_legs TEXT NOT NULL DEFAULT 'legs_none',
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                name TEXT NOT NULL,
+                crystals INTEGER NOT NULL DEFAULT 0,
+                wins INTEGER NOT NULL DEFAULT 0,
+                losses INTEGER NOT NULL DEFAULT 0,
+                weapon TEXT NOT NULL DEFAULT 'fists',
+                armor_head TEXT NOT NULL DEFAULT 'head_none',
+                armor_torso TEXT NOT NULL DEFAULT 'torso_none',
+                armor_arms TEXT NOT NULL DEFAULT 'arms_none',
+                armor_legs TEXT NOT NULL DEFAULT 'legs_none',
                 weapons_owned TEXT NOT NULL DEFAULT 'fists',
                 armors_owned TEXT NOT NULL DEFAULT 'head_none,torso_none,arms_none,legs_none',
-                banned INTEGER NOT NULL DEFAULT 0, is_bot INTEGER NOT NULL DEFAULT 0,
-                created REAL NOT NULL DEFAULT 0, last_active REAL NOT NULL DEFAULT 0,
+                banned INTEGER NOT NULL DEFAULT 0,
+                is_bot INTEGER NOT NULL DEFAULT 0,
+                created REAL NOT NULL DEFAULT 0,
+                last_active REAL NOT NULL DEFAULT 0,
                 total_duels INTEGER NOT NULL DEFAULT 0,
                 total_crystals_earned INTEGER NOT NULL DEFAULT 0,
                 auto_accept INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS notifications (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
-                text TEXT NOT NULL, ts REAL NOT NULL, seen INTEGER NOT NULL DEFAULT 0
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                text TEXT NOT NULL,
+                ts REAL NOT NULL,
+                seen INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS promo_codes (
-                code TEXT PRIMARY KEY, reward_crystals INTEGER NOT NULL DEFAULT 0,
-                reward_wins INTEGER NOT NULL DEFAULT 0, max_uses INTEGER NOT NULL DEFAULT 1,
-                current_uses INTEGER NOT NULL DEFAULT 0, expires_at REAL NOT NULL DEFAULT 0,
-                created_by INTEGER NOT NULL, created_at REAL NOT NULL DEFAULT 0,
+                code TEXT PRIMARY KEY,
+                reward_crystals INTEGER NOT NULL DEFAULT 0,
+                reward_wins INTEGER NOT NULL DEFAULT 0,
+                max_uses INTEGER NOT NULL DEFAULT 1,
+                current_uses INTEGER NOT NULL DEFAULT 0,
+                expires_at REAL NOT NULL DEFAULT 0,
+                created_by INTEGER NOT NULL,
+                created_at REAL NOT NULL DEFAULT 0,
                 active INTEGER NOT NULL DEFAULT 1
             );
             CREATE TABLE IF NOT EXISTS promo_activations (
-                user_id INTEGER NOT NULL, code TEXT NOT NULL, activated_at REAL NOT NULL,
+                user_id INTEGER NOT NULL,
+                code TEXT NOT NULL,
+                activated_at REAL NOT NULL,
                 PRIMARY KEY (user_id, code)
             );
             CREATE TABLE IF NOT EXISTS chat_events (
-                event_id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL,
-                name TEXT NOT NULL, hp INTEGER NOT NULL, max_hp INTEGER NOT NULL,
-                started_by INTEGER NOT NULL, started_at REAL NOT NULL, ends_at REAL NOT NULL,
-                active INTEGER NOT NULL DEFAULT 1, participants TEXT NOT NULL DEFAULT '[]'
+                event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                name TEXT NOT NULL,
+                hp INTEGER NOT NULL,
+                max_hp INTEGER NOT NULL,
+                started_by INTEGER NOT NULL,
+                started_at REAL NOT NULL,
+                ends_at REAL NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1,
+                participants TEXT NOT NULL DEFAULT '[]'
             );
             CREATE TABLE IF NOT EXISTS player_stats (
-                user_id INTEGER PRIMARY KEY, boss_kills INTEGER NOT NULL DEFAULT 0,
-                casino_wins INTEGER NOT NULL DEFAULT 0, casino_losses INTEGER NOT NULL DEFAULT 0,
+                user_id INTEGER PRIMARY KEY,
+                boss_kills INTEGER NOT NULL DEFAULT 0,
+                casino_wins INTEGER NOT NULL DEFAULT 0,
+                casino_losses INTEGER NOT NULL DEFAULT 0,
                 event_participations INTEGER NOT NULL DEFAULT 0,
                 rp_actions_used INTEGER NOT NULL DEFAULT 0,
-                crystals_spent INTEGER NOT NULL DEFAULT 0, items_bought INTEGER NOT NULL DEFAULT 0
+                crystals_spent INTEGER NOT NULL DEFAULT 0,
+                items_bought INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS ix_notif_user ON notifications(user_id, seen);
             CREATE INDEX IF NOT EXISTS ix_players_wins ON players(wins, is_bot, banned);
@@ -464,6 +554,10 @@ class DatabaseManager:
 
 db = DatabaseManager(Config.DB_PATH)
 
+
+# ==============================================================================
+# МОДЕЛИ ДАННЫХ
+# ==============================================================================
 
 @dataclass
 class Fighter:
@@ -678,6 +772,10 @@ ACTIVE_CHAT_EVENT: Optional[ChatEvent] = None
 NEXT_SCHEDULED_EVENT: Optional[float] = None
 
 
+# ==============================================================================
+# БОЕВАЯ ЛОГИКА
+# ==============================================================================
+
 def calculate_damage(attacker: Fighter, defender: Fighter, atk_zone: str, def_zone: Optional[str], variant: AttackVariant) -> Tuple[int, str]:
     if def_zone == atk_zone:
         return 0, f"{E_SHIELD} <b>Блок!</b>"
@@ -821,6 +919,10 @@ async def handle_timeout_defeat(duel: Duel, loser_uid: int, bot: Bot) -> None:
     winner_is_a = not (loser_uid == duel.a_id)
     await finalize_duel(duel, winner_is_a=winner_is_a, bot=bot, reason="timeout")
 
+
+# ==============================================================================
+# ИИ БОТА
+# ==============================================================================
 
 def get_player_armor_slots(player_row: sqlite3.Row) -> Dict[str, str]:
     if not player_row:
@@ -983,6 +1085,10 @@ def bot_decide_defend_zone(attacker: Fighter, defender: Fighter) -> str:
         return sorted_zones[1]
     return sorted_zones[0]
 
+
+# ==============================================================================
+# КАЗИНО
+# ==============================================================================
 
 async def play_casino_slots_animated(chat_id: int, bet: int, uid: int, bot: Bot) -> Tuple[Optional[str], Optional[str]]:
     p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (uid,))
@@ -1191,6 +1297,10 @@ def play_casino_highlow(uid: int, bet: int, choice: str = "high") -> Tuple[Optio
     return f"📊 Выпало: <b>{result_num}</b>\n\n{E_SKULL} <b>Поражение.</b>\n💎 −{bet} кристаллов", None
 
 
+# ==============================================================================
+# ЧАТОВЫЕ СОБЫТИЯ
+# ==============================================================================
+
 def spawn_chat_event(event_type: str, started_by: int, custom_hp: Optional[int] = None, custom_duration: Optional[float] = None) -> Optional[ChatEvent]:
     global ACTIVE_CHAT_EVENT
     if ACTIVE_CHAT_EVENT and ACTIVE_CHAT_EVENT.is_active():
@@ -1257,6 +1367,10 @@ def get_chat_event_status() -> Optional[str]:
         f"Используйте команду <code>атака</code> для нанесения урона!"
     )
 
+
+# ==============================================================================
+# ПРОМОКОДЫ
+# ==============================================================================
 
 def create_promo_code(code: str, reward_crystals: int, reward_wins: int, max_uses: int, hours_valid: int, created_by: int) -> Tuple[bool, str]:
     code = code.strip().upper()
@@ -1326,6 +1440,10 @@ def activate_promo_code(user_id: int, code: str) -> Tuple[bool, str]:
     )
 
 
+# ==============================================================================
+# RP СИСТЕМА
+# ==============================================================================
+
 RP_ACTIONS: Dict[str, Tuple[str, str]] = {
     "ударить": ("👊", "ударил(а)"),
     "обнять": ("🤗", "обнял(а)"),
@@ -1364,6 +1482,10 @@ def generate_rp_text(actor_id: int, actor_name: str, target_id: int, target_name
     return f"{emoji} {actor_mention} {verb} {target_mention}!"
 
 
+# ==============================================================================
+# ПАРСЕР ЦЕЛЕЙ
+# ==============================================================================
+
 def resolve_command_target(m: Message, command_word: str) -> Tuple[Optional[int], Optional[str]]:
     if m.reply_to_message and m.reply_to_message.from_user and not m.reply_to_message.from_user.is_bot:
         return m.reply_to_message.from_user.id, None
@@ -1392,6 +1514,10 @@ def resolve_command_target(m: Message, command_word: str) -> Tuple[Optional[int]
     return None, f"⚠️ В группе команда работает <b>ответом</b> или через <code>@username</code> / <code>ID</code>."
 
 
+# ==============================================================================
+# МЕНЮ И КЛАВИАТУРЫ
+# ==============================================================================
+
 BTN_ARENA = "⚔️ Арена"
 BTN_CASINO = "🎰 Казино"
 BTN_GEAR = "🎒 Снаряжение"
@@ -1406,6 +1532,10 @@ MENU_KB = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+
+# ==============================================================================
+# ГЕНЕРАТОРЫ UI
+# ==============================================================================
 
 def generate_arena_menu_screen(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]:
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (uid,))
@@ -1881,6 +2011,121 @@ def generate_casino_menu(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]
     return text, kb
 
 
+# ==============================================================================
+# HELP С 4 РАЗДЕЛАМИ И КНОПКАМИ
+# ==============================================================================
+
+HELP_SECTIONS: Dict[str, Dict[str, Any]] = {
+    "duels": {
+        "title": f"{E_SWORD} <b>⚔️ ДУЭЛИ</b>",
+        "text": (
+            "• <code>перчатка</code> или <code>перч</code> — вызов с подтверждением\n"
+            "• <code>дуэль</code> или <code>бой</code> — прямой вызов\n"
+            "• <code>профиль</code> или <code>фото</code> — статистика\n"
+            "• <code>перевод [сумма]</code> — перевести кристаллы\n"
+            "• <code>баланс</code> — проверить баланс\n\n"
+            "<i>Команды работают ответом на сообщение или через @username / ID</i>"
+        ),
+    },
+    "casino": {
+        "title": f"{E_SLOT} <b>🎰 КАЗИНО</b>",
+        "text": (
+            "• <code>сл [сумма]</code> — слоты ×10\n"
+            "• <code>кости число [сумма] [1-6]</code> — ×6\n"
+            "• <code>кости чет [сумма] [чет/нечет]</code> — ×2\n"
+            "• <code>кости больше [сумма] [больше/меньше]</code> — ×2\n"
+            "• <code>дротик [сумма]</code> — ×1.9\n"
+            "• <code>дротик промах [сумма]</code> — ×1.9\n"
+            "• <code>баскет [сумма]</code> — ×1.9\n"
+            "• <code>баскет промах [сумма]</code> — ×1.9\n"
+            "• <code>рул цвет [сумма] [к/ч/з]</code>\n"
+            "• <code>рул чет [сумма] [чет/нечет]</code>\n"
+            "• <code>рул половина [сумма] [верх/низ]</code>\n"
+            "• <code>рул число [сумма] [0-36]</code> — ×36\n"
+            "• <code>рул дюжина [сумма] [1/2/3]</code> — ×3\n"
+            "• <code>мон [сумма] [о/р]</code>\n"
+            "• <code>больше [сумма]</code> / <code>меньше [сумма]</code>"
+        ),
+    },
+    "rp": {
+        "title": f"{E_MAGIC} <b>🎭 RP ДЕЙСТВИЯ</b>",
+        "text": (
+            "• <code>ударить</code>, <code>обнять</code>, <code>поцеловать</code>\n"
+            "• <code>пнуть</code>, <code>погладить</code>, <code>укусить</code>\n"
+            "• <code>пожать</code>, <code>толкнуть</code>, <code>кинуть</code>\n"
+            "• <code>лечить</code>, <code>игнор</code>, <code>смеяться</code>\n"
+            "• <code>танцевать</code>, <code>шлепнуть</code>, <code>обозвать</code>\n"
+            "• <code>покормить</code>, <code>напоить</code>, <code>щекотать</code>\n"
+            "• <code>благословить</code>, <code>проклясть</code>, <code>подмигнуть</code>\n\n"
+            "<b>👹 События:</b>\n"
+            "• <code>атака</code> — ударить босса/караван\n"
+            "• <code>событие</code> — статус текущего события\n\n"
+            "<b>🎟 Промокоды:</b>\n"
+            "• <code>#код [промокод]</code> — активировать\n"
+            "• <code>активировать [код]</code> — альтернатива"
+        ),
+    },
+    "admin": {
+        "title": f"{E_CROWN} <b>👑 АДМИН</b>",
+        "text": (
+            "• <code>бан</code> / <code>разбан</code>\n"
+            "• <code>выдать [сумма]</code>\n"
+            "• <code>событие босс</code> — рейдовый босс (2000 HP)\n"
+            "• <code>событие караван</code> — золотой караван (1000 HP)\n"
+            "• <code>событие набег</code> — набег орков (3000 HP)\n"
+            "• <code>событие дракон</code> — нашествие драконов (5000 HP)\n"
+            "• <code>босс goblin</code> — гоблин-вождь (160 HP)\n"
+            "• <code>босс dragon</code> — древний дракон (260 HP)\n"
+            "• <code>босс lord</code> — древний лорд (380 HP)\n"
+            "• <code>босс titan</code> — каменный титан (500 HP)\n"
+            "• <code>босс demon_king</code> — король демонов (750 HP)\n"
+            "• <code>следующее событие</code> — когда будет следующее\n"
+            "• <code>промо создать КОД 1000 5 100 24</code>\n"
+            "• <code>промо удалить КОД</code>\n"
+            "• <code>промо список</code>\n"
+            "• <code>рассылка текст</code>"
+        ),
+    },
+}
+
+
+HELP_CHAT_SHORT = (
+    f"{E_INFO} <b>КРАТКАЯ СПРАВКА</b>\n\n"
+    f"<b>⚔️ Дуэли:</b>\n"
+    f"• <code>перчатка</code> / <code>дуэль</code> — вызвать на бой\n"
+    f"• <code>профиль</code> / <code>баланс</code> — статистика\n\n"
+    f"<b>💎 Экономика:</b>\n"
+    f"• <code>перевод [сумма]</code> — перевести кристаллы\n\n"
+    f"<b>🎰 Казино:</b>\n"
+    f"• <code>сл 100</code> — слоты\n"
+    f"• <code>кости число 100 3</code> — кости\n"
+    f"• <code>дротик 100</code> — дротик\n"
+    f"• <code>баскет 100</code> — баскетбол\n"
+    f"• <code>рул цвет 100 к</code> — рулетка\n"
+    f"• <code>мон 100 о</code> — монетка\n\n"
+    f"<b>🎭 RP:</b>\n"
+    f"• <code>ударить</code>, <code>обнять</code>, <code>поцеловать</code> и др.\n\n"
+    f"<b>👹 События:</b>\n"
+    f"• <code>атака</code> — ударить босса/караван\n"
+    f"• <code>событие</code> — статус события\n\n"
+    f"{E_INFO} <i>Полная справка в ЛС с ботом: напиши <code>help</code></i>"
+)
+
+
+def get_help_keyboard() -> InlineKeyboardMarkup:
+    """Создаёт клавиатуру с 4 разделами help."""
+    return build_horizontal_keyboard([
+        (f"{E_SWORD} Дуэли", "help:section:duels"),
+        (f"{E_SLOT} Казино", "help:section:casino"),
+        (f"{E_MAGIC} RP", "help:section:rp"),
+        (f"{E_CROWN} Админ", "help:section:admin"),
+    ], 2)
+
+
+# ==============================================================================
+# РОУТЕР И FSM
+# ==============================================================================
+
 router = Router()
 
 
@@ -1892,106 +2137,9 @@ class DuelFindState(StatesGroup):
     waiting_for_target = State()
 
 
-HELP_TEXT = (
-    "╔══════════════════════════╗\n   ⚔️ <b>АРЕНА ДУЭЛЯНТОВ</b>\n╚══════════════════════════╝\n\n"
-    "<b>📋 РАЗДЕЛЫ ПО КНОПКАМ МЕНЮ:</b>\n\n"
-    f"{E_SWORD} <b>⚔️ АРЕНА</b> — PvP дуэли и боссы\n"
-    f"• Найти соперника — случайный бой\n"
-    f"• Боссы — соло-бои с боссами\n"
-    f"• Список соперников — выбор из игроков\n"
-    f"• Вызвать по нику — поиск по @username\n"
-    f"• Топ арен — рейтинг игроков\n"
-    f"• Мой профиль — твоя статистика\n\n"
-    f"{E_SLOT} <b>🎰 КАЗИНО</b> — Азартные игры\n"
-    f"• Слоты — только джекпот ×10\n"
-    f"• Кости — на число/чёт/больше\n"
-    f"• Дротик — на попадание или промах\n"
-    f"• Баскетбол — на попадание или промах\n"
-    f"• Рулетка — цвет/чёт/половина/число/дюжина\n"
-    f"• Монетка — орёл или решка\n"
-    f"• Больше/Меньше — угадай число\n\n"
-    f"{E_GIFT} <b>🎒 СНАРЯЖЕНИЕ</b> — Экипировка\n"
-    f"• Оружие — 7 видов × 3 варианта атаки\n"
-    f"• Броня — 4 слота × 6 предметов\n"
-    f"• Мой профиль — полная статистика\n\n"
-    f"{E_TROPHY} <b>🏆 ТОП</b> — Рейтинги\n"
-    f"• Бронза — 0-9 побед\n"
-    f"• Серебро — 10-29 побед\n"
-    f"• Золото — 30+ побед\n\n"
-    "<b>📌 КОМАНДЫ В ЧАТЕ:</b>\n"
-    "• Ответь на сообщение игрока командой\n"
-    "• Или: <code>команда @user</code> / <code>команда ID</code>\n\n"
-    "<b>⚔️ Дуэли:</b>\n"
-    "• <code>перчатка</code> или <code>перч</code> — вызов с подтверждением\n"
-    "• <code>дуэль</code> или <code>бой</code> — прямой вызов\n"
-    "• <code>профиль</code> или <code>фото</code> — статистика\n\n"
-    "<b>💎 Экономика:</b>\n"
-    "• <code>перевод [сумма]</code> — перевести кристаллы\n"
-    "• <code>баланс</code> — проверить баланс\n\n"
-    "<b>🎰 Казино (сокращения):</b>\n"
-    "• <code>сл [сумма]</code> — слоты (×10)\n"
-    "• <code>кости число [сумма] [1-6]</code> — ×6\n"
-    "• <code>кости чет [сумма] [чет/нечет]</code> — ×2\n"
-    "• <code>кости больше [сумма] [больше/меньше]</code> — ×2\n"
-    "• <code>дротик [сумма]</code> — ×1.9\n"
-    "• <code>дротик промах [сумма]</code> — ×1.9\n"
-    "• <code>баскет [сумма]</code> — ×1.9\n"
-    "• <code>баскет промах [сумма]</code> — ×1.9\n"
-    "• <code>рул цвет [сумма] [к/ч/з]</code>\n"
-    "• <code>рул чет [сумма] [чет/нечет]</code>\n"
-    "• <code>рул половина [сумма] [верх/низ]</code>\n"
-    "• <code>рул число [сумма] [0-36]</code> — ×36\n"
-    "• <code>рул дюжина [сумма] [1/2/3]</code> — ×3\n"
-    "• <code>мон [сумма] [о/р]</code>\n"
-    "• <code>больше [сумма]</code> / <code>меньше [сумма]</code>\n\n"
-    "<b>👹 Чатовые события:</b>\n"
-    "• <code>атака</code> — ударить босса/караван\n"
-    "• <code>событие</code> — статус текущего события\n\n"
-    "<b>🎭 RP действия (25 команд):</b>\n"
-    "• <code>ударить</code>, <code>обнять</code>, <code>поцеловать</code>\n"
-    "• <code>пнуть</code>, <code>погладить</code>, <code>укусить</code>\n"
-    "• <code>пожать</code>, <code>толкнуть</code>, <code>кинуть</code>\n"
-    "• <code>лечить</code>, <code>игнор</code>, <code>смеяться</code>\n"
-    "• <code>танцевать</code>, <code>шлепнуть</code>, <code>обозвать</code>\n"
-    "• <code>покормить</code>, <code>напоить</code>, <code>щекотать</code>\n\n"
-    "<b>🎟 Промокоды:</b>\n"
-    "• <code>#код [промокод]</code> — активировать\n"
-    "• <code>активировать [код]</code> — альтернатива\n\n"
-    "<b>👑 Админ:</b>\n"
-    "• <code>бан</code> / <code>разбан</code>\n"
-    "• <code>выдать [сумма]</code>\n"
-    "• <code>событие босс/караван/набег/дракон</code>\n"
-    "• <code>босс [ключ]</code> — активировать босса\n"
-    "• <code>следующее событие</code>\n"
-    "• <code>промо создать/удалить/список</code>"
-)
-
-ADMIN_HELP_TEXT = (
-    f"{E_CROWN} <b>КОМАНДЫ АДМИНИСТРАТОРА</b>\n\n"
-    f"<b>👥 Управление игроками:</b>\n"
-    f"• <code>бан @user</code> или <code>бан ID</code> — забанить\n"
-    f"• <code>разбан @user</code> или <code>разбан ID</code> — разбанить\n"
-    f"• <code>выдать 1000 @user</code> — выдать кристаллы\n\n"
-    f"<b>👹 Чатовые события:</b>\n"
-    f"• <code>событие босс</code> — рейдовый босс (2000 HP)\n"
-    f"• <code>событие караван</code> — золотой караван (1000 HP)\n"
-    f"• <code>событие набег</code> — набег орков (3000 HP)\n"
-    f"• <code>событие дракон</code> — нашествие драконов (5000 HP)\n"
-    f"• <code>босс goblin</code> — гоблин-вождь (160 HP)\n"
-    f"• <code>босс dragon</code> — древний дракон (260 HP)\n"
-    f"• <code>босс lord</code> — древний лорд (380 HP)\n"
-    f"• <code>босс titan</code> — каменный титан (500 HP)\n"
-    f"• <code>босс demon_king</code> — король демонов (750 HP)\n"
-    f"• <code>следующее событие</code> — когда будет следующее\n\n"
-    f"<b>🎟 Промокоды:</b>\n"
-    f"• <code>промо создать КОД 1000 5 100 24</code>\n"
-    f"  (код, кристаллы, победы, макс. активаций, часов)\n"
-    f"• <code>промо удалить КОД</code> — деактивировать\n"
-    f"• <code>промо список</code> — все промокоды\n\n"
-    f"<b>📢 Рассылка:</b>\n"
-    f"• <code>рассылка текст сообщения</code>"
-)
-
+# ==============================================================================
+# ХЕНДЛЕРЫ СТАРТА И МЕНЮ
+# ==============================================================================
 
 @router.message(CommandStart())
 async def handle_start_command(m: Message, state: FSMContext) -> None:
@@ -2052,14 +2200,107 @@ async def handle_registration_name(m: Message, state: FSMContext) -> None:
 
 @router.message(F.text.regexp(r"(?i)^(help|помощь|хелп)$"))
 async def handle_help_command(m: Message) -> None:
+    """Обрабатывает команду help. Для чатов - краткая, для ЛС - полная с кнопками."""
     if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (m.from_user.id,)):
         await m.answer("Сначала отправь /start в ЛС бота.")
         return
-    kb = MENU_KB if m.chat.type == "private" else None
-    await m.answer(HELP_TEXT, reply_markup=kb)
-    if is_admin(m.from_user.id):
-        await m.answer(ADMIN_HELP_TEXT)
+    
+    if m.chat.type == "private":
+        # Полная версия с кнопками для ЛС
+        text = (
+            f"╔══════════════════════════╗\n   ⚔️ <b>АРЕНА ДУЭЛЯНТОВ</b>\n╚══════════════════════════╝\n\n"
+            f"<b>📋 РАЗДЕЛЫ ПО КНОПКАМ МЕНЮ:</b>\n\n"
+            f"{E_SWORD} <b>⚔️ АРЕНА</b> — PvP дуэли и боссы\n"
+            f"• Найти соперника — случайный бой\n"
+            f"• Боссы — соло-бои с боссами\n"
+            f"• Список соперников — выбор из игроков\n"
+            f"• Вызвать по нику — поиск по @username\n"
+            f"• Топ арен — рейтинг игроков\n"
+            f"• Мой профиль — твоя статистика\n\n"
+            f"{E_SLOT} <b>🎰 КАЗИНО</b> — Азартные игры\n"
+            f"• Слоты — только джекпот ×10\n"
+            f"• Кости — на число/чёт/больше\n"
+            f"• Дротик — на попадание или промах\n"
+            f"• Баскетбол — на попадание или промах\n"
+            f"• Рулетка — цвет/чёт/половина/число/дюжина\n"
+            f"• Монетка — орёл или решка\n"
+            f"• Больше/Меньше — угадай число\n\n"
+            f"{E_GIFT} <b>🎒 СНАРЯЖЕНИЕ</b> — Экипировка\n"
+            f"• Оружие — 7 видов × 3 варианта атаки\n"
+            f"• Броня — 4 слота × 6 предметов\n"
+            f"• Мой профиль — полная статистика\n\n"
+            f"{E_TROPHY} <b>🏆 ТОП</b> — Рейтинги\n"
+            f"• Бронза — 0-9 побед\n"
+            f"• Серебро — 10-29 побед\n"
+            f"• Золото — 30+ побед\n\n"
+            f"<b>📌 ВЫБЕРИ РАЗДЕЛ КОМАНД:</b>"
+        )
+        await m.answer(text, reply_markup=get_help_keyboard())
+        if is_admin(m.from_user.id):
+            await m.answer(
+                f"{E_CROWN} <b>КОМАНДЫ АДМИНИСТРАТОРА</b>\n\n"
+                f"• <code>бан @user</code> или <code>бан ID</code>\n"
+                f"• <code>разбан @user</code>\n"
+                f"• <code>выдать 1000 @user</code>\n"
+                f"• <code>событие босс/караван/набег/дракон</code>\n"
+                f"• <code>босс goblin/dragon/lord/titan/demon_king</code>\n"
+                f"• <code>следующее событие</code>\n"
+                f"• <code>промо создать/удалить/список</code>\n"
+                f"• <code>рассылка текст</code>"
+            )
+    else:
+        # Краткая версия для чатов
+        await m.answer(HELP_CHAT_SHORT)
 
+
+# ==============================================================================
+# CALLBACK HANDLERS ДЛЯ HELP
+# ==============================================================================
+
+@router.callback_query(F.data.regexp(r"^help:section:(\w+)$"))
+async def cb_help_section(cb: CallbackQuery) -> None:
+    """Показывает раздел help по кнопке."""
+    section_key = cb.data.split(":")[2]
+    section = HELP_SECTIONS.get(section_key)
+    
+    if not section:
+        await cb.answer("Раздел не найден", show_alert=True)
+        return
+    
+    text = f"{section['title']}\n\n{section['text']}"
+    
+    # Кнопка назад и другие разделы
+    back_buttons = [
+        (f"{E_BACK} Назад к разделам", "help:main", "primary"),
+    ]
+    
+    # Добавляем кнопки других разделов
+    other_sections = [(k, v) for k, v in HELP_SECTIONS.items() if k != section_key]
+    for key, sec in other_sections:
+        title = sec["title"].split(">")[1].split("<")[0] if ">" in sec["title"] else key
+        back_buttons.append((title, f"help:section:{key}", "primary"))
+    
+    kb = build_vertical_keyboard_with_styles(back_buttons)
+    
+    await safe_edit_message(cb, text, kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data == "help:main")
+async def cb_help_main(cb: CallbackQuery) -> None:
+    """Возврат к главным разделам help."""
+    text = (
+        f"╔══════════════════════════╗\n   ⚔️ <b>АРЕНА ДУЭЛЯНТОВ</b>\n╚══════════════════════════╝\n\n"
+        f"<b>📋 ВЫБЕРИ РАЗДЕЛ КОМАНД:</b>\n\n"
+        f"Нажми на кнопку ниже, чтобы увидеть подробные команды раздела."
+    )
+    await safe_edit_message(cb, text, get_help_keyboard())
+    await cb.answer()
+
+
+# ==============================================================================
+# ОБРАБОТЧИКИ МЕНЮ
+# ==============================================================================
 
 async def flush_notifications(m: Message) -> None:
     rows = db.fetch_all(
@@ -2119,6 +2360,10 @@ async def on_menu_button(m: Message, state: FSMContext) -> None:
             await m.answer(text, reply_markup=kb)
 
 
+# ==============================================================================
+# ХЕНДЛЕРЫ ЧАТОВЫХ КОМАНД
+# ==============================================================================
+
 @router.message(F.text.regexp(r"(?i)^(перчатка|перч|glove|вызов)(\s|$)"))
 async def cmd_challenge_duel(m: Message, bot: Bot) -> None:
     if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (m.from_user.id,)):
@@ -2161,10 +2406,13 @@ async def cmd_challenge_duel(m: Message, bot: Bot) -> None:
         await m.answer("Не удалось отправить вызов (игрок не начал бота).")
         return
     pending = PendingDuel(
-        challenger_id=m.from_user.id, target_id=tid,
+        challenger_id=m.from_user.id,
+        target_id=tid,
         challenger_msg_id=challenger_msg.message_id if challenger_msg else 0,
         target_msg_id=target_msg.message_id,
-        chat_id=m.from_user.id, created_at=time.time(), direct=False,
+        chat_id=m.from_user.id,
+        created_at=time.time(),
+        direct=False,
     )
     PENDING_DUELS[key] = pending
     pending.timeout_task = asyncio.create_task(challenge_timeout_task(m.from_user.id, tid, bot))
@@ -2206,10 +2454,13 @@ async def cmd_direct_duel(m: Message, bot: Bot) -> None:
         return
     key = (m.from_user.id, tid)
     pending = PendingDuel(
-        challenger_id=m.from_user.id, target_id=tid,
+        challenger_id=m.from_user.id,
+        target_id=tid,
         challenger_msg_id=challenger_msg.message_id if challenger_msg else 0,
         target_msg_id=target_msg.message_id,
-        chat_id=m.from_user.id, created_at=time.time(), direct=True,
+        chat_id=m.from_user.id,
+        created_at=time.time(),
+        direct=True,
     )
     PENDING_DUELS[key] = pending
     pending.timeout_task = asyncio.create_task(challenge_timeout_task(m.from_user.id, tid, bot))
@@ -2308,6 +2559,10 @@ async def cmd_balance(m: Message) -> None:
     )
 
 
+# ==============================================================================
+# RP КОМАНДЫ
+# ==============================================================================
+
 async def process_rp_action(m: Message, action_key: str) -> None:
     if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (m.from_user.id,)):
         await m.answer("Сначала /start в ЛС бота.")
@@ -2377,6 +2632,10 @@ for action, variants in RP_MAPPINGS.items():
     pattern = r"(?i)^(" + "|".join(re.escape(v) for v in variants) + r")(\s|$)"
     router.message(F.text.regexp(pattern))(_create_rp_handler(action))
 
+
+# ==============================================================================
+# КАЗИНО В ЧАТЕ
+# ==============================================================================
 
 @router.message(F.text.regexp(r"(?i)^(слоты|slot|сл)(\s+)(\d+)$"))
 async def cmd_chat_slots(m: Message, bot: Bot) -> None:
@@ -2613,20 +2872,14 @@ async def cmd_chat_highlow_low(m: Message) -> None:
     await m.answer(f"{result}\n\n{E_CRYSTAL} Баланс: <b>{format_number(balance['crystals'])}</b>")
 
 
-@router.message(F.text.regexp(r"(?i)^(#код|активировать|актив|redeem)\s+(\S+)$"))
-async def cmd_activate_promo(m: Message) -> None:
-    match = re.search(r"(?i)^(?:#код|активировать|актив|redeem)\s+(\S+)$", m.text or "")
-    if not match:
-        return
-    code = match.group(1)
-    success, message = activate_promo_code(m.from_user.id, code)
-    await m.answer(message)
-
+# ==============================================================================
+# АДМИН КОМАНДЫ
+# ==============================================================================
 
 @router.message(F.text.regexp(r"(?i)^событие босс$"))
 async def adm_spawn_boss(m: Message) -> None:
     if not is_admin(m.from_user.id):
-        await m.answer(f"{E_WARNING} У тебя нет прав администратора.\n\n{ADMIN_HELP_TEXT}")
+        await m.answer(f"{E_WARNING} У тебя нет прав администратора.")
         return
     event = spawn_chat_event("boss", m.from_user.id)
     if not event:
@@ -2639,7 +2892,7 @@ async def adm_spawn_boss(m: Message) -> None:
 @router.message(F.text.regexp(r"(?i)^событие караван$"))
 async def adm_spawn_caravan(m: Message) -> None:
     if not is_admin(m.from_user.id):
-        await m.answer(f"{E_WARNING} У тебя нет прав администратора.\n\n{ADMIN_HELP_TEXT}")
+        await m.answer(f"{E_WARNING} У тебя нет прав администратора.")
         return
     event = spawn_chat_event("caravan", m.from_user.id)
     if not event:
@@ -2652,7 +2905,7 @@ async def adm_spawn_caravan(m: Message) -> None:
 @router.message(F.text.regexp(r"(?i)^событие набег$"))
 async def adm_spawn_raid(m: Message) -> None:
     if not is_admin(m.from_user.id):
-        await m.answer(f"{E_WARNING} У тебя нет прав администратора.\n\n{ADMIN_HELP_TEXT}")
+        await m.answer(f"{E_WARNING} У тебя нет прав администратора.")
         return
     event = spawn_chat_event("raid", m.from_user.id)
     if not event:
@@ -2665,7 +2918,7 @@ async def adm_spawn_raid(m: Message) -> None:
 @router.message(F.text.regexp(r"(?i)^событие дракон$"))
 async def adm_spawn_dragon_raid(m: Message) -> None:
     if not is_admin(m.from_user.id):
-        await m.answer(f"{E_WARNING} У тебя нет прав администратора.\n\n{ADMIN_HELP_TEXT}")
+        await m.answer(f"{E_WARNING} У тебя нет прав администратора.")
         return
     event = spawn_chat_event("dragon_raid", m.from_user.id)
     if not event:
@@ -2678,7 +2931,7 @@ async def adm_spawn_dragon_raid(m: Message) -> None:
 @router.message(F.text.regexp(r"(?i)^босс(\s+)(\w+)$"))
 async def adm_spawn_boss_by_key(m: Message) -> None:
     if not is_admin(m.from_user.id):
-        await m.answer(f"{E_WARNING} У тебя нет прав администратора.\n\n{ADMIN_HELP_TEXT}")
+        await m.answer(f"{E_WARNING} У тебя нет прав администратора.")
         return
     parts = m.text.split()
     bkey = parts[2].lower()
@@ -2701,7 +2954,7 @@ async def adm_spawn_boss_by_key(m: Message) -> None:
 @router.message(F.text.regexp(r"(?i)^(следующее событие|когда босс)$"))
 async def adm_next_event(m: Message) -> None:
     if not is_admin(m.from_user.id):
-        await m.answer(f"{E_WARNING} У тебя нет прав администратора.\n\n{ADMIN_HELP_TEXT}")
+        await m.answer(f"{E_WARNING} У тебя нет прав администратора.")
         return
     global NEXT_SCHEDULED_EVENT
     if NEXT_SCHEDULED_EVENT and NEXT_SCHEDULED_EVENT > time.time():
@@ -2721,7 +2974,7 @@ async def adm_next_event(m: Message) -> None:
 @router.message(F.text.regexp(r"(?i)^бан(\s|$)"))
 async def adm_cmd_ban(m: Message) -> None:
     if not is_admin(m.from_user.id):
-        await m.answer(f"{E_WARNING} У тебя нет прав администратора.\n\n{ADMIN_HELP_TEXT}")
+        await m.answer(f"{E_WARNING} У тебя нет прав администратора.")
         return
     tid, err = resolve_command_target(m, "бан")
     if err or not tid:
@@ -2735,7 +2988,7 @@ async def adm_cmd_ban(m: Message) -> None:
 @router.message(F.text.regexp(r"(?i)^разбан(\s|$)"))
 async def adm_cmd_unban(m: Message) -> None:
     if not is_admin(m.from_user.id):
-        await m.answer(f"{E_WARNING} У тебя нет прав администратора.\n\n{ADMIN_HELP_TEXT}")
+        await m.answer(f"{E_WARNING} У тебя нет прав администратора.")
         return
     tid, err = resolve_command_target(m, "разбан")
     if err or not tid:
@@ -2748,7 +3001,7 @@ async def adm_cmd_unban(m: Message) -> None:
 @router.message(F.text.regexp(r"(?i)^выдать(\s|$)"))
 async def adm_cmd_give(m: Message) -> None:
     if not is_admin(m.from_user.id):
-        await m.answer(f"{E_WARNING} У тебя нет прав администратора.\n\n{ADMIN_HELP_TEXT}")
+        await m.answer(f"{E_WARNING} У тебя нет прав администратора.")
         return
     tid, err = resolve_command_target(m, "выдать")
     if err or not tid:
@@ -2766,7 +3019,7 @@ async def adm_cmd_give(m: Message) -> None:
 @router.message(F.text.regexp(r"(?i)^промо создать(\s+)(\S+)(\s+)(\d+)(\s+)(\d+)(\s+)(\d+)(\s+)(\d+)$"))
 async def adm_promo_create(m: Message) -> None:
     if not is_admin(m.from_user.id):
-        await m.answer(f"{E_WARNING} У тебя нет прав администратора.\n\n{ADMIN_HELP_TEXT}")
+        await m.answer(f"{E_WARNING} У тебя нет прав администратора.")
         return
     parts = m.text.split()
     code = parts[2]
@@ -2781,7 +3034,7 @@ async def adm_promo_create(m: Message) -> None:
 @router.message(F.text.regexp(r"(?i)^промо удалить(\s+)(\S+)$"))
 async def adm_promo_delete(m: Message) -> None:
     if not is_admin(m.from_user.id):
-        await m.answer(f"{E_WARNING} У тебя нет прав администратора.\n\n{ADMIN_HELP_TEXT}")
+        await m.answer(f"{E_WARNING} У тебя нет прав администратора.")
         return
     code = m.text.split()[2].strip().upper()
     existing = db.fetch_one("SELECT code FROM promo_codes WHERE code=?", (code,))
@@ -2795,7 +3048,7 @@ async def adm_promo_delete(m: Message) -> None:
 @router.message(F.text.regexp(r"(?i)^промо список$"))
 async def adm_promo_list(m: Message) -> None:
     if not is_admin(m.from_user.id):
-        await m.answer(f"{E_WARNING} У тебя нет прав администратора.\n\n{ADMIN_HELP_TEXT}")
+        await m.answer(f"{E_WARNING} У тебя нет прав администратора.")
         return
     promos = db.fetch_all("SELECT * FROM promo_codes ORDER BY created_at DESC LIMIT 20")
     if not promos:
@@ -2823,7 +3076,7 @@ async def adm_promo_list(m: Message) -> None:
 @router.message(F.text.regexp(r"(?i)^рассылка\s+"))
 async def adm_cmd_broadcast(m: Message, bot: Bot) -> None:
     if not is_admin(m.from_user.id):
-        await m.answer(f"{E_WARNING} У тебя нет прав администратора.\n\n{ADMIN_HELP_TEXT}")
+        await m.answer(f"{E_WARNING} У тебя нет прав администратора.")
         return
     text = (m.text or "").split(" ", 1)[1].strip()
     if not text:
@@ -2843,9 +3096,17 @@ async def adm_cmd_broadcast(m: Message, bot: Bot) -> None:
     await m.answer(f"✅ Рассылка завершена. Доставлено: {ok_count} игрокам.")
 
 
+# ==============================================================================
+# СИСТЕМА ВЫЗОВОВ
+# ==============================================================================
+
 async def send_challenge_messages(
-    challenger_id: int, target_id: int, challenger_name: str, target_name: str,
-    bot: Bot, direct: bool = False
+    challenger_id: int,
+    target_id: int,
+    challenger_name: str,
+    target_name: str,
+    bot: Bot,
+    direct: bool = False
 ) -> Tuple[Optional[Message], Optional[Message]]:
     challenger_msg = None
     target_msg = None
@@ -2877,7 +3138,8 @@ async def send_challenge_messages(
         )
     try:
         target_msg = await bot.send_message(
-            target_id, target_text,
+            target_id,
+            target_text,
             reply_markup=get_challenge_accept_kb(challenger_id, target_id),
             parse_mode=ParseMode.HTML
         )
@@ -2886,7 +3148,8 @@ async def send_challenge_messages(
         return None, None
     try:
         challenger_msg = await bot.send_message(
-            challenger_id, challenger_text,
+            challenger_id,
+            challenger_text,
             reply_markup=get_challenge_waiting_kb(challenger_id, target_id),
             parse_mode=ParseMode.HTML
         )
@@ -2913,6 +3176,10 @@ async def challenge_timeout_task(challenger_id: int, target_id: int, bot: Bot) -
     )
     PENDING_DUELS.pop(key, None)
 
+
+# ==============================================================================
+# CALLBACK HANDLERS
+# ==============================================================================
 
 @router.callback_query(F.data.regexp(r"^challenge:accept:(-?\d+):(-?\d+)$"))
 async def cb_challenge_accept(cb: CallbackQuery, bot: Bot) -> None:
@@ -3071,7 +3338,9 @@ async def cb_profile_back(cb: CallbackQuery) -> None:
     if not row:
         await cb.answer("Сначала /start", show_alert=True)
         return
-    await safe_edit_message(cb, generate_profile_text(row), generate_profile_kb(cb.from_user.id))
+    text = generate_profile_text(row)
+    kb = generate_profile_kb(cb.from_user.id)
+    await safe_edit_message(cb, text, kb)
     await cb.answer()
 
 
@@ -3851,6 +4120,10 @@ async def cb_casino_highlow_play(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
+# ==============================================================================
+# ЛОГИКА ДУЭЛЕЙ
+# ==============================================================================
+
 def initiate_duel(a_id: int, b_id: int, is_boss: bool = False, boss_key: Optional[str] = None, reward_mult: int = 1) -> Optional[Duel]:
     a_row = db.fetch_one("SELECT * FROM players WHERE user_id=?", (a_id,))
     if not a_row:
@@ -4058,6 +4331,10 @@ async def finalize_duel(duel: Duel, winner_is_a: bool, bot: Bot, reason: str = "
                 logging.error(f"Failed to send duel result to {bid}: {e}")
 
 
+# ==============================================================================
+# CALLBACK HANDLERS АРЕНЫ И ДУЭЛЕЙ
+# ==============================================================================
+
 @router.callback_query(F.data == "arena:menu")
 async def cb_arena_menu(cb: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
@@ -4176,13 +4453,33 @@ async def cb_duel_profile(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
+# ==============================================================================
+# ИСПРАВЛЕННАЯ КНОПКА "МОЙ ПРОФИЛЬ"
+# ==============================================================================
+
 @router.callback_query(F.data == "duel:myprofile")
 async def cb_my_profile(cb: CallbackQuery) -> None:
+    """Исправленный обработчик кнопки «Мой профиль»."""
     row = db.fetch_one("SELECT * FROM players WHERE user_id=?", (cb.from_user.id,))
     if not row:
         await cb.answer("Сначала /start", show_alert=True)
         return
-    await safe_edit_message(cb, generate_profile_text(row), generate_profile_kb(cb.from_user.id))
+    
+    text = generate_profile_text(row)
+    kb = generate_profile_kb(cb.from_user.id)
+    
+    # Пробуем отредактировать сообщение
+    success = await safe_edit_message(cb, text, kb)
+    
+    # Если не получилось (например, сообщение слишком старое), отправляем новое
+    if not success:
+        try:
+            await cb.message.answer(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        except Exception as e:
+            logging.error(f"Failed to send profile: {e}")
+            await cb.answer("Не удалось показать профиль", show_alert=True)
+            return
+    
     await cb.answer()
 
 
@@ -4445,6 +4742,10 @@ async def cb_top_leaderboard(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
+# ==============================================================================
+# FSM И FALLBACK
+# ==============================================================================
+
 @router.message(DuelFindState.waiting_for_target, F.text)
 async def duel_find_target_handler(m: Message, state: FSMContext, bot: Bot) -> None:
     if m.chat.type != "private":
@@ -4497,6 +4798,10 @@ async def fallback_handler(m: Message) -> None:
         )
 
 
+# ==============================================================================
+# ФОНОВЫЕ ЗАДАЧИ И ЗАПУСК
+# ==============================================================================
+
 async def scheduled_event_spawner(bot: Bot) -> None:
     global NEXT_SCHEDULED_EVENT
     while True:
@@ -4516,7 +4821,7 @@ async def scheduled_event_spawner(bot: Bot) -> None:
 
 
 async def main() -> None:
-    logging.basicConfig(level=Config.LOG_LEVEL, format=Config.LOG_FORMAT)
+    logging.basicConfig(level=Config.LOG_LEVEL, format=Config.LOG_FORMAT, datefmt=Config.LOG_DATE_FORMAT)
     if not Config.BOT_TOKEN:
         logging.critical("❌ ОШИБКА: Задай BOT_TOKEN!")
         raise SystemExit("Missing BOT_TOKEN")

@@ -1,28 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-================================================================================
-⚔️ АРЕНА ДУЭЛЯНТОВ — Ultimate Edition v12.0 (Optimized)
-================================================================================
-
-Полнофункциональный Telegram-бот для PvP-дуэлей, казино, чатовых ивентов,
-RP-действий и экономики.
-
-Основные возможности:
-    • PvP дуэли с 3 вариантами атаки и кулдаунами
-    • 7 видов оружия × 3 варианта атаки = 21 уникальных приёма
-    • 24 предмета брони на 4 слота
-    • 5 соло-боссов + 4 типа чатовых событий
-    • Казино с 7 играми и множеством режимов ставок
-    • 25 RP-действий с HTML-упоминаниями
-    • Система промокодов
-    • Команды в чате через ответ, @username или ID
-    • Кнопочное меню в ЛС
-    • Админ-панель с подсказками
-
-Версия: 12.0
-Лицензия: MIT
-================================================================================
+⚔️ АРЕНА ДУЭЛЯНТОВ — Ultimate Edition v13.0 (Full Implementation)
+Полная реализация всех функций без заглушек.
 """
 
 import asyncio
@@ -35,7 +15,7 @@ import sqlite3
 import time
 import traceback
 from dataclasses import dataclass, field
-from typing import Optional, Tuple, List, Dict, Any, Union, Callable, Set
+from typing import Optional, Tuple, List, Dict, Any, Callable, Set
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
@@ -46,14 +26,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
-    BotCommand,
-    CallbackQuery,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    KeyboardButton,
-    Message,
-    ReplyKeyboardMarkup,
-    ReplyKeyboardRemove,
+    BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup,
+    KeyboardButton, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -61,7 +35,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 class Config:
     BOT_TOKEN: str = "8996813076:AAHgcyCWj6l2x3H7xWuW4HCLUkmT8lVRizs"
     ADMIN_ID: int = int(os.getenv("ADMIN_ID", "5356400377"))
-    DB_PATH: str = os.getenv("DB_PATH", "arena_ultimate.db")
+    DB_PATH: str = os.getenv("DB_PATH", "arena.db")
     START_CRYSTALS: int = 500
     TURN_TIMEOUT: int = 45
     RP_COOLDOWN: int = 5
@@ -73,14 +47,10 @@ class Config:
     CASINO_BETS: List[int] = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000]
     BOT_GENERATION_COUNT: int = 50
     BOT_WIN_DISTRIBUTION: Dict[str, float] = {"bronze": 0.5, "silver": 0.35, "gold": 0.15}
-    EVENT_BOSS_BASE_HP: int = 2000
-    EVENT_CARAVAN_BASE_HP: int = 1000
-    EVENT_RAID_BASE_HP: int = 3000
     EVENT_MIN_DAMAGE: int = 50
     EVENT_MAX_DAMAGE: int = 200
     EVENT_CRIT_CHANCE: float = 0.15
     EVENT_CRIT_MULT: float = 2.5
-    EVENT_DEFAULT_DURATION_HOURS: float = 2.0
     PROMO_MIN_CODE_LENGTH: int = 3
     PROMO_MAX_CODE_LENGTH: int = 20
     PROMO_MAX_USES: int = 1000
@@ -89,7 +59,6 @@ class Config:
     CHALLENGE_TIMEOUT: int = 60
     LOG_LEVEL: int = logging.INFO
     LOG_FORMAT: str = "%(asctime)s | %(levelname)-8s | %(name)s:%(lineno)d | %(message)s"
-    LOG_DATE_FORMAT: str = "%Y-%m-%d %H:%M:%S"
 
 
 BASE_HP: int = 150
@@ -97,7 +66,6 @@ MIN_NAME_LENGTH: int = 2
 MAX_NAME_LENGTH: int = 16
 DUEL_LOG_LIMIT: int = 10
 DUEL_LOG_DISPLAY_LIMIT: int = 5
-TELEGRAM_MAX_TEXT_LENGTH: int = 4096
 BROADCAST_DELAY: float = 0.05
 BOT_NAME_GENERATION_ATTEMPTS: int = 300
 MAX_NOTIFICATIONS_PER_USER: int = 15
@@ -118,9 +86,6 @@ E_PROMO = "🎟"
 E_BOSS = "👹"
 E_GLOVE = "🧤"
 E_STAR = "⭐"
-E_MAGIC = "✨"
-E_LIGHTNING = "⚡"
-E_METEOR = "☄️"
 E_ZONE_HEAD = "🧠"
 E_ZONE_TORSO = "🫀"
 E_ZONE_ARMS = "💪"
@@ -132,13 +97,11 @@ E_BACK = "⬅️"
 E_REFRESH = "🔄"
 E_ACCEPT = "✅"
 E_REJECT = "❌"
-E_INFO = "ℹ️"
 E_WARNING = "⚠️"
 E_CROWN = "👑"
 E_RED = "🔴"
 E_BLACK = "⚫"
 E_GREEN = "🟢"
-E_BLUE = "🔵"
 
 
 ZONES: List[str] = ["head", "torso", "arms", "legs"]
@@ -164,52 +127,52 @@ class AttackVariant:
 WEAPONS: Dict[str, Dict[str, Any]] = {
     "fists": {
         "emoji": "👊", "name": "Кулаки", "base_dmg": 10, "price": 0,
-        "description": "Базовое оружие новичка. Быстрые, но слабые удары.",
+        "description": "Базовое оружие новичка",
         "variants": [
             AttackVariant("Джеб", "Быстрый удар", 0.8, 0.0, 0, None),
-            AttackVariant("Серия ударов", "3 удара по 50% урона", 1.5, 0.0, 2, "triple"),
-            AttackVariant("Апперкот", "Оглушает при попадании", 1.2, 0.1, 3, "stun"),
+            AttackVariant("Серия ударов", "3 удара по 50%", 1.5, 0.0, 2, "triple"),
+            AttackVariant("Апперкот", "Оглушает", 1.2, 0.1, 3, "stun"),
         ],
     },
     "dagger": {
         "emoji": "🗡", "name": "Кинжал", "base_dmg": 14, "price": 200,
-        "description": "Быстрое оружие убийцы. Высокий шанс критов.",
+        "description": "Быстрое оружие убийцы",
         "variants": [
-            AttackVariant("Укол", "Точный удар, пробивает 20% брони", 1.0, 0.2, 0, None),
-            AttackVariant("Рассечение", "Кровотечение на 3 раунда", 1.1, 0.1, 2, "bleed"),
-            AttackVariant("Тысяча порезов", "3 удара, игнор 30% брони", 1.4, 0.3, 3, "triple"),
+            AttackVariant("Укол", "Пробивает 20% брони", 1.0, 0.2, 0, None),
+            AttackVariant("Рассечение", "Кровотечение 3 раунда", 1.1, 0.1, 2, "bleed"),
+            AttackVariant("Тысяча порезов", "3 удара, игнор 30%", 1.4, 0.3, 3, "triple"),
         ],
     },
     "sword": {
         "emoji": E_SWORD, "name": "Меч", "base_dmg": 20, "price": 500,
-        "description": "Классическое оружие воина. Сбалансированный урон.",
+        "description": "Классическое оружие воина",
         "variants": [
             AttackVariant("Размах", "Стандартная атака", 1.0, 0.0, 0, None),
             AttackVariant("Пронзающий выпад", "Игнор 50% защиты", 1.2, 0.5, 2, "pierce"),
-            AttackVariant("Казнь", "Двойной урон, легко блокируется", 2.0, 0.0, 4, "exec"),
+            AttackVariant("Казнь", "Двойной урон", 2.0, 0.0, 4, "exec"),
         ],
     },
     "axe": {
         "emoji": "🪓", "name": "Топор", "base_dmg": 26, "price": 800,
-        "description": "Тяжёлое оружие варвара. Огромный урон.",
+        "description": "Тяжёлое оружие варвара",
         "variants": [
             AttackVariant("Рубящий удар", "Тяжелая атака", 1.0, 0.1, 0, None),
             AttackVariant("Кровопускание", "Сильное кровотечение", 1.1, 0.0, 3, "bleed"),
-            AttackVariant("Сокрушение", "Огромный урон, долгий КД", 1.8, 0.2, 4, None),
+            AttackVariant("Сокрушение", "Огромный урон", 1.8, 0.2, 4, None),
         ],
     },
     "bow": {
         "emoji": "🏹", "name": "Лук", "base_dmg": 32, "price": 1200,
-        "description": "Дальнобойное оружие охотника.",
+        "description": "Дальнобойное оружие охотника",
         "variants": [
             AttackVariant("Прицельный выстрел", "Стандартная атака", 1.0, 0.3, 0, None),
-            AttackVariant("Залп", "2 выстрела с шансом крита", 1.6, 0.2, 2, "triple"),
+            AttackVariant("Залп", "2 выстрела с критом", 1.6, 0.2, 2, "triple"),
             AttackVariant("Бронебойная стрела", "Полный игнор брони", 1.3, 1.0, 3, "pierce"),
         ],
     },
     "staff": {
         "emoji": E_FIRE, "name": "Посох", "base_dmg": 38, "price": 1700,
-        "description": "Магическое оружие чародея.",
+        "description": "Магическое оружие чародея",
         "variants": [
             AttackVariant("Магический импульс", "Базовая магия", 1.0, 0.4, 0, None),
             AttackVariant("Огненный шар", "Поджигает на 3 раунда", 1.2, 0.2, 2, "burn"),
@@ -218,11 +181,11 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
     },
     "hammer": {
         "emoji": "🔨", "name": "Молот", "base_dmg": 46, "price": 2500,
-        "description": "Тяжёлое оружие паладина.",
+        "description": "Тяжёлое оружие паладина",
         "variants": [
             AttackVariant("Удар молотом", "Тяжелая физика", 1.0, 0.3, 0, None),
             AttackVariant("Землетрясение", "Оглушает и наносит урон", 1.3, 0.4, 3, "stun"),
-            AttackVariant("Разрушение", "Ломает защиту (60%)", 2.0, 0.6, 5, None),
+            AttackVariant("Разрушение", "Ломает защиту 60%", 2.0, 0.6, 5, None),
         ],
     },
 }
@@ -308,7 +271,7 @@ BOSSES: Dict[str, Dict[str, Any]] = {
     },
     "demon_king": {
         "key": "demon_king", "name": "😈 Король Демонов",
-        "desc": "Повелитель преисподней. Смесь всех стихий.",
+        "desc": "Повелитель преисподней.",
         "hp": 750, "weapon": "staff",
         "armor_keys": {"head": "head_crown", "torso": "torso_aegis", "arms": "arms_runic", "legs": "legs_demon"},
         "reward_mult": 25, "min_wins": 50,
@@ -318,35 +281,23 @@ BOSSES: Dict[str, Dict[str, Any]] = {
 
 CHAT_EVENT_TEMPLATES: Dict[str, Dict[str, Any]] = {
     "boss": {
-        "name_template": "{emoji} Рейдовый Босс",
-        "emoji": E_BOSS,
-        "base_hp": 2000,
-        "duration_hours": 2.0,
-        "reward_per_participant": (50, 150),
+        "name_template": "{emoji} Рейдовый Босс", "emoji": E_BOSS,
+        "base_hp": 2000, "duration_hours": 2.0, "reward_per_participant": (50, 150),
         "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n{emoji} <b>Рейдовый Босс</b> появился!\nHP: {hp}\n\nКоманда <code>атака</code>!",
     },
     "caravan": {
-        "name_template": "🐪 Золотой Караван",
-        "emoji": "🐪",
-        "base_hp": 1000,
-        "duration_hours": 1.0,
-        "reward_per_participant": (30, 100),
+        "name_template": "🐪 Золотой Караван", "emoji": "🐪",
+        "base_hp": 1000, "duration_hours": 1.0, "reward_per_participant": (30, 100),
         "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n🐪 <b>Золотой Караван</b>!\nHP: {hp}\n\nКоманда <code>атака</code>!",
     },
     "raid": {
-        "name_template": "⚔️ Набег Орков",
-        "emoji": "⚔️",
-        "base_hp": 3000,
-        "duration_hours": 3.0,
-        "reward_per_participant": (80, 200),
+        "name_template": "⚔️ Набег Орков", "emoji": "⚔️",
+        "base_hp": 3000, "duration_hours": 3.0, "reward_per_participant": (80, 200),
         "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n⚔️ <b>Набег Орков</b>!\nHP: {hp}\n\nКоманда <code>атака</code>!",
     },
     "dragon_raid": {
-        "name_template": "🐉 Нашествие Драконов",
-        "emoji": "🐉",
-        "base_hp": 5000,
-        "duration_hours": 4.0,
-        "reward_per_participant": (150, 350),
+        "name_template": "🐉 Нашествие Драконов", "emoji": "🐉",
+        "base_hp": 5000, "duration_hours": 4.0, "reward_per_participant": (150, 350),
         "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n🐉 <b>Нашествие Драконов</b>!\nHP: {hp}\n\nКоманда <code>атака</code>!",
     },
 }
@@ -392,14 +343,13 @@ async def safe_edit_message(cb: CallbackQuery, text: str, markup: Optional[Inlin
         await cb.message.edit_text(text[:4090], reply_markup=markup, parse_mode=ParseMode.HTML)
         return True
     except TelegramBadRequest as e:
-        error_str = str(e).lower()
-        if "message is not modified" in error_str:
+        if "message is not modified" in str(e).lower():
             return True
         try:
             await cb.message.answer(text[:4090], reply_markup=markup, parse_mode=ParseMode.HTML)
             return True
-        except Exception as fallback_err:
-            logging.error(f"Fallback error: {fallback_err}")
+        except Exception as e:
+            logging.error(f"Fallback error: {e}")
             return False
     except Exception as e:
         logging.error(f"Edit error: {e}")
@@ -411,8 +361,7 @@ async def safe_edit_message_by_id(bot: Bot, chat_id: int, message_id: int, text:
         await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text[:4090], reply_markup=markup, parse_mode=ParseMode.HTML)
         return True
     except TelegramBadRequest as e:
-        error_str = str(e).lower()
-        if "message is not modified" in error_str:
+        if "message is not modified" in str(e).lower():
             return True
         return False
     except Exception as e:
@@ -434,72 +383,46 @@ class DatabaseManager:
     def _init_schema(self) -> None:
         schema = """
             CREATE TABLE IF NOT EXISTS players (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                name TEXT NOT NULL,
-                crystals INTEGER NOT NULL DEFAULT 0,
-                wins INTEGER NOT NULL DEFAULT 0,
-                losses INTEGER NOT NULL DEFAULT 0,
-                weapon TEXT NOT NULL DEFAULT 'fists',
-                armor_head TEXT NOT NULL DEFAULT 'head_none',
-                armor_torso TEXT NOT NULL DEFAULT 'torso_none',
-                armor_arms TEXT NOT NULL DEFAULT 'arms_none',
-                armor_legs TEXT NOT NULL DEFAULT 'legs_none',
+                user_id INTEGER PRIMARY KEY, username TEXT, name TEXT NOT NULL,
+                crystals INTEGER NOT NULL DEFAULT 0, wins INTEGER NOT NULL DEFAULT 0,
+                losses INTEGER NOT NULL DEFAULT 0, weapon TEXT NOT NULL DEFAULT 'fists',
+                armor_head TEXT NOT NULL DEFAULT 'head_none', armor_torso TEXT NOT NULL DEFAULT 'torso_none',
+                armor_arms TEXT NOT NULL DEFAULT 'arms_none', armor_legs TEXT NOT NULL DEFAULT 'legs_none',
                 weapons_owned TEXT NOT NULL DEFAULT 'fists',
                 armors_owned TEXT NOT NULL DEFAULT 'head_none,torso_none,arms_none,legs_none',
-                banned INTEGER NOT NULL DEFAULT 0,
-                is_bot INTEGER NOT NULL DEFAULT 0,
-                created REAL NOT NULL DEFAULT 0,
-                last_active REAL NOT NULL DEFAULT 0,
+                banned INTEGER NOT NULL DEFAULT 0, is_bot INTEGER NOT NULL DEFAULT 0,
+                created REAL NOT NULL DEFAULT 0, last_active REAL NOT NULL DEFAULT 0,
                 total_duels INTEGER NOT NULL DEFAULT 0,
                 total_crystals_earned INTEGER NOT NULL DEFAULT 0,
                 auto_accept INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS notifications (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                text TEXT NOT NULL,
-                ts REAL NOT NULL,
-                seen INTEGER NOT NULL DEFAULT 0
+                id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+                text TEXT NOT NULL, ts REAL NOT NULL, seen INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS promo_codes (
-                code TEXT PRIMARY KEY,
-                reward_crystals INTEGER NOT NULL DEFAULT 0,
-                reward_wins INTEGER NOT NULL DEFAULT 0,
-                max_uses INTEGER NOT NULL DEFAULT 1,
-                current_uses INTEGER NOT NULL DEFAULT 0,
-                expires_at REAL NOT NULL DEFAULT 0,
-                created_by INTEGER NOT NULL,
-                created_at REAL NOT NULL DEFAULT 0,
+                code TEXT PRIMARY KEY, reward_crystals INTEGER NOT NULL DEFAULT 0,
+                reward_wins INTEGER NOT NULL DEFAULT 0, max_uses INTEGER NOT NULL DEFAULT 1,
+                current_uses INTEGER NOT NULL DEFAULT 0, expires_at REAL NOT NULL DEFAULT 0,
+                created_by INTEGER NOT NULL, created_at REAL NOT NULL DEFAULT 0,
                 active INTEGER NOT NULL DEFAULT 1
             );
             CREATE TABLE IF NOT EXISTS promo_activations (
-                user_id INTEGER NOT NULL,
-                code TEXT NOT NULL,
-                activated_at REAL NOT NULL,
+                user_id INTEGER NOT NULL, code TEXT NOT NULL, activated_at REAL NOT NULL,
                 PRIMARY KEY (user_id, code)
             );
             CREATE TABLE IF NOT EXISTS chat_events (
-                event_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                event_type TEXT NOT NULL,
-                name TEXT NOT NULL,
-                hp INTEGER NOT NULL,
-                max_hp INTEGER NOT NULL,
-                started_by INTEGER NOT NULL,
-                started_at REAL NOT NULL,
-                ends_at REAL NOT NULL,
-                active INTEGER NOT NULL DEFAULT 1,
-                participants TEXT NOT NULL DEFAULT '[]'
+                event_id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL,
+                name TEXT NOT NULL, hp INTEGER NOT NULL, max_hp INTEGER NOT NULL,
+                started_by INTEGER NOT NULL, started_at REAL NOT NULL, ends_at REAL NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1, participants TEXT NOT NULL DEFAULT '[]'
             );
             CREATE TABLE IF NOT EXISTS player_stats (
-                user_id INTEGER PRIMARY KEY,
-                boss_kills INTEGER NOT NULL DEFAULT 0,
-                casino_wins INTEGER NOT NULL DEFAULT 0,
-                casino_losses INTEGER NOT NULL DEFAULT 0,
+                user_id INTEGER PRIMARY KEY, boss_kills INTEGER NOT NULL DEFAULT 0,
+                casino_wins INTEGER NOT NULL DEFAULT 0, casino_losses INTEGER NOT NULL DEFAULT 0,
                 event_participations INTEGER NOT NULL DEFAULT 0,
                 rp_actions_used INTEGER NOT NULL DEFAULT 0,
-                crystals_spent INTEGER NOT NULL DEFAULT 0,
-                items_bought INTEGER NOT NULL DEFAULT 0
+                crystals_spent INTEGER NOT NULL DEFAULT 0, items_bought INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS ix_notif_user ON notifications(user_id, seen);
             CREATE INDEX IF NOT EXISTS ix_players_wins ON players(wins, is_bot, banned);
@@ -2238,13 +2161,10 @@ async def cmd_challenge_duel(m: Message, bot: Bot) -> None:
         await m.answer("Не удалось отправить вызов (игрок не начал бота).")
         return
     pending = PendingDuel(
-        challenger_id=m.from_user.id,
-        target_id=tid,
+        challenger_id=m.from_user.id, target_id=tid,
         challenger_msg_id=challenger_msg.message_id if challenger_msg else 0,
         target_msg_id=target_msg.message_id,
-        chat_id=m.from_user.id,
-        created_at=time.time(),
-        direct=False,
+        chat_id=m.from_user.id, created_at=time.time(), direct=False,
     )
     PENDING_DUELS[key] = pending
     pending.timeout_task = asyncio.create_task(challenge_timeout_task(m.from_user.id, tid, bot))
@@ -2286,13 +2206,10 @@ async def cmd_direct_duel(m: Message, bot: Bot) -> None:
         return
     key = (m.from_user.id, tid)
     pending = PendingDuel(
-        challenger_id=m.from_user.id,
-        target_id=tid,
+        challenger_id=m.from_user.id, target_id=tid,
         challenger_msg_id=challenger_msg.message_id if challenger_msg else 0,
         target_msg_id=target_msg.message_id,
-        chat_id=m.from_user.id,
-        created_at=time.time(),
-        direct=True,
+        chat_id=m.from_user.id, created_at=time.time(), direct=True,
     )
     PENDING_DUELS[key] = pending
     pending.timeout_task = asyncio.create_task(challenge_timeout_task(m.from_user.id, tid, bot))
@@ -2696,6 +2613,16 @@ async def cmd_chat_highlow_low(m: Message) -> None:
     await m.answer(f"{result}\n\n{E_CRYSTAL} Баланс: <b>{format_number(balance['crystals'])}</b>")
 
 
+@router.message(F.text.regexp(r"(?i)^(#код|активировать|актив|redeem)\s+(\S+)$"))
+async def cmd_activate_promo(m: Message) -> None:
+    match = re.search(r"(?i)^(?:#код|активировать|актив|redeem)\s+(\S+)$", m.text or "")
+    if not match:
+        return
+    code = match.group(1)
+    success, message = activate_promo_code(m.from_user.id, code)
+    await m.answer(message)
+
+
 @router.message(F.text.regexp(r"(?i)^событие босс$"))
 async def adm_spawn_boss(m: Message) -> None:
     if not is_admin(m.from_user.id):
@@ -2917,12 +2844,8 @@ async def adm_cmd_broadcast(m: Message, bot: Bot) -> None:
 
 
 async def send_challenge_messages(
-    challenger_id: int,
-    target_id: int,
-    challenger_name: str,
-    target_name: str,
-    bot: Bot,
-    direct: bool = False
+    challenger_id: int, target_id: int, challenger_name: str, target_name: str,
+    bot: Bot, direct: bool = False
 ) -> Tuple[Optional[Message], Optional[Message]]:
     challenger_msg = None
     target_msg = None
@@ -2954,8 +2877,7 @@ async def send_challenge_messages(
         )
     try:
         target_msg = await bot.send_message(
-            target_id,
-            target_text,
+            target_id, target_text,
             reply_markup=get_challenge_accept_kb(challenger_id, target_id),
             parse_mode=ParseMode.HTML
         )
@@ -2964,8 +2886,7 @@ async def send_challenge_messages(
         return None, None
     try:
         challenger_msg = await bot.send_message(
-            challenger_id,
-            challenger_text,
+            challenger_id, challenger_text,
             reply_markup=get_challenge_waiting_kb(challenger_id, target_id),
             parse_mode=ParseMode.HTML
         )
@@ -4595,12 +4516,12 @@ async def scheduled_event_spawner(bot: Bot) -> None:
 
 
 async def main() -> None:
-    logging.basicConfig(level=Config.LOG_LEVEL, format=Config.LOG_FORMAT, datefmt=Config.LOG_DATE_FORMAT)
+    logging.basicConfig(level=Config.LOG_LEVEL, format=Config.LOG_FORMAT)
     if not Config.BOT_TOKEN:
         logging.critical("❌ ОШИБКА: Задай BOT_TOKEN!")
         raise SystemExit("Missing BOT_TOKEN")
     logging.info("=" * 60)
-    logging.info("⚔️ АРЕНА ДУЭЛЯНТОВ — Ultimate Edition v12.0")
+    logging.info("⚔️ АРЕНА ДУЭЛЯНТОВ — Ultimate Edition v13.0")
     logging.info("=" * 60)
     logging.info("Initializing database...")
     logging.info("Generating masked bots...")

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 ================================================================================
-⚔️ АРЕНА ДУЭЛЯНТОВ — Production Edition v16.0
+⚔️ АРЕНА ДУЭЛЯНТОВ — Production Edition v17.0 (Extended Content)
 ================================================================================
 
 Полнофункциональный Telegram-бот для PvP-дуэлей, казино, чатовых ивентов,
@@ -15,9 +15,11 @@ Production-ready:
     • call.answer() для сброса спиннера
     • FSM для многошаговых диалогов
     • edit_text/edit_reply_markup для обновления UI
-    • Строгая типизация и документация
+    • Расширенный контент: 12 видов оружия, 32 предмета брони, 8 боссов,
+      6 типов чатовых событий, 40 RP-действий
+    • Быстрая отдача: всё работает сразу после запуска
 
-Версия: 16.0
+Версия: 17.0
 ================================================================================
 """
 
@@ -66,7 +68,7 @@ class Config:
     MAX_TRANSFER: int = 100000
     CASINO_MIN_BET: int = 10
     CASINO_MAX_BET: int = 50000
-    CASINO_BETS: List[int] = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000]
+    CASINO_BETS: List[int] = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000]
     BOT_GENERATION_COUNT: int = 50
     BOT_WIN_DISTRIBUTION: Dict[str, float] = {"bronze": 0.5, "silver": 0.35, "gold": 0.15}
     EVENT_BOSS_BASE_HP: int = 2000
@@ -148,6 +150,60 @@ E_FIRST = "⏮"
 E_PREV = "◀️"
 E_NEXT = "▶️"
 E_LAST = "⏭"
+E_BOMB = "💣"
+E_ARROW = "➡️"
+E_CHECK = "✔️"
+E_CROSS = "✖️"
+E_SPARKLES = "✨"
+E_ZAP = "⚡"
+E_BOOM = "💥"
+E_SWEAT = "💦"
+E_DASH = "💨"
+E_DIZZY = "💫"
+E_SPEECH = "💬"
+E_THOUGHT = "💭"
+E_EYE = "👁"
+E_HAND = "👋"
+E_FIST = "👊"
+E_RAISED_HAND = "✋"
+E_VULCAN = "🖖"
+E_OK = "👌"
+E_V = "✌️"
+E_PLUS = "➕"
+E_MINUS = "➖"
+E_DIVIDE = "➗"
+E_EXCLAMATION = "❗"
+E_QUESTION = "❓"
+E_100 = "💯"
+E_LOW_BRIGHTNESS = "🔅"
+E_HIGH_BRIGHTNESS = "🔆"
+E_CLOCK = "⏰"
+E_HOURGLASS = "⌛"
+E_BELL = "🔔"
+E_MEGAPHONE = "📣"
+E_SPEAKER = "🔊"
+E_MUTE = "🔇"
+E_FLAG = "🚩"
+E_CHECKERED = "🏁"
+E_ROCKET = "🚀"
+E_UFO = "🛸"
+E_PLANET = "🪐"
+E_COMET = "☄️"
+E_SCROLL = "📜"
+E_BOOK = "📖"
+E_KEY = "🔑"
+E_RING = "💍"
+E_CHEST = "📦"
+E_BAG = "👜"
+E_MAP = "🗺"
+E_COMPASS = "🧭"
+E_POTION = "🧪"
+E_DIAMOND = "💠"
+E_GEM = "💎"
+E_MEDAL = "🎖"
+E_BADGE = "📛"
+E_RANK = "🎖"
+E_LEVEL_UP = "🆙"
 
 
 ZONES: List[str] = ["head", "torso", "arms", "legs"]
@@ -172,8 +228,13 @@ class AttackVariant:
 
 WEAPONS: Dict[str, Dict[str, Any]] = {
     "fists": {
-        "emoji": "👊", "name": "Кулаки", "base_dmg": 10, "price": 0,
+        "emoji": "👊",
+        "name": "Кулаки",
+        "base_dmg": 10,
+        "price": 0,
         "description": "Базовое оружие новичка. Быстрые, но слабые удары.",
+        "tier": "common",
+        "lore": "Древнейшее оружие человечества. Не ломается, не теряется.",
         "variants": [
             AttackVariant("Джеб", "Быстрый удар", 0.8, 0.0, 0, None),
             AttackVariant("Серия ударов", "3 удара по 50% урона", 1.5, 0.0, 2, "triple"),
@@ -181,8 +242,13 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
         ],
     },
     "dagger": {
-        "emoji": "🗡", "name": "Кинжал", "base_dmg": 14, "price": 200,
+        "emoji": "🗡",
+        "name": "Кинжал",
+        "base_dmg": 14,
+        "price": 200,
         "description": "Быстрое оружие убийцы. Высокий шанс критов.",
+        "tier": "uncommon",
+        "lore": "Лёгкий и смертоносный. Любимое оружие воров и ассасинов.",
         "variants": [
             AttackVariant("Укол", "Точный удар, пробивает 20% брони", 1.0, 0.2, 0, None),
             AttackVariant("Рассечение", "Кровотечение на 3 раунда", 1.1, 0.1, 2, "bleed"),
@@ -190,8 +256,13 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
         ],
     },
     "sword": {
-        "emoji": E_SWORD, "name": "Меч", "base_dmg": 20, "price": 500,
+        "emoji": E_SWORD,
+        "name": "Меч",
+        "base_dmg": 20,
+        "price": 500,
         "description": "Классическое оружие воина. Сбалансированный урон.",
+        "tier": "rare",
+        "lore": "Верный спутник рыцаря. Закалён в горниле битв.",
         "variants": [
             AttackVariant("Размах", "Стандартная атака", 1.0, 0.0, 0, None),
             AttackVariant("Пронзающий выпад", "Игнор 50% защиты", 1.2, 0.5, 2, "pierce"),
@@ -199,8 +270,13 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
         ],
     },
     "axe": {
-        "emoji": "🪓", "name": "Топор", "base_dmg": 26, "price": 800,
+        "emoji": "🪓",
+        "name": "Топор",
+        "base_dmg": 26,
+        "price": 800,
         "description": "Тяжёлое оружие варвара. Огромный урон.",
+        "tier": "rare",
+        "lore": "Громит врагов одним ударом. Оружие северных воинов.",
         "variants": [
             AttackVariant("Рубящий удар", "Тяжелая атака", 1.0, 0.1, 0, None),
             AttackVariant("Кровопускание", "Сильное кровотечение", 1.1, 0.0, 3, "bleed"),
@@ -208,8 +284,13 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
         ],
     },
     "bow": {
-        "emoji": "🏹", "name": "Лук", "base_dmg": 32, "price": 1200,
+        "emoji": "🏹",
+        "name": "Лук",
+        "base_dmg": 32,
+        "price": 1200,
         "description": "Дальнобойное оружие охотника.",
+        "tier": "epic",
+        "lore": "Стрелы летят дальше, чем видит глаз. Оружие эльфов.",
         "variants": [
             AttackVariant("Прицельный выстрел", "Стандартная атака", 1.0, 0.3, 0, None),
             AttackVariant("Залп", "2 выстрела с шансом крита", 1.6, 0.2, 2, "triple"),
@@ -217,8 +298,13 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
         ],
     },
     "staff": {
-        "emoji": E_FIRE, "name": "Посох", "base_dmg": 38, "price": 1700,
+        "emoji": E_FIRE,
+        "name": "Посох",
+        "base_dmg": 38,
+        "price": 1700,
         "description": "Магическое оружие чародея.",
+        "tier": "epic",
+        "lore": "Проводник древней магии. Повелевает стихиями.",
         "variants": [
             AttackVariant("Магический импульс", "Базовая магия", 1.0, 0.4, 0, None),
             AttackVariant("Огненный шар", "Поджигает на 3 раунда", 1.2, 0.2, 2, "burn"),
@@ -226,12 +312,87 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
         ],
     },
     "hammer": {
-        "emoji": "🔨", "name": "Молот", "base_dmg": 46, "price": 2500,
+        "emoji": "🔨",
+        "name": "Молот",
+        "base_dmg": 46,
+        "price": 2500,
         "description": "Тяжёлое оружие паладина.",
+        "tier": "legendary",
+        "lore": "Сокрушает врагов и их доспехи. Оружие богов.",
         "variants": [
             AttackVariant("Удар молотом", "Тяжелая физика", 1.0, 0.3, 0, None),
             AttackVariant("Землетрясение", "Оглушает и наносит урон", 1.3, 0.4, 3, "stun"),
             AttackVariant("Разрушение", "Ломает защиту (60%)", 2.0, 0.6, 5, None),
+        ],
+    },
+    "spear": {
+        "emoji": "🔱",
+        "name": "Копьё",
+        "base_dmg": 28,
+        "price": 950,
+        "description": "Длинное оружие копейщика.",
+        "tier": "rare",
+        "lore": "Достаёт врага издалека. Оружие спартанцев.",
+        "variants": [
+            AttackVariant("Колющий удар", "Точный выпад", 1.0, 0.25, 0, None),
+            AttackVariant("Круговой взмах", "Атака по площади", 1.3, 0.15, 2, "triple"),
+            AttackVariant("Пронзание", "Полное пробитие", 1.5, 0.7, 3, "pierce"),
+        ],
+    },
+    "whip": {
+        "emoji": "🪢",
+        "name": "Кнут",
+        "base_dmg": 18,
+        "price": 600,
+        "description": "Гибкое оружие дрессировщика.",
+        "tier": "uncommon",
+        "lore": "Хлещет врагов, оставляя болезненные следы.",
+        "variants": [
+            AttackVariant("Хлёсткий удар", "Быстрая атака", 1.0, 0.1, 0, None),
+            AttackVariant("Обвивание", "Замедляет врага", 1.1, 0.2, 2, "stun"),
+            AttackVariant("Шквал ударов", "Серия хлёстких ударов", 1.6, 0.15, 3, "triple"),
+        ],
+    },
+    "scythe": {
+        "emoji": "⚰️",
+        "name": "Коса",
+        "base_dmg": 42,
+        "price": 2200,
+        "description": "Оружие Жнеца. Смертоносное и медленное.",
+        "tier": "legendary",
+        "lore": "Собирает души павших. Оружие самой Смерти.",
+        "variants": [
+            AttackVariant("Широкий взмах", "Атака по площади", 1.0, 0.2, 0, None),
+            AttackVariant("Жатва душ", "Кровотечение и урон", 1.4, 0.3, 3, "bleed"),
+            AttackVariant("Приговор", "Смертельный удар", 2.5, 0.4, 5, "exec"),
+        ],
+    },
+    "wand": {
+        "emoji": "🪄",
+        "name": "Жезл",
+        "base_dmg": 35,
+        "price": 1500,
+        "description": "Магический жезл заклинателя.",
+        "tier": "epic",
+        "lore": "Канал чистой магии. Усиливает заклинания.",
+        "variants": [
+            AttackVariant("Искра", "Быстрая магическая атака", 1.0, 0.35, 0, None),
+            AttackVariant("Молния", "Оглушающий разряд", 1.3, 0.45, 2, "stun"),
+            AttackVariant("Цунами огня", "Массовое горение", 2.0, 0.3, 4, "burn"),
+        ],
+    },
+    "crossbow": {
+        "emoji": "🏹",
+        "name": "Арбалет",
+        "base_dmg": 30,
+        "price": 1100,
+        "description": "Мощное дальнобойное оружие.",
+        "tier": "rare",
+        "lore": "Стреляет дальше и точнее лука. Оружие охотников на драконов.",
+        "variants": [
+            AttackVariant("Тяжёлый болт", "Мощный выстрел", 1.0, 0.4, 0, None),
+            AttackVariant("Двойной выстрел", "Два болта подряд", 1.5, 0.3, 2, "triple"),
+            AttackVariant("Бронебойный болт", "Пробивает любую броню", 1.4, 0.9, 3, "pierce"),
         ],
     },
 }
@@ -243,32 +404,40 @@ ARMOR_DATA: Dict[str, List[Dict[str, Any]]] = {
         {"key": "head_leather", "name": "Кожаный капюшон", "emoji": "🧢", "df": 2, "hp": 3, "price": 120, "chance": 3, "dmg_bonus": 0, "desc": "+3% шанс спец-атаки"},
         {"key": "head_iron", "name": "Железный шлем", "emoji": "⛑", "df": 4, "hp": 8, "price": 380, "chance": 0, "dmg_bonus": 0, "desc": "Базовая защита"},
         {"key": "head_steel", "name": "Стальной шлем", "emoji": "🪖", "df": 7, "hp": 15, "price": 850, "chance": 0, "dmg_bonus": 10, "desc": "+10% урон спец-атаки"},
+        {"key": "head_mithril", "name": "Мифриловый шлем", "emoji": "🎩", "df": 9, "hp": 20, "price": 1400, "chance": 5, "dmg_bonus": 15, "desc": "+5% шанс, +15% урон"},
         {"key": "head_dragon", "name": "Драконий шлем", "emoji": "🐲", "df": 11, "hp": 25, "price": 1800, "chance": 8, "dmg_bonus": 20, "desc": "+8% шанс, +20% урон"},
         {"key": "head_crown", "name": "Корона Лорда", "emoji": "👑", "df": 14, "hp": 30, "price": 3000, "chance": 12, "dmg_bonus": 25, "desc": "Максимальная защита"},
+        {"key": "head_divine", "name": "Божественный венец", "emoji": "👼", "df": 16, "hp": 35, "price": 4500, "chance": 15, "dmg_bonus": 30, "desc": "Легендарная защита"},
     ],
     "torso": [
         {"key": "torso_none", "name": "Без брони", "emoji": "👕", "df": 0, "hp": 0, "price": 0, "chance": 0, "dmg_bonus": 0, "desc": "Полная уязвимость"},
         {"key": "torso_robe", "name": "Мантия", "emoji": "🥋", "df": 3, "hp": 5, "price": 150, "chance": 4, "dmg_bonus": 0, "desc": "+4% шанс спец-атаки"},
         {"key": "torso_chain", "name": "Кольчуга", "emoji": E_SHIELD, "df": 6, "hp": 12, "price": 480, "chance": 0, "dmg_bonus": 0, "desc": "Надежная защита"},
         {"key": "torso_plate", "name": "Латный доспех", "emoji": "🏋️", "df": 11, "hp": 22, "price": 1000, "chance": 0, "dmg_bonus": 15, "desc": "+15% урон спец-атаки"},
+        {"key": "torso_mithril", "name": "Мифриловая кираса", "emoji": "🦺", "df": 14, "hp": 28, "price": 1600, "chance": 6, "dmg_bonus": 18, "desc": "+6% шанс, +18% урон"},
         {"key": "torso_titan", "name": "Титановый панцирь", "emoji": E_STAR, "df": 17, "hp": 35, "price": 2200, "chance": 10, "dmg_bonus": 25, "desc": "+10% шанс, +25% урон"},
         {"key": "torso_aegis", "name": "Эгида", "emoji": "🌟", "df": 22, "hp": 45, "price": 3500, "chance": 15, "dmg_bonus": 30, "desc": "Легендарная защита"},
+        {"key": "torso_divine", "name": "Божественная броня", "emoji": "✨", "df": 25, "hp": 55, "price": 5000, "chance": 18, "dmg_bonus": 35, "desc": "Абсолютная защита"},
     ],
     "arms": [
         {"key": "arms_none", "name": "Без наручей", "emoji": "👕", "df": 0, "hp": 0, "price": 0, "chance": 0, "dmg_bonus": 0, "desc": "Полная уязвимость"},
         {"key": "arms_cloth", "name": "Тканевые бинты", "emoji": "🩹", "df": 2, "hp": 2, "price": 100, "chance": 3, "dmg_bonus": 0, "desc": "+3% шанс спец-атаки"},
         {"key": "arms_iron", "name": "Железные наручи", "emoji": E_SHIELD, "df": 4, "hp": 8, "price": 350, "chance": 0, "dmg_bonus": 0, "desc": "Базовая защита"},
         {"key": "arms_steel", "name": "Стальные латы", "emoji": "⚙️", "df": 7, "hp": 14, "price": 800, "chance": 0, "dmg_bonus": 10, "desc": "+10% урон спец-атаки"},
+        {"key": "arms_mithril", "name": "Мифриловые наручи", "emoji": "💍", "df": 9, "hp": 18, "price": 1300, "chance": 5, "dmg_bonus": 15, "desc": "+5% шанс, +15% урон"},
         {"key": "arms_runic", "name": "Рунические наручи", "emoji": "🔮", "df": 11, "hp": 22, "price": 1700, "chance": 8, "dmg_bonus": 20, "desc": "+8% шанс, +20% урон"},
         {"key": "arms_berserk", "name": "Наручи Берсерка", "emoji": "🩸", "df": 9, "hp": 18, "price": 1500, "chance": 5, "dmg_bonus": 35, "desc": "-2 защиты, +35% урона"},
+        {"key": "arms_divine", "name": "Божественные перчатки", "emoji": "🙏", "df": 13, "hp": 26, "price": 4000, "chance": 12, "dmg_bonus": 28, "desc": "Священная защита"},
     ],
     "legs": [
         {"key": "legs_none", "name": "Без поножей", "emoji": "👕", "df": 0, "hp": 0, "price": 0, "chance": 0, "dmg_bonus": 0, "desc": "Полная уязвимость"},
         {"key": "legs_cloth", "name": "Тканевые штаны", "emoji": "👖", "df": 2, "hp": 3, "price": 110, "chance": 3, "dmg_bonus": 0, "desc": "+3% шанс спец-атаки"},
         {"key": "legs_iron", "name": "Железные поножи", "emoji": E_SHIELD, "df": 5, "hp": 10, "price": 400, "chance": 0, "dmg_bonus": 0, "desc": "Базовая защита"},
         {"key": "legs_steel", "name": "Стальные поножи", "emoji": "⚙️", "df": 8, "hp": 16, "price": 900, "chance": 0, "dmg_bonus": 10, "desc": "+10% урон спец-атаки"},
+        {"key": "legs_mithril", "name": "Мифриловые поножи", "emoji": "🦿", "df": 10, "hp": 20, "price": 1400, "chance": 6, "dmg_bonus": 15, "desc": "+6% шанс, +15% урон"},
         {"key": "legs_demon", "name": "Демонические поножи", "emoji": "😈", "df": 12, "hp": 25, "price": 1900, "chance": 8, "dmg_bonus": 20, "desc": "+8% шанс, +20% урон"},
         {"key": "legs_wind", "name": "Поножи Ветра", "emoji": E_ZONE_LEGS, "df": 6, "hp": 12, "price": 1100, "chance": 10, "dmg_bonus": 5, "desc": "+10% шанс уворота"},
+        {"key": "legs_divine", "name": "Божественные сапоги", "emoji": "👢", "df": 14, "hp": 28, "price": 4200, "chance": 13, "dmg_bonus": 25, "desc": "Священная защита"},
     ],
 }
 
@@ -288,39 +457,92 @@ ARENA_ORDER: List[str] = ["bronze", "silver", "gold"]
 
 BOSSES: Dict[str, Dict[str, Any]] = {
     "goblin": {
-        "key": "goblin", "name": "👺 Гоблин-Вождь",
+        "key": "goblin",
+        "name": "👺 Гоблин-Вождь",
         "desc": "Хитрый и злой. Бьёт по слабой броне.",
-        "hp": 160, "weapon": "dagger",
+        "hp": 160,
+        "weapon": "dagger",
         "armor_keys": {"head": "head_leather", "torso": "torso_robe", "arms": "arms_none", "legs": "legs_none"},
-        "reward_mult": 3, "min_wins": 0,
+        "reward_mult": 3,
+        "min_wins": 0,
+        "lore": "Вождь лесных гоблинов, известный своей хитростью.",
+    },
+    "skeleton": {
+        "key": "skeleton",
+        "name": "💀 Скелет-Воин",
+        "desc": "Нежить с древним мечом. Бьёт точно и больно.",
+        "hp": 200,
+        "weapon": "sword",
+        "armor_keys": {"head": "head_iron", "torso": "torso_chain", "arms": "arms_iron", "legs": "legs_iron"},
+        "reward_mult": 4,
+        "min_wins": 3,
+        "lore": "Восставший из могилы воин древнего королевства.",
     },
     "dragon": {
-        "key": "dragon", "name": "🐉 Древний Дракон",
+        "key": "dragon",
+        "name": "🐉 Древний Дракон",
         "desc": "Огнедышащий ужас. Оружие — посох.",
-        "hp": 260, "weapon": "staff",
+        "hp": 260,
+        "weapon": "staff",
         "armor_keys": {"head": "head_steel", "torso": "torso_plate", "arms": "arms_iron", "legs": "legs_iron"},
-        "reward_mult": 5, "min_wins": 5,
+        "reward_mult": 5,
+        "min_wins": 5,
+        "lore": "Древний дракон, пробудившийся от тысячелетнего сна.",
+    },
+    "orc": {
+        "key": "orc",
+        "name": "👹 Орк-Берсерк",
+        "desc": "Яростный воин с топором. Не знает страха.",
+        "hp": 320,
+        "weapon": "axe",
+        "armor_keys": {"head": "head_steel", "torso": "torso_plate", "arms": "arms_berserk", "legs": "legs_steel"},
+        "reward_mult": 7,
+        "min_wins": 10,
+        "lore": "Вождь орочьего племени, потерявший разум в битвах.",
     },
     "lord": {
-        "key": "lord", "name": "👹 Древний Лорд",
+        "key": "lord",
+        "name": "👹 Древний Лорд",
         "desc": "Владыка арены. Молот разрушения.",
-        "hp": 380, "weapon": "hammer",
+        "hp": 380,
+        "weapon": "hammer",
         "armor_keys": {"head": "head_dragon", "torso": "torso_titan", "arms": "arms_runic", "legs": "legs_demon"},
-        "reward_mult": 10, "min_wins": 15,
+        "reward_mult": 10,
+        "min_wins": 15,
+        "lore": "Павший лорд, ставший тёмным владыкой арены.",
+    },
+    "lich": {
+        "key": "lich",
+        "name": "🧙 Лич-Повелитель",
+        "desc": "Могущественный некромант. Использует магию смерти.",
+        "hp": 420,
+        "weapon": "wand",
+        "armor_keys": {"head": "head_mithril", "torso": "torso_mithril", "arms": "arms_runic", "legs": "legs_mithril"},
+        "reward_mult": 12,
+        "min_wins": 25,
+        "lore": "Древний маг, продавший душу за бессмертие.",
     },
     "titan": {
-        "key": "titan", "name": "🗿 Каменный Титан",
+        "key": "titan",
+        "name": "🗿 Каменный Титан",
         "desc": "Неуязвимая глыба. Огромная защита.",
-        "hp": 500, "weapon": "fists",
+        "hp": 500,
+        "weapon": "fists",
         "armor_keys": {"head": "head_crown", "torso": "torso_aegis", "arms": "arms_berserk", "legs": "legs_wind"},
-        "reward_mult": 15, "min_wins": 35,
+        "reward_mult": 15,
+        "min_wins": 35,
+        "lore": "Древний титан, пробуждённый магией.",
     },
     "demon_king": {
-        "key": "demon_king", "name": "😈 Король Демонов",
+        "key": "demon_king",
+        "name": "😈 Король Демонов",
         "desc": "Повелитель преисподней. Смесь всех стихий.",
-        "hp": 750, "weapon": "staff",
-        "armor_keys": {"head": "head_crown", "torso": "torso_aegis", "arms": "arms_runic", "legs": "legs_demon"},
-        "reward_mult": 25, "min_wins": 50,
+        "hp": 750,
+        "weapon": "scythe",
+        "armor_keys": {"head": "head_divine", "torso": "torso_divine", "arms": "arms_divine", "legs": "legs_divine"},
+        "reward_mult": 25,
+        "min_wins": 50,
+        "lore": "Сам Король Демонов спустился в арену.",
     },
 }
 
@@ -357,6 +579,22 @@ CHAT_EVENT_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "duration_hours": 4.0,
         "reward_per_participant": (150, 350),
         "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n🐉 <b>Нашествие Драконов</b>!\nHP: {hp}\n\nКоманда <code>атака</code>!",
+    },
+    "demon_invasion": {
+        "name_template": "😈 Вторжение Демонов",
+        "emoji": "😈",
+        "base_hp": 8000,
+        "duration_hours": 6.0,
+        "reward_per_participant": (250, 600),
+        "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n😈 <b>Вторжение Демонов</b>!\nHP: {hp}\n\nКоманда <code>атака</code>!",
+    },
+    "ancient_golem": {
+        "name_template": "🗿 Древний Голем",
+        "emoji": "🗿",
+        "base_hp": 10000,
+        "duration_hours": 8.0,
+        "reward_per_participant": (400, 1000),
+        "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n🗿 <b>Древний Голем</b> пробудился!\nHP: {hp}\n\nКоманда <code>атака</code>!",
     },
 }
 
@@ -402,44 +640,24 @@ def build_pagination_keyboard(
     base_callback: str,
     show_first_last: bool = True
 ) -> InlineKeyboardMarkup:
-    """
-    Строит клавиатуру пагинации.
-    
-    Args:
-        current_page: Текущая страница (0-based).
-        total_pages: Всего страниц.
-        base_callback: Базовый callback для кнопок (например, "top:bronze").
-        show_first_last: Показывать кнопки "В начало" и "В конец".
-    
-    Returns:
-        InlineKeyboardMarkup с кнопками навигации.
-    """
     if total_pages <= 1:
         return build_vertical_keyboard_with_styles([
             (f"{E_BACK} Назад", base_callback.rsplit(":", 1)[0] if ":" in base_callback else "arena:menu", "primary")
         ])
-    
     buttons = []
     nav_row = []
-    
     if show_first_last and current_page > 0:
         nav_row.append((f"{E_FIRST} В начало", f"{base_callback}:page:0", "primary"))
-    
     if current_page > 0:
         nav_row.append((f"{E_PREV} Назад", f"{base_callback}:page:{current_page - 1}", "primary"))
-    
     if current_page < total_pages - 1:
         nav_row.append((f"Вперёд {E_NEXT}", f"{base_callback}:page:{current_page + 1}", "primary"))
-    
     if show_first_last and current_page < total_pages - 1:
         nav_row.append((f"В конец {E_LAST}", f"{base_callback}:page:{total_pages - 1}", "primary"))
-    
     if nav_row:
         buttons.append(nav_row)
-    
     back_callback = base_callback.rsplit(":", 1)[0] if ":" in base_callback else "arena:menu"
     buttons.append([(f"{E_BACK} Назад", back_callback, "success")])
-    
     return build_vertical_keyboard_with_styles(buttons)
 
 
@@ -486,7 +704,6 @@ async def safe_edit_message_by_id(bot: Bot, chat_id: int, message_id: int, text:
 
 
 async def safe_edit_reply_markup(cb: CallbackQuery, markup: Optional[InlineKeyboardMarkup]) -> bool:
-    """Безопасно редактирует только клавиатуру сообщения."""
     try:
         await cb.message.edit_reply_markup(reply_markup=markup)
         return True
@@ -1019,9 +1236,11 @@ HUMAN_NAMES: List[str] = [
     "Лёха", "Миша", "Гриша", "Стас", "Олег", "Ден", "Марк", "Тимур",
     "Алина", "Катя", "Настя", "Даша", "Лера", "Соня", "Вика", "Полина",
     "Крис", "Милана", "Аня", "Юля", "Оля", "Маша", "Ксюша", "Ника",
+    "Рустам", "Азамат", "Тимур", "Артур", "Роберт", "Альберт", "Виктор",
+    "Семён", "Фёдор", "Глеб", "Платон", "Марк", "Лев", "Мирон",
 ]
 
-HUMAN_TITLES: List[str] = ["", "", "", "xd", "pro", "god", "real", "top", "_", "007", "tvoy", "cz", "boss", "king"]
+HUMAN_TITLES: List[str] = ["", "", "", "xd", "pro", "god", "real", "top", "_", "007", "tvoy", "cz", "boss", "king", "elite", "master", "legend", "hero", "dark", "light", "fire", "ice", "storm", "shadow"]
 
 
 def ensure_masked_bots_exist(target_count: int = 50) -> None:
@@ -1052,14 +1271,14 @@ def ensure_masked_bots_exist(target_count: int = 50) -> None:
         losses = random.randint(max(0, wins // 2), wins * 2 + 3)
         arena_key = determine_arena(wins)
         if arena_key == "bronze":
-            weapon = random.choice(["fists", "dagger", "sword"])
+            weapon = random.choice(["fists", "dagger", "sword", "whip"])
             tier_max = 2
         elif arena_key == "silver":
-            weapon = random.choice(["sword", "axe", "bow", "dagger"])
-            tier_max = 3
-        else:
-            weapon = random.choice(["bow", "staff", "hammer", "axe", "sword"])
+            weapon = random.choice(["sword", "axe", "bow", "dagger", "spear", "crossbow"])
             tier_max = 4
+        else:
+            weapon = random.choice(["bow", "staff", "hammer", "axe", "sword", "scythe", "wand", "crossbow"])
+            tier_max = 6
         slots = {}
         for s in ZONES:
             items = ARMOR_DATA[s]
@@ -1514,6 +1733,28 @@ RP_ACTIONS: Dict[str, Tuple[str, str]] = {
     "щекотать": ("🤣", "пощекотал(а)"),
     "благословить": ("🙏", "благословил(а)"),
     "проклясть": ("💀", "проклял(а)"),
+    "поцеловать_руку": ("💋", "поцеловал(а) руку"),
+    "ударить_по_щеке": ("👋", "дал(а) пощёчину"),
+    "обнять_крепко": ("🫂", "крепко обнял(а)"),
+    "погрозить": ("☝️", "погрозил(а) пальцем"),
+    "показать_язык": ("😜", "показал(а) язык"),
+    "поднять_бровь": ("🤨", "приподнял(а) бровь"),
+    "аплодировать": ("👏", "аплодировал(а)"),
+    "послать_воздушный_поцелуй": ("💋", "послал(а) воздушный поцелуй"),
+    "поклониться": ("🙇", "поклонился(ась)"),
+    "подарить_цветы": ("🌹", "подарил(а) цветы"),
+    "облить_водой": ("💦", "облил(а) водой"),
+    "бросить_торт": ("🎂", "бросил(а) торт"),
+    "поцеловать_в_щёку": ("😚", "поцеловал(а) в щёку"),
+    "щёлкнуть_по_лбу": ("👆", "щёлкнул(а) по лбу"),
+    "показать_кулак": ("👊", "показал(а) кулак"),
+    "обнять_за_талию": ("💑", "обнял(а) за талию"),
+    "поцеловать_в_лоб": ("😇", "поцеловал(а) в лоб"),
+    "погладить_по_голове": ("🤗", "погладил(а) по голове"),
+    "ударить_под_дых": ("🥊", "ударил(а) под дых"),
+    "сделать_комплимент": ("💐", "сделал(а) комплимент"),
+    "посмеяться_в_голос": ("🤣", "засмеялся(ась) в голос"),
+    "пожать_руку": ("🤝", "крепко пожал(а) руку"),
 }
 
 RP_COOLDOWNS: Dict[Tuple[int, int, str], float] = {}
@@ -1716,40 +1957,23 @@ def generate_armor_slot_list(uid: int, slot: str) -> Tuple[str, Optional[InlineK
 
 
 def generate_top_screen_paginated(uid: int, arena_key: str, page: int = 0) -> Tuple[str, Optional[InlineKeyboardMarkup]]:
-    """
-    Генерирует экран топа с пагинацией.
-    
-    Args:
-        uid: ID пользователя.
-        arena_key: Ключ арены.
-        page: Номер страницы (0-based).
-    
-    Returns:
-        Кортеж (текст, клавиатура).
-    """
     a = ARENAS[arena_key]
-    
     all_rows = db.fetch_all(
         """SELECT user_id, name, wins, losses FROM players
            WHERE is_bot=0 AND banned=0 AND wins BETWEEN ? AND ?
            ORDER BY wins DESC, losses ASC""",
         (a["min_wins"], a["max_wins"])
     )
-    
     total_count = len(all_rows)
     total_pages = max(1, (total_count + Config.TOP_PAGE_SIZE - 1) // Config.TOP_PAGE_SIZE)
-    
     page = max(0, min(page, total_pages - 1))
-    
     start_idx = page * Config.TOP_PAGE_SIZE
     end_idx = min(start_idx + Config.TOP_PAGE_SIZE, total_count)
     page_rows = all_rows[start_idx:end_idx]
-    
     medals = ["🥇", "🥈", "🥉"]
     lines = [f"{a['emoji']} <b>{a['name']}</b> — топ по победам", ""]
     lines.append(f"📊 Всего игроков: <b>{total_count}</b>")
     lines.append(f"📄 Страница: <b>{page + 1}</b> / {total_pages}\n")
-    
     if not page_rows:
         lines.append("<i>Пока никого нет на этой арене.</i>")
     else:
@@ -1758,7 +1982,6 @@ def generate_top_screen_paginated(uid: int, arena_key: str, page: int = 0) -> Tu
             mark = medals[global_idx] if global_idx < 3 else f"{global_idx + 1}."
             you = " ← ты" if r["user_id"] == uid else ""
             lines.append(f"{mark} <b>{esc(r['name'])}</b> — {r['wins']} {E_TROPHY} / {r['losses']} {E_SKULL}{you}")
-    
     me = db.fetch_one("SELECT * FROM players WHERE user_id=?", (uid,))
     if me and a["min_wins"] <= me["wins"] <= a["max_wins"]:
         rank_row = db.fetch_one(
@@ -1767,38 +1990,28 @@ def generate_top_screen_paginated(uid: int, arena_key: str, page: int = 0) -> Tu
             (a["min_wins"], a["max_wins"], me["wins"])
         )
         rank = (rank_row["c"] if rank_row else 0) + 1
-        
         my_page = (rank - 1) // Config.TOP_PAGE_SIZE
         if my_page != page:
             lines += ["\n…", f"<b>Ты:</b> #{rank}. <b>{esc(me['name'])}</b> — {me['wins']} {E_TROPHY} / {me['losses']} {E_SKULL}"]
-    
     lines += ["", f"{E_TROPHY} Победа: +1 и деньги. {E_SKULL} Поражение: −1 без награды."]
-    
     base_callback = f"top:{arena_key}"
     kb = build_pagination_keyboard(page, total_pages, base_callback, show_first_last=True)
-    
     return "\n".join(lines), kb
 
 
 def generate_arena_list_screen_paginated(uid: int, page: int = 0) -> Tuple[str, Optional[InlineKeyboardMarkup]]:
-    """
-    Генерирует список соперников с пагинацией.
-    """
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (uid,))
     if not p:
         return "Профиль не найден.", None
     key = determine_arena(p["wins"])
     a = ARENAS[key]
-    
     all_rows = db.fetch_all(
         """SELECT user_id, name, wins, losses FROM players
            WHERE user_id != ? AND banned=0 AND wins BETWEEN ? AND ?
            ORDER BY RANDOM()""",
         (uid, a["min_wins"], a["max_wins"])
     )
-    
     total_count = len(all_rows)
-    
     if total_count == 0:
         return (
             "Сейчас на твоей арене никого нет — жми «Найти соперника».",
@@ -1807,38 +2020,30 @@ def generate_arena_list_screen_paginated(uid: int, page: int = 0) -> Tuple[str, 
                 (f"{E_BACK} Назад", "arena:menu", "primary"),
             ])
         )
-    
     total_pages = max(1, (total_count + PAGINATION_PAGE_SIZE - 1) // PAGINATION_PAGE_SIZE)
     page = max(0, min(page, total_pages - 1))
-    
     start_idx = page * PAGINATION_PAGE_SIZE
     end_idx = min(start_idx + PAGINATION_PAGE_SIZE, total_count)
     page_rows = all_rows[start_idx:end_idx]
-    
     buttons = []
     for r in page_rows:
         buttons.append((f"{r['name'][:16]} · {r['wins']}{E_TROPHY}/{r['losses']}{E_SKULL}", f"duel:pick:{r['user_id']}", "primary"))
-    
     nav_buttons = []
     if page > 0:
         nav_buttons.append((f"{E_PREV} Назад", f"arena:list:page:{page - 1}", "primary"))
     if page < total_pages - 1:
         nav_buttons.append((f"Вперёд {E_NEXT}", f"arena:list:page:{page + 1}", "primary"))
-    
     if nav_buttons:
         buttons_row = nav_buttons
     else:
         buttons_row = []
-    
     all_buttons = []
     for b in buttons:
         all_buttons.append([b])
     if buttons_row:
         all_buttons.append(buttons_row)
     all_buttons.append([(f"{E_BACK} Назад", "arena:menu", "success")])
-    
     text = f"{a['emoji']} <b>{a['name']}</b> — соперники\n📊 Всего: {total_count} · Стр. {page + 1}/{total_pages}"
-    
     return text, build_vertical_keyboard_with_styles([b for row in all_buttons for b in row])
 
 
@@ -2146,7 +2351,10 @@ HELP_SECTIONS: Dict[str, Dict[str, Any]] = {
             "• <code>лечить</code>, <code>игнор</code>, <code>смеяться</code>\n"
             "• <code>танцевать</code>, <code>шлепнуть</code>, <code>обозвать</code>\n"
             "• <code>покормить</code>, <code>напоить</code>, <code>щекотать</code>\n"
-            "• <code>благословить</code>, <code>проклясть</code>, <code>подмигнуть</code>\n\n"
+            "• <code>благословить</code>, <code>проклясть</code>, <code>подмигнуть</code>\n"
+            "• <code>поцеловать_руку</code>, <code>ударить_по_щеке</code>\n"
+            "• <code>аплодировать</code>, <code>поклониться</code>\n"
+            "• <code>подарить_цветы</code>, <code>облить_водой</code>\n\n"
             "<b>👹 События:</b>\n"
             "• <code>атака</code> — ударить босса/караван\n"
             "• <code>событие</code> — статус текущего события\n\n"
@@ -2161,6 +2369,8 @@ HELP_SECTIONS: Dict[str, Dict[str, Any]] = {
             "• <code>бан</code> / <code>разбан</code>\n"
             "• <code>выдать [сумма]</code>\n"
             "• <code>событие босс/караван/набег/дракон</code>\n"
+            "• <code>событие демон</code> — вторжение демонов\n"
+            "• <code>событие голем</code> — древний голем\n"
             "• <code>босс [ключ]</code> — активировать босса\n"
             "• <code>следующее событие</code>\n"
             "• <code>промо создать/удалить/список</code>\n"
@@ -2236,7 +2446,7 @@ async def handle_start_command(m: Message, state: FSMContext) -> None:
     await m.answer(
         "⚔️ <b>Добро пожаловать на Арену Дуэлянтов!</b>\n\n"
         "PvP + казино + боссы + чатовые ивенты.\n"
-        "Уникальная броня на 4 части тела и множество видов оружия.\n\n"
+        "12 видов оружия, 32 предмета брони, 8 боссов.\n\n"
         f"Как зовут твоего бойца? ({MIN_NAME_LENGTH}–{MAX_NAME_LENGTH} символов)",
         reply_markup=ReplyKeyboardRemove()
     )
@@ -2312,8 +2522,8 @@ async def handle_help_command(m: Message) -> None:
                 f"• <code>бан @user</code> или <code>бан ID</code>\n"
                 f"• <code>разбан @user</code>\n"
                 f"• <code>выдать 1000 @user</code>\n"
-                f"• <code>событие босс/караван/набег/дракон</code>\n"
-                f"• <code>босс goblin/dragon/lord/titan/demon_king</code>\n"
+                f"• <code>событие босс/караван/набег/дракон/демон/голем</code>\n"
+                f"• <code>босс goblin/skeleton/dragon/orc/lord/lich/titan/demon_king</code>\n"
                 f"• <code>следующее событие</code>\n"
                 f"• <code>промо создать/удалить/список</code>\n"
                 f"• <code>рассылка текст</code>\n"
@@ -2615,6 +2825,28 @@ RP_MAPPINGS: Dict[str, List[str]] = {
     "щекотать": ["щекотать", "tickle"],
     "благословить": ["благословить", "bless"],
     "проклясть": ["проклясть", "curse"],
+    "поцеловать_руку": ["поцеловать_руку", "руку"],
+    "ударить_по_щеке": ["ударить_по_щеке", "пощечина"],
+    "обнять_крепко": ["обнять_крепко", "крепко"],
+    "погрозить": ["погрозить", "грозить"],
+    "показать_язык": ["показать_язык", "язык"],
+    "поднять_бровь": ["поднять_бровь", "бровь"],
+    "аплодировать": ["аплодировать", "апплодисменты"],
+    "послать_воздушный_поцелуй": ["воздушный_поцелуй", "воздушный"],
+    "поклониться": ["поклониться", "поклон"],
+    "подарить_цветы": ["подарить_цветы", "цветы"],
+    "облить_водой": ["облить_водой", "облить"],
+    "бросить_торт": ["бросить_торт", "торт"],
+    "поцеловать_в_щёку": ["поцеловать_в_щёку", "щёку"],
+    "щёлкнуть_по_лбу": ["щёлкнуть_по_лбу", "щёлкнуть"],
+    "показать_кулак": ["показать_кулак", "кулак"],
+    "обнять_за_талию": ["обнять_за_талию", "талию"],
+    "поцеловать_в_лоб": ["поцеловать_в_лоб", "лоб"],
+    "погладить_по_голове": ["погладить_по_голове", "голову"],
+    "ударить_под_дых": ["ударить_под_дых", "поддых"],
+    "сделать_комплимент": ["сделать_комплимент", "комплимент"],
+    "посмеяться_в_голос": ["посмеяться_в_голос", "вголос"],
+    "пожать_руку": ["пожать_руку", "руку_крепко"],
 }
 
 
@@ -2913,6 +3145,32 @@ async def adm_spawn_dragon_raid(m: Message) -> None:
         await m.answer("Событие уже активно!")
         return
     template = CHAT_EVENT_TEMPLATES["dragon_raid"]
+    await m.answer(template["announce_text"].format(emoji=template["emoji"], hp=event.hp))
+
+
+@router.message(F.text.regexp(r"(?i)^событие демон$"))
+async def adm_spawn_demon_invasion(m: Message) -> None:
+    if not is_admin(m.from_user.id):
+        await m.answer(f"{E_WARNING} У тебя нет прав администратора.")
+        return
+    event = spawn_chat_event("demon_invasion", m.from_user.id)
+    if not event:
+        await m.answer("Событие уже активно!")
+        return
+    template = CHAT_EVENT_TEMPLATES["demon_invasion"]
+    await m.answer(template["announce_text"].format(emoji=template["emoji"], hp=event.hp))
+
+
+@router.message(F.text.regexp(r"(?i)^событие голем$"))
+async def adm_spawn_golem(m: Message) -> None:
+    if not is_admin(m.from_user.id):
+        await m.answer(f"{E_WARNING} У тебя нет прав администратора.")
+        return
+    event = spawn_chat_event("ancient_golem", m.from_user.id)
+    if not event:
+        await m.answer("Событие уже активно!")
+        return
+    template = CHAT_EVENT_TEMPLATES["ancient_golem"]
     await m.answer(template["announce_text"].format(emoji=template["emoji"], hp=event.hp))
 
 
@@ -4428,7 +4686,6 @@ async def cb_arena_list(cb: CallbackQuery) -> None:
 
 @router.callback_query(F.data.regexp(r"^arena:list:page:(\d+)$"))
 async def cb_arena_list_page(cb: CallbackQuery) -> None:
-    """Пагинация списка соперников."""
     if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
         await cb.answer("Сначала /start", show_alert=True)
         return
@@ -4737,7 +4994,6 @@ async def cb_buy_armor(cb: CallbackQuery) -> None:
 
 @router.callback_query(F.data.regexp(r"^top:(cur|bronze|silver|gold)$"))
 async def cb_top_leaderboard(cb: CallbackQuery) -> None:
-    """Показывает первую страницу топа."""
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (cb.from_user.id,))
     if not p:
         await cb.answer("Сначала /start", show_alert=True)
@@ -4752,7 +5008,6 @@ async def cb_top_leaderboard(cb: CallbackQuery) -> None:
 
 @router.callback_query(F.data.regexp(r"^top:(bronze|silver|gold):page:(\d+)$"))
 async def cb_top_leaderboard_page(cb: CallbackQuery) -> None:
-    """Пагинация топа."""
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (cb.from_user.id,))
     if not p:
         await cb.answer("Сначала /start", show_alert=True)
@@ -4841,7 +5096,7 @@ async def main() -> None:
         logging.critical("❌ ОШИБКА: Задай BOT_TOKEN!")
         raise SystemExit("Missing BOT_TOKEN")
     logging.info("=" * 60)
-    logging.info("⚔️ АРЕНА ДУЭЛЯНТОВ — Production Edition v16.0")
+    logging.info("⚔️ АРЕНА ДУЭЛЯНТОВ — Production Edition v17.0")
     logging.info("=" * 60)
     logging.info("Initializing database...")
     logging.info("Generating masked bots...")

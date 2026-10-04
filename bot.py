@@ -54,7 +54,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 # ==============================================================================
 
 class Config:
-    BOT_TOKEN:  = "8996813076:AAEPRaOZ8O6WoIagzMUdnV49K2zP293vyDg"
+    BOT_TOKEN  = "8996813076:AAEPRaOZ8O6WoIagzMUdnV49K2zP293vyDg"
     ADMIN_ID: int = int(os.getenv("ADMIN_ID", "5356400377"))
     DB_PATH: str = os.getenv("DB_PATH", "arena_ultimate.db")
     START_CRYSTALS: int = 500

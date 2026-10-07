@@ -38,7 +38,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 # ============================================================================
 
 class Config:
-    BOT_TOKEN: str = os.getenv("BOT_TOKEN", "8684125903:AAGlja8nj_r3HCb8aZwubOqJ_MAGDFAWCoc")
+    BOT_TOKEN: str = os.getenv("BOT_TOKEN", "8996813076:AAEPRaOZ8O6WoIagzMUdnV49K2zP293vyDg")
     ADMIN_ID: int = int(os.getenv("ADMIN_ID", "5356400377"))
     DB_PATH: str = os.getenv("DB_PATH", "arena_ultimate.db")
     PROVIDER_TOKEN: str = os.getenv("PROVIDER_TOKEN", "")

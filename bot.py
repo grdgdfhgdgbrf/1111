@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-⚔️ АРЕНА ДУЭЛЯНТОВ — v21.1 Full Production
-Все ошибки v21.0 исправлены. Полная реализация.
+⚔️ АРЕНА ДУЭЛЯНТОВ — v21.2 Final Production
+Все синтаксические ошибки исправлены. Полная реализация.
 """
 
 import asyncio
@@ -38,7 +38,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 # ============================================================================
 
 class Config:
-    BOT_TOKEN: str = os.getenv("BOT_TOKEN", "8684125903:AAGlja8nj_r3HCb8aZwubOqJ_MAGDFAWCoc")
+    BOT_TOKEN: str = os.getenv("BOT_TOKEN", "8996813076:AAGcZvjsLabdZnL2WpuEReRKXKLWdhaijD8")
     ADMIN_ID: int = int(os.getenv("ADMIN_ID", "5356400377"))
     DB_PATH: str = os.getenv("DB_PATH", "arena_ultimate.db")
     PROVIDER_TOKEN: str = os.getenv("PROVIDER_TOKEN", "")
@@ -111,7 +111,7 @@ PAGINATION_PAGE_SIZE: int = 5
 
 
 # ============================================================================
-# ЭМОДЗИ (ФИКС #4: E_DLCOIN определён сразу)
+# ЭМОДЗИ
 # ============================================================================
 
 E_FIRE = "🔥"; E_SWORD = "⚔️"; E_SHIELD = "🛡"; E_HEART = "❤️"
@@ -145,8 +145,11 @@ ZONE_INFO: Dict[str, Dict[str, Any]] = {
 
 @dataclass
 class AttackVariant:
-    name: str; description: str; damage_mult: float
-    armor_penetration: float; cooldown_rounds: int
+    name: str
+    description: str
+    damage_mult: float
+    armor_penetration: float
+    cooldown_rounds: int
     effect: Optional[str] = None
 
 
@@ -259,10 +262,14 @@ ARMOR_DATA: Dict[str, List[Dict[str, Any]]] = {
 
 
 ARMOR_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
 def _build_armor_cache() -> None:
     for slot, items in ARMOR_DATA.items():
         for it in items:
             ARMOR_CACHE[it["key"]] = {**it, "slot": slot}
+
+
 _build_armor_cache()
 
 
@@ -359,7 +366,7 @@ def build_horizontal_keyboard(buttons: List[Tuple[str, str]], buttons_per_row: i
 def build_vertical_keyboard_with_styles(buttons: List[Tuple[str, str, Optional[str]]]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for text, callback_data, style in buttons:
-        if not text:  # ФИКС #7: пропускаем пустые кнопки
+        if not text:
             continue
         if style:
             builder.row(InlineKeyboardButton(text=text, callback_data=callback_data, style=style))
@@ -587,7 +594,10 @@ db = DatabaseManager(Config.DB_PATH)
 
 @dataclass
 class Fighter:
-    name: str; max_hp: int; hp: int; weapon: str
+    name: str
+    max_hp: int
+    hp: int
+    weapon: str
     armor_slots: Dict[str, str] = field(default_factory=dict)
     dots: List[Dict[str, Any]] = field(default_factory=list)
     stun: bool = False
@@ -674,7 +684,10 @@ def format_fighter_card(fighter: Fighter) -> str:
 
 @dataclass
 class Duel:
-    a_id: int; b_id: int; a: Fighter; b: Fighter
+    a_id: int
+    b_id: int
+    a: Fighter
+    b: Fighter
     attacker_is_a: bool = True
     round_no: int = 1
     atk_zone: Optional[str] = None
@@ -737,9 +750,12 @@ ACTIVE_DUELS: Dict[int, Duel] = {}
 
 @dataclass
 class PendingDuel:
-    challenger_id: int; target_id: int
-    challenger_msg_id: int; target_msg_id: int
-    chat_id: int; created_at: float
+    challenger_id: int
+    target_id: int
+    challenger_msg_id: int
+    target_msg_id: int
+    chat_id: int
+    created_at: float
     timeout_task: Optional[asyncio.Task] = None
 
 
@@ -748,9 +764,14 @@ PENDING_DUELS: Dict[Tuple[int, int], PendingDuel] = {}
 
 @dataclass
 class ChatEvent:
-    event_id: int; event_type: str; name: str
-    hp: int; max_hp: int; started_by: int
-    started_at: float; ends_at: float
+    event_id: int
+    event_type: str
+    name: str
+    hp: int
+    max_hp: int
+    started_by: int
+    started_at: float
+    ends_at: float
     active: bool = True
     participants: Set[int] = field(default_factory=set)
     damage_log: List[str] = field(default_factory=list)
@@ -799,10 +820,13 @@ def calculate_mines_multiplier(mines_count: int, opened_safe: int) -> float:
 
 @dataclass
 class MinesGame:
-    user_id: int; bet: int; mines_count: int
+    user_id: int
+    bet: int
+    mines_count: int
     mine_positions: Set[int]
     opened: Set[int] = field(default_factory=set)
-    message_id: int = 0; chat_id: int = 0
+    message_id: int = 0
+    chat_id: int = 0
     active: bool = True
     started_at: float = field(default_factory=time.time)
 
@@ -912,10 +936,13 @@ def generate_crash_point() -> float:
 
 @dataclass
 class CrashGame:
-    user_id: int; bet: int; crash_point: float
+    user_id: int
+    bet: int
+    crash_point: float
     current_multiplier: float = 1.00
     started_at: float = field(default_factory=time.time)
-    message_id: int = 0; chat_id: int = 0
+    message_id: int = 0
+    chat_id: int = 0
     cashed_out: bool = False
     cashout_multiplier: float = 0.0
     crashed: bool = False
@@ -2366,7 +2393,6 @@ def get_mines_setup_kb() -> InlineKeyboardMarkup:
     return build_vertical_keyboard_with_styles(buttons)
 
 
-# 🔧 ФИКС #1: generate_casino_menu теперь определена
 def generate_casino_menu(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]:
     p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (uid,))
     if not p:
@@ -2411,8 +2437,7 @@ def generate_donate_menu(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]
         f"<b>📦 Пакеты dlcoin:</b>"
     )
     
-    # 🔧 ФИКС #7: убрана пустая кнопка
-    buttons = []
+    buttons: List[Tuple[str, str, str]] = []
     for title, stars, dlcoin in Config.DONATION_PACKAGES:
         buttons.append((f"{title} · {stars}⭐ → {format_number(dlcoin)}🪙", f"donate:pack:{stars}", "primary"))
     
@@ -2435,8 +2460,8 @@ def generate_donate_items_menu(uid: int) -> Tuple[str, Optional[InlineKeyboardMa
         "<b>Эксклюзивные предметы за Stars:</b>\n"
     ]
     
-   
-    for buttons = []
+    # 🔧 ФИКС: было `for buttons = []` — исправлено на `buttons: List[...] = []`
+    buttons: List[Tuple[str, str, str]] = []
     for item in Config.DONATION_ITEMS:
         item_id = item["id"]
         owned = item_id in owned_items
@@ -2698,7 +2723,7 @@ async def cb_help_section(cb: CallbackQuery) -> None:
         await cb.answer("Раздел не найден", show_alert=True)
         return
     text = f"{section['title']}\n\n{section['text']}"
-    back_buttons = [(f"{E_BACK} Назад к разделам", "help:main", "primary")]
+    back_buttons: List[Tuple[str, str, str]] = [(f"{E_BACK} Назад к разделам", "help:main", "primary")]
     other_sections = [(k, v) for k, v in HELP_SECTIONS.items() if k != section_key]
     for key, sec in other_sections:
         title = sec["title"].split(">")[1].split("<")[0] if ">" in sec["title"] else key
@@ -3154,7 +3179,6 @@ async def cmd_dice_high_low(m: Message, bot: Bot) -> None:
                                   f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в костях.\n\n")
 
 
-# 🔧 ФИКС #5: исправлен regex для дротика
 @router.message(F.text.regexp(r"(?i)^(дротик|darts|дрот)(\s+(попадание|промах))?(\s+)(\d+)$"))
 async def cmd_chat_darts(m: Message, bot: Bot) -> None:
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (m.from_user.id,))
@@ -3183,7 +3207,6 @@ async def cmd_chat_darts(m: Message, bot: Bot) -> None:
                                   f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в дротике.\n\n")
 
 
-# 🔧 ФИКС #5: исправлен regex для баскетбола
 @router.message(F.text.regexp(r"(?i)^(баскет|basketball|баск)(\s+(попадание|промах))?(\s+)(\d+)$"))
 async def cmd_chat_basketball(m: Message, bot: Bot) -> None:
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (m.from_user.id,))
@@ -3506,7 +3529,7 @@ async def cmd_chat_crash(m: Message, bot: Bot) -> None:
 
 
 # ============================================================================
-# АДМИН КОМАНДЫ — ФИКС #8: работают и в ЛС, и в группах
+# АДМИН КОМАНДЫ
 # ============================================================================
 
 async def _check_admin(m: Message) -> bool:
@@ -4027,7 +4050,7 @@ async def cb_profile_back(cb: CallbackQuery) -> None:
 
 
 # ============================================================================
-# CALLBACK HANDLERS — КАЗИНО (ПОЛНАЯ РЕАЛИЗАЦИЯ)
+# CALLBACK HANDLERS — КАЗИНО (ВСЕ ИГРЫ)
 # ============================================================================
 
 @router.callback_query(F.data == "casino:menu")
@@ -5238,12 +5261,11 @@ async def cb_crash_play_again(cb: CallbackQuery) -> None:
 
 
 # ============================================================================
-# РУЧНОЙ ВВОД СТАВКИ — ФИКС #6: правильный парсинг game
+# РУЧНОЙ ВВОД СТАВКИ
 # ============================================================================
 
 @router.callback_query(F.data.regexp(r"^casino:([^:]+):manual$"))
 async def cb_casino_manual_bet(cb: CallbackQuery, state: FSMContext) -> None:
-    # 🔧 ФИКС #6: правильный парсинг — берём ВСЁ между "casino:" и ":manual"
     game = cb.data.split(":")[1]
     await state.update_data(manual_bet_game=game)
     await state.set_state(ManualBetState.waiting_for_bet)
@@ -5312,7 +5334,6 @@ async def handle_manual_bet(m: Message, state: FSMContext, bot: Bot) -> None:
     
     await state.clear()
     
-    # 🔧 ФИКС #6: правильная обработка всех игр
     if game == "slots":
         result, err, won = await play_casino_slots_animated(m.chat.id, bet, m.from_user.id, bot)
     elif game == "coin":
@@ -5410,7 +5431,7 @@ async def offer_donation(bot: Bot, user_id: int, context: str = "") -> None:
         return
     db.execute("UPDATE players SET consecutive_losses=0 WHERE user_id=?", (user_id,))
     
-    buttons = []
+    buttons: List[Tuple[str, str, str]] = []
     for title, stars, dlcoin in Config.DONATION_PACKAGES:
         buttons.append((f"{title} · {stars}⭐ → {format_number(dlcoin)}🪙", f"donate:pack:{stars}", "primary"))
     buttons.append(("🚫 Не сейчас", "donate:dismiss", "danger"))
@@ -5430,6 +5451,26 @@ async def offer_donation(bot: Bot, user_id: int, context: str = "") -> None:
         )
     except Exception as e:
         logging.error(f"Failed to offer donation: {e}")
+
+
+@router.callback_query(F.data == "donate:menu")
+async def cb_donate_menu(cb: CallbackQuery) -> None:
+    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
+        await cb.answer("Сначала /start", show_alert=True)
+        return
+    text, kb = generate_donate_menu(cb.from_user.id)
+    await safe_edit_message(cb, text, kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data == "donate:items")
+async def cb_donate_items(cb: CallbackQuery) -> None:
+    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
+        await cb.answer("Сначала /start", show_alert=True)
+        return
+    text, kb = generate_donate_items_menu(cb.from_user.id)
+    await safe_edit_message(cb, text, kb)
+    await cb.answer()
 
 
 @router.callback_query(F.data.regexp(r"^donate:pack:(\d+)$"))
@@ -5489,7 +5530,7 @@ async def cb_donate_item_owned(cb: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data == "donate:dismiss")
-async def cb_donate_dismiss(cb: CallbackQuery) -> None:  # 🔧 ФИКС #2: исправлена сигнатура
+async def cb_donate_dismiss(cb: CallbackQuery) -> None:
     await cb.answer("Хорошо, может быть в другой раз!")
     try:
         await cb.message.delete()
@@ -5518,12 +5559,15 @@ async def process_successful_payment(m: Message, bot: Bot) -> None:
     stars = payment.total_amount
     payload = payment.payload
     
-    if payload.startswith("donation_pack_"):
-        # Пакет dlcoin
+    if payload.startswith("donation_"):
+        # Определяем что куплено по payload
+        # donation_{user_id}_{timestamp}_{stars}
         parts = payload.split("_")
         if len(parts) >= 4:
-            dlcoin_amount = safe_int_parse(parts[3], default=0)
-            if dlcoin_amount > 0:
+            # Проверяем пакеты
+            pack = next((p for p in Config.DONATION_PACKAGES if p[1] == stars), None)
+            if pack:
+                title, stars_cost, dlcoin_amount = pack
                 db.execute_transaction([
                     ("UPDATE players SET crystals=crystals+?, total_stars_donated=total_stars_donated+?, consecutive_losses=0 WHERE user_id=?",
                      (dlcoin_amount, stars, m.from_user.id)),
@@ -5536,14 +5580,11 @@ async def process_successful_payment(m: Message, bot: Bot) -> None:
                 )
                 logging.info(f"Donation pack: user {m.from_user.id} paid {stars} stars, got {dlcoin_amount} dlcoin")
                 return
-    
-    elif payload.startswith("donation_item_"):
-        # Донат-предмет
-        parts = payload.split("_")
-        if len(parts) >= 4:
-            item_id = parts[3]
-            item = next((i for i in Config.DONATION_ITEMS if i["id"] == item_id), None)
+            
+            # Проверяем предметы
+            item = next((i for i in Config.DONATION_ITEMS if i["price_stars"] == stars), None)
             if item:
+                item_id = item["id"]
                 p = db.fetch_one("SELECT owned_items FROM players WHERE user_id=?", (m.from_user.id,))
                 owned = set((safe_row_get(p, "owned_items", "") or "").split(","))
                 owned.add(item_id)
@@ -5573,9 +5614,8 @@ async def process_successful_payment(m: Message, bot: Bot) -> None:
                 )
                 logging.info(f"Donation item: user {m.from_user.id} bought {item_id} for {stars} stars")
                 return
-    
-    elif payload.startswith("donation_"):
-        # Старый формат
+        
+        # Старый формат — просто начисляем бонус
         crystals_bonus = stars * 100
         db.execute_transaction([
             ("UPDATE players SET crystals=crystals+?, total_stars_donated=total_stars_donated+?, consecutive_losses=0 WHERE user_id=?",
@@ -6377,7 +6417,7 @@ async def main() -> None:
         logging.critical("❌ ОШИБКА: Задай BOT_TOKEN в переменных окружения!")
         raise SystemExit("Missing BOT_TOKEN")
     logging.info("=" * 60)
-    logging.info("⚔️ АРЕНА ДУЭЛЯНТОВ — v21.1 Final Production")
+    logging.info("⚔️ АРЕНА ДУЭЛЯНТОВ — v21.2 Final Production")
     logging.info("=" * 60)
     logging.info("Initializing database...")
     logging.info("Generating masked bots...")

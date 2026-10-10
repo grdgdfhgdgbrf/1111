@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-⚔️ АРЕНА ДУЭЛЯНТОВ — v25.0 Final Production
-Полная реализация. Все ошибки исправлены.
+⚔️ АРЕНА ДУЭЛЯНТОВ — v25.0 Final
+Исправления: админ-команды, курс 1⭐=100 dlcoin, логика победы
 """
 
 import asyncio
@@ -38,7 +38,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 # ============================================================================
 
 class Config:
-    BOT_TOKEN: str = os.getenv("BOT_TOKEN", "8996813076:AAHVvKjRl0nCScWCgLned92Lx_KhRtpcQ1Q")
+    BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
     ADMIN_ID: int = int(os.getenv("ADMIN_ID", "5356400377"))
     DB_PATH: str = os.getenv("DB_PATH", "arena_ultimate.db")
     PROVIDER_TOKEN: str = os.getenv("PROVIDER_TOKEN", "")
@@ -66,7 +66,7 @@ class Config:
     
     # 🔧 ИСПРАВЛЕНО: 1 звезда = 100 dlcoin
     DLCOIN_PER_STAR: int = 100
-    MIN_DONATE_DLCOIN: int = 100  # 1 звезда
+    MIN_DONATE_DLCOIN: int = 100  # минимум 1 звезда
     MAX_DONATE_DLCOIN: int = 10000000
     
     EVENT_ATTACK_COOLDOWN: int = 5
@@ -168,7 +168,7 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
                             AttackVariant("Рассечение", "Кровотечение", 1.1, 0.1, 2, "bleed"),
                             AttackVariant("Тысяча порезов", "3 удара", 1.4, 0.3, 3, "triple")]},
     "whip": {"emoji": "🪢", "name": "Кнут", "base_dmg": 22, "price": 1500,
-             "description": "Гибкое оружие.",
+             "description": "Гибкое оружие дрессировщика.",
              "variants": [AttackVariant("Хлёсткий удар", "Быстрая", 1.0, 0.1, 0, None),
                           AttackVariant("Обвивание", "Замедляет", 1.1, 0.2, 2, "stun"),
                           AttackVariant("Шквал ударов", "Серия", 1.6, 0.15, 3, "triple")]},
@@ -178,7 +178,7 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
                            AttackVariant("Пронзающий выпад", "Игнор 50%", 1.2, 0.5, 2, "pierce"),
                            AttackVariant("Казнь", "Двойной урон", 2.0, 0.0, 4, "exec")]},
     "spear": {"emoji": "🔱", "name": "Копьё", "base_dmg": 34, "price": 6000,
-              "description": "Длинное оружие.",
+              "description": "Длинное оружие копейщика.",
               "variants": [AttackVariant("Колющий удар", "Точный", 1.0, 0.25, 0, None),
                            AttackVariant("Круговой взмах", "По площади", 1.3, 0.15, 2, "triple"),
                            AttackVariant("Пронзание", "Полное пробитие", 1.5, 0.7, 3, "pierce")]},
@@ -188,12 +188,12 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
                               AttackVariant("Двойной выстрел", "Два болта", 1.5, 0.3, 2, "triple"),
                               AttackVariant("Бронебойный болт", "Пробивает всё", 1.4, 0.9, 3, "pierce")]},
     "bow": {"emoji": "🏹", "name": "Лук", "base_dmg": 46, "price": 15000,
-            "description": "Дальнобойное оружие.",
+            "description": "Дальнобойное оружие охотника.",
             "variants": [AttackVariant("Прицельный выстрел", "Стандартная", 1.0, 0.3, 0, None),
                          AttackVariant("Залп", "2 выстрела", 1.6, 0.2, 2, "triple"),
                          AttackVariant("Бронебойная стрела", "Полный игнор", 1.3, 1.0, 3, "pierce")]},
     "wand": {"emoji": "🪄", "name": "Жезл", "base_dmg": 52, "price": 25000,
-             "description": "Магический жезл.",
+             "description": "Магический жезл заклинателя.",
              "variants": [AttackVariant("Искра", "Быстрая", 1.0, 0.35, 0, None),
                           AttackVariant("Молния", "Оглушает", 1.3, 0.45, 2, "stun"),
                           AttackVariant("Цунами огня", "Массовое", 2.0, 0.3, 4, "burn")]},
@@ -214,9 +214,9 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
                             AttackVariant("Разрушение", "Ломает защиту", 2.0, 0.6, 5, None)]},
     "divine_blade": {"emoji": "⚔️", "name": "Божественный клинок", "base_dmg": 100, "price": 300000,
                      "description": "Легендарное оружие богов.",
-                     "variants": [AttackVariant("Божественный удар", "Мощная", 1.0, 0.5, 0, None),
+                     "variants": [AttackVariant("Божественный удар", "Мощная атака", 1.0, 0.5, 0, None),
                                   AttackVariant("Святое пламя", "Поджигает", 1.5, 0.3, 3, "burn"),
-                                  AttackVariant("Кара небесная", "Смертельный", 3.0, 0.7, 5, "exec")]},
+                                  AttackVariant("Кара небесная", "Смертельный удар", 3.0, 0.7, 5, "exec")]},
 }
 
 
@@ -1083,7 +1083,7 @@ def apply_dot_effect(target: Fighter, name: str, dmg: int, rounds: int) -> None:
     target.dots.append({"name": name, "dmg": dmg, "left": rounds})
 
 
-def resolve]special_attack(attacker: Fighter, defender: Fighter, atk_zone: str, def_zone: Optional[str],
+def resolve_special_attack(attacker: Fighter, defender: Fighter, atk_zone: str, def_zone: Optional[str],
                            variant: AttackVariant, log: List[str]) -> bool:
     if def_zone == atk_zone:
         log.append(f"{E_SHIELD} {defender.name} заблокировал <b>{variant.name}</b>")
@@ -1199,7 +1199,8 @@ async def handle_timeout_defeat(duel: Duel, loser_uid: int, bot: Bot) -> None:
     loser = duel.get_fighter(loser_uid)
     loser_name = loser.name if loser else "Неизвестный"
     duel.log.append(f"⏱ <b>{loser_name} не успел за {Config.TURN_TIMEOUT} сек!</b>")
-    winner_is_a = not (loser_uid == duel.a_id)
+    # 🔧 ИСПРАВЛЕНО: корректное определение победителя
+    winner_is_a = (loser_uid == duel.b_id)
     await finalize_duel(duel, winner_is_a=winner_is_a, bot=bot, reason="timeout")
 
 
@@ -1301,7 +1302,6 @@ def ensure_masked_bots_exist(target_count: int = 50) -> None:
         )
 
 
-# 🔧 ИСПРАВЛЕНО: опечатка `if botsos` → `if bots`
 def pick_balanced_opponent(player_uid: int, player_wins: int) -> Optional[int]:
     arena = determine_arena(player_wins)
     limits = ARENAS[arena]
@@ -1373,7 +1373,7 @@ def bot_decide_defend_zone(attacker: Fighter, defender: Fighter) -> str:
 
 
 # ============================================================================
-# ФОРМАТ ВЫВОДА ИГР
+# НОВЫЙ ФОРМАТ ВЫВОДА ИГР
 # ============================================================================
 
 def format_game_result(title: str, emoji: str, won: bool, bet: int,
@@ -1408,18 +1408,21 @@ async def play_casino_slots_animated(chat_id: int, bet: int, uid: int, bot: Bot)
     sent_message = await bot.send_dice(chat_id=chat_id, emoji="🎰")
     dice_value = sent_message.dice.value
     if dice_value == 1:
-        mult = 10; win = bet * mult
+        mult = 10
+        win = bet * mult
         db.execute_transaction([
             ("UPDATE players SET crystals=crystals+?, consecutive_losses=0 WHERE user_id=?", (win, uid)),
             ("UPDATE player_stats SET casino_wins=casino_wins+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Слоты", E_SLOT, True, bet, "комбинация 1", "", win), None, True
+        result = format_game_result("Слоты", E_SLOT, True, bet, "комбинация 1", "", win)
+        return result, None, True
     else:
         db.execute_transaction([
             ("UPDATE player_stats SET casino_losses=casino_losses+1 WHERE user_id=?", (uid,)),
             ("UPDATE players SET consecutive_losses=consecutive_losses+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Слоты", E_SLOT, False, bet, "комбинация 1", f"выпало {dice_value}"), None, False
+        result = format_game_result("Слоты", E_SLOT, False, bet, "комбинация 1", f"выпало {dice_value}")
+        return result, None, False
 
 
 async def play_casino_dice_game(chat_id: int, bet: int, uid: int, bot: Bot, mode: str,
@@ -1432,7 +1435,8 @@ async def play_casino_dice_game(chat_id: int, bet: int, uid: int, bot: Bot, mode
     db.execute_transaction([("UPDATE players SET crystals=crystals-? WHERE user_id=?", (bet, uid))])
     sent_message = await bot.send_dice(chat_id=chat_id, emoji="🎲")
     dice_value = sent_message.dice.value
-    win = False; mult = 0
+    win = False
+    mult = 0
     if mode == "even_odd":
         is_even = (dice_value % 2 == 0)
         if (value == "even" and is_even) or (value == "odd" and not is_even):
@@ -1450,13 +1454,15 @@ async def play_casino_dice_game(chat_id: int, bet: int, uid: int, bot: Bot, mode
             ("UPDATE players SET crystals=crystals+?, consecutive_losses=0 WHERE user_id=?", (payout, uid)),
             ("UPDATE player_stats SET casino_wins=casino_wins+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Кости", E_DICE, True, bet, choice_text, "", payout), None, True
+        result = format_game_result("Кости", E_DICE, True, bet, choice_text, "", payout)
+        return result, None, True
     else:
         db.execute_transaction([
             ("UPDATE player_stats SET casino_losses=casino_losses+1 WHERE user_id=?", (uid,)),
             ("UPDATE players SET consecutive_losses=consecutive_losses+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Кости", E_DICE, False, bet, choice_text, f"выпало {dice_value}"), None, False
+        result = format_game_result("Кости", E_DICE, False, bet, choice_text, f"выпало {dice_value}")
+        return result, None, False
 
 
 async def play_casino_darts_animated(chat_id: int, bet: int, uid: int, bot: Bot,
@@ -1478,14 +1484,16 @@ async def play_casino_darts_animated(chat_id: int, bet: int, uid: int, bot: Bot,
             ("UPDATE players SET crystals=crystals+?, consecutive_losses=0 WHERE user_id=?", (payout, uid)),
             ("UPDATE player_stats SET casino_wins=casino_wins+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Дротик", E_DARTS, True, bet, choice_text, "", payout), None, True
+        result = format_game_result("Дротик", E_DARTS, True, bet, choice_text, "", payout)
+        return result, None, True
     else:
         db.execute_transaction([
             ("UPDATE player_stats SET casino_losses=casino_losses+1 WHERE user_id=?", (uid,)),
             ("UPDATE players SET consecutive_losses=consecutive_losses+1 WHERE user_id=?", (uid,)),
         ])
         result_detail = "попадание" if bet_on_miss else "промах"
-        return format_game_result("Дротик", E_DARTS, False, bet, choice_text, result_detail), None, False
+        result = format_game_result("Дротик", E_DARTS, False, bet, choice_text, result_detail)
+        return result, None, False
 
 
 async def play_casino_basketball_animated(chat_id: int, bet: int, uid: int, bot: Bot,
@@ -1507,14 +1515,16 @@ async def play_casino_basketball_animated(chat_id: int, bet: int, uid: int, bot:
             ("UPDATE players SET crystals=crystals+?, consecutive_losses=0 WHERE user_id=?", (payout, uid)),
             ("UPDATE player_stats SET casino_wins=casino_wins+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Баскетбол", E_BASKET, True, bet, choice_text, "", payout), None, True
+        result = format_game_result("Баскетбол", E_BASKET, True, bet, choice_text, "", payout)
+        return result, None, True
     else:
         db.execute_transaction([
             ("UPDATE player_stats SET casino_losses=casino_losses+1 WHERE user_id=?", (uid,)),
             ("UPDATE players SET consecutive_losses=consecutive_losses+1 WHERE user_id=?", (uid,)),
         ])
         result_detail = "слэм-данк" if bet_on_miss else "мимо"
-        return format_game_result("Баскетбол", E_BASKET, False, bet, choice_text, result_detail), None, False
+        result = format_game_result("Баскетбол", E_BASKET, False, bet, choice_text, result_detail)
+        return result, None, False
 
 
 def play_casino_roulette(uid: int, bet: int, bet_type: str, bet_value: Any = None) -> Tuple[Optional[str], Optional[str], bool]:
@@ -1559,13 +1569,15 @@ def play_casino_roulette(uid: int, bet: int, bet_type: str, bet_value: Any = Non
             ("UPDATE players SET crystals=crystals+?, consecutive_losses=0 WHERE user_id=?", (payout, uid)),
             ("UPDATE player_stats SET casino_wins=casino_wins+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Рулетка", "🎡", True, bet, choice_text, "", payout), None, True
+        result = format_game_result("Рулетка", "🎡", True, bet, choice_text, "", payout)
+        return result, None, True
     else:
         db.execute_transaction([
             ("UPDATE player_stats SET casino_losses=casino_losses+1 WHERE user_id=?", (uid,)),
             ("UPDATE players SET consecutive_losses=consecutive_losses+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Рулетка", "🎡", False, bet, choice_text, f"{color_emoji} {num} ({color_name})"), None, False
+        result = format_game_result("Рулетка", "🎡", False, bet, choice_text, f"{color_emoji} {num} ({color_name})")
+        return result, None, False
 
 
 def play_casino_coin(uid: int, bet: int, choice: str = "heads") -> Tuple[Optional[str], Optional[str], bool]:
@@ -1584,12 +1596,14 @@ def play_casino_coin(uid: int, bet: int, choice: str = "heads") -> Tuple[Optiona
             ("UPDATE players SET crystals=crystals+?, consecutive_losses=0 WHERE user_id=?", (bet * 2, uid)),
             ("UPDATE player_stats SET casino_wins=casino_wins+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Монетка", E_COIN, True, bet, choice_text, "", bet * 2), None, True
+        result_str = format_game_result("Монетка", E_COIN, True, bet, choice_text, "", bet * 2)
+        return result_str, None, True
     db.execute_transaction([
         ("UPDATE player_stats SET casino_losses=casino_losses+1 WHERE user_id=?", (uid,)),
         ("UPDATE players SET consecutive_losses=consecutive_losses+1 WHERE user_id=?", (uid,)),
     ])
-    return format_game_result("Монетка", E_COIN, False, bet, choice_text, f"{result_emoji} {result_text}"), None, False
+    result_str = format_game_result("Монетка", E_COIN, False, bet, choice_text, f"{result_emoji} {result_text}")
+    return result_str, None, False
 
 
 def play_casino_highlow(uid: int, bet: int, choice: str = "high") -> Tuple[Optional[str], Optional[str], bool]:
@@ -1603,7 +1617,8 @@ def play_casino_highlow(uid: int, bet: int, choice: str = "high") -> Tuple[Optio
     choice_text = "больше" if choice == "high" else "меньше"
     if result_num == 50:
         db.execute_transaction([("UPDATE players SET crystals=crystals+? WHERE user_id=?", (bet, uid))])
-        return format_game_result("Больше/Меньше", "📊", False, bet, choice_text, "🤝 ровно 50 (возврат)"), None, False
+        result = format_game_result("Больше/Меньше", "📊", False, bet, choice_text, f"🤝 ровно 50 (возврат)")
+        return result, None, False
     win = (choice == "high" and result_num > 50) or (choice == "low" and result_num < 50)
     if win:
         payout = int(bet * 1.9)
@@ -1611,12 +1626,14 @@ def play_casino_highlow(uid: int, bet: int, choice: str = "high") -> Tuple[Optio
             ("UPDATE players SET crystals=crystals+?, consecutive_losses=0 WHERE user_id=?", (payout, uid)),
             ("UPDATE player_stats SET casino_wins=casino_wins+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Больше/Меньше", "📊", True, bet, choice_text, "", payout), None, True
+        result = format_game_result("Больше/Меньше", "📊", True, bet, choice_text, "", payout)
+        return result, None, True
     db.execute_transaction([
         ("UPDATE player_stats SET casino_losses=casino_losses+1 WHERE user_id=?", (uid,)),
         ("UPDATE players SET consecutive_losses=consecutive_losses+1 WHERE user_id=?", (uid,)),
     ])
-    return format_game_result("Больше/Меньше", "📊", False, bet, choice_text, f"выпало {result_num}"), None, False
+    result = format_game_result("Больше/Меньше", "📊", False, bet, choice_text, f"выпало {result_num}")
+    return result, None, False
 
 
 # ============================================================================
@@ -1670,9 +1687,11 @@ def attack_chat_event(attacker_id: int, attacker_name: str) -> Optional[str]:
         return None
     if is_user_banned(attacker_id):
         return "🚫 Ты забанен и не можешь участвовать в событиях."
+    
     can_attack, remaining = ACTIVE_CHAT_EVENT.can_attack(attacker_id)
     if not can_attack:
         return f"⏱ <b>Подожди!</b> КД на атаку: <b>{remaining}</b> сек."
+    
     base_dmg = random.randint(Config.EVENT_MIN_DAMAGE, Config.EVENT_MAX_DAMAGE)
     is_crit = random.random() < Config.EVENT_CRIT_CHANCE
     if is_crit:
@@ -1689,11 +1708,14 @@ def _finish_event_with_proportional_rewards() -> str:
     global ACTIVE_CHAT_EVENT
     ACTIVE_CHAT_EVENT.active = False
     db.execute("UPDATE chat_events SET active=0 WHERE event_id=?", (ACTIVE_CHAT_EVENT.event_id,))
+    
     template = CHAT_EVENT_TEMPLATES.get(ACTIVE_CHAT_EVENT.event_type, {})
     reward_range = template.get("reward_per_participant", (30, 100))
     total_base_reward = len(ACTIVE_CHAT_EVENT.participants) * ((reward_range[0] + reward_range[1]) // 2)
+    
     total_damage = ACTIVE_CHAT_EVENT.total_damage_dealt
     rewards_data = []
+    
     if total_damage > 0:
         for pid, player_dmg in ACTIVE_CHAT_EVENT.damage_by_player.items():
             percent = (player_dmg / total_damage) * 100
@@ -1706,19 +1728,23 @@ def _finish_event_with_proportional_rewards() -> str:
             reward = random.randint(reward_range[0], reward_range[1])
             db.execute("UPDATE players SET crystals=crystals+? WHERE user_id=?", (reward, pid))
             rewards_data.append((pid, reward, 0, 0))
+    
     rewards_data.sort(key=lambda x: x[1], reverse=True)
+    
     top_text_lines = []
     for i, (pid, reward, percent, dmg) in enumerate(rewards_data[:5], 1):
         player = db.fetch_one("SELECT name FROM players WHERE user_id=?", (pid,))
         player_name = player["name"] if player else "Неизвестный"
         medal = ["🥇", "🥈", "🥉", "4.", "5."][i-1]
         top_text_lines.append(f"{medal} <b>{esc(player_name)}</b> — {reward} {E_DLCOIN} ({percent:.1f}% урона)")
+    
     log_entry = (
         f"\n\n{E_TROPHY} <b>СОБЫТИЕ ЗАВЕРШЕНО!</b>\n"
         f"👥 Участников: <b>{ACTIVE_CHAT_EVENT.get_participants_count()}</b>\n"
         f"💎 Общий пул наград: <b>{total_base_reward}</b> {E_DLCOIN}\n\n"
         f"<b>🏆 ТОП-5 бойцов:</b>\n" + "\n".join(top_text_lines)
     )
+    
     ACTIVE_CHAT_EVENT = None
     return log_entry
 
@@ -1794,21 +1820,25 @@ def activate_promo_code(user_id: int, code: str) -> Tuple[bool, str]:
         return False, f"❌ Промокод <code>{code}</code> истёк."
     if promo["current_uses"] >= promo["max_uses"]:
         return False, f"❌ Промокод <code>{code}</code> исчерпан."
-    already = db.fetch_one("SELECT 1 FROM promo_activations WHERE user_id=? AND code=?", (user_id, code))
+    already = db.fetch_one("SELECT 1 FROM promo_activations WHERE user_id=? AND code=?",
+                           (user_id, code))
     if already:
         return False, f"❌ Ты уже активировал промокод <code>{code}</code>."
     now = time.time()
     if not db.execute_transaction([
-        ("INSERT INTO promo_activations (user_id, code, activated_at) VALUES (?, ?, ?)", (user_id, code, now)),
+        ("INSERT INTO promo_activations (user_id, code, activated_at) VALUES (?, ?, ?)",
+         (user_id, code, now)),
         ("UPDATE promo_codes SET current_uses=current_uses+1 WHERE code=?", (code,)),
     ]):
         return False, "❌ Ошибка активации. Попробуй позже."
     rewards = []
     if promo["reward_crystals"] > 0:
-        db.execute("UPDATE players SET crystals=crystals+? WHERE user_id=?", (promo["reward_crystals"], user_id))
+        db.execute("UPDATE players SET crystals=crystals+? WHERE user_id=?",
+                   (promo["reward_crystals"], user_id))
         rewards.append(f"{E_DLCOIN} +{promo['reward_crystals']} dlcoin")
     if promo["reward_wins"] > 0:
-        db.execute("UPDATE players SET wins=wins+? WHERE user_id=?", (promo["reward_wins"], user_id))
+        db.execute("UPDATE players SET wins=wins+? WHERE user_id=?",
+                   (promo["reward_wins"], user_id))
         rewards.append(f"{E_TROPHY} +{promo['reward_wins']} побед")
     rewards_text = "\n".join(rewards) if rewards else "🎁 Секретный бонус!"
     remaining = promo["max_uses"] - promo["current_uses"] - 1
@@ -1843,7 +1873,8 @@ RP_ACTIONS: Dict[str, Tuple[str, str]] = {
 RP_COOLDOWNS: Dict[Tuple[int, int, str], float] = {}
 
 
-def generate_rp_text(actor_id: int, actor_name: str, target_id: int, target_name: str, action_key: str) -> str:
+def generate_rp_text(actor_id: int, actor_name: str, target_id: int, target_name: str,
+                     action_key: str) -> str:
     emoji, verb = RP_ACTIONS.get(action_key, ("✨", "взаимодействовал(а) с"))
     actor_mention = create_mention(actor_id, actor_name)
     target_mention = create_mention(target_id, target_name)
@@ -1932,6 +1963,7 @@ def claim_daily_bonus(user_id: int) -> Tuple[bool, str]:
         hours = remaining // 3600
         minutes = (remaining % 3600) // 60
         return False, f"⏰ Ты уже получал бонус. Следующий через <b>{hours}ч {minutes}м</b>."
+    
     bonus = Config.DAILY_BONUS
     db.execute_transaction([
         ("UPDATE players SET crystals=crystals+?, last_daily_bonus=? WHERE user_id=?",
@@ -1953,6 +1985,7 @@ def generate_arena_menu_screen(uid: int) -> Tuple[str, Optional[InlineKeyboardMa
     title_text = f"<b>{esc(p['name'])}</b>"
     if safe_row_get(p, "title", ""):
         title_text = f"<b>{esc(safe_row_get(p, 'title', ''))} {esc(p['name'])}</b>"
+    
     can_claim, remaining = can_claim_daily_bonus(uid)
     if can_claim:
         daily_info = f"\n{E_DAILY} <b>Ежедневный бонус доступен!</b> Напиши <code>бонус</code>"
@@ -1960,6 +1993,7 @@ def generate_arena_menu_screen(uid: int) -> Tuple[str, Optional[InlineKeyboardMa
         hours = remaining // 3600
         minutes = (remaining % 3600) // 60
         daily_info = f"\n⏰ Следующий бонус через: <b>{hours}ч {minutes}м</b>"
+    
     text = (
         f"╔══════════════════════════╗\n      ⚔️ <b>АРЕНА ДУЭЛЯНТОВ</b>\n╚══════════════════════════╝\n\n"
         f"👤 {title_text}\n"
@@ -2041,7 +2075,7 @@ def generate_weapon_list(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]
     buttons = []
     for key, it in WEAPONS.items():
         lines.append(f"{it['emoji']} <b>{it['name']}</b> — <i>{it['description']}</i>")
-        lines.append(f"  Базовый урон: {it['base_dmg']} · Цена: {format_number(it['price'])}🪙")
+        lines.append(f"  Базовый урон: {it['base_dmg']} · Цена: {it['price']}🪙")
         lines.append("  Варианты атаки:")
         for i, v in enumerate(it["variants"]):
             effect_text = f" [{v.effect}]" if v.effect else ""
@@ -2052,7 +2086,7 @@ def generate_weapon_list(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]
         elif key in owned:
             label = "🎒 надеть"; style = "primary"
         else:
-            label = f"{format_number(it['price'])}🪙"; style = "danger"
+            label = f"{it['price']}🪙"; style = "danger"
         buttons.append((f"{it['emoji']} {it['name']} · {label}", f"buy_weapon:{key}", style))
     buttons.append((f"{E_BACK} Назад", "gear:menu", "success"))
     return "\n".join(lines), build_vertical_keyboard_with_styles(buttons)
@@ -2096,7 +2130,7 @@ def generate_armor_slot_list(uid: int, slot: str) -> Tuple[str, Optional[InlineK
         elif key in owned:
             label = "🎒 надеть"; style = "primary"
         else:
-            label = f"{format_number(item['price'])}🪙"; style = "danger"
+            label = f"{item['price']}🪙"; style = "danger"
         buttons.append((f"{item['emoji']} {item['name']} · {label}", f"buy_armor:{slot}:{key}", style))
     buttons.append((f"{E_BACK} К слотам", "gear:armor_menu", "success"))
     return "\n".join(lines), build_vertical_keyboard_with_styles(buttons)
@@ -2262,7 +2296,7 @@ def generate_duel_status_text(duel: Duel, for_uid: int, extra: str = "",
         f"╔══════════════════════════╗\n      ⚔️ <b>РАУНД {duel.round_no}</b>\n╚══════════════════════════╝\n\n"
         f"{boss_line}┌─ 🔵 <b>ТЫ</b>\n{format_fighter_card(me)}\n└────────────\n\n"
         f"┌─ 🔴 <b>СОПЕРНИК</b>\n{format_fighter_card(opp)}\n└────────────\n\n"
-        f"📜 <b>Последние действия:</b>\n{body}\n\n━━━━━━━━━━━━━━━━━━━━\n{prompt}"
+        f"📜 <b>Последние действия:</b>\n{body}\n\n━━━━━━━━━━━━━━━━━━━━\n{prompt
         + (f"\n\n{extra}" if extra else "")
     )
 
@@ -2466,11 +2500,17 @@ def generate_casino_menu(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]
     return text, kb
 
 
+# ============================================================================
+# ДОНАТ — UI
+# ============================================================================
+
 def generate_donate_menu(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]:
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (uid,))
     if not p:
         return "Профиль не найден.", None
+    
     total_stars = safe_row_get(p, "total_stars_donated", 0)
+    
     text = (
         f"╔══════════════════════════╗\n      {E_DONATE} <b>ДОНАТ</b>\n╚══════════════════════════╝\n\n"
         f"👤 <b>{esc(p['name'])}</b>\n"
@@ -2478,17 +2518,19 @@ def generate_donate_menu(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]
         f"⭐ Всего задонато: <b>{total_stars}</b>\n\n"
         f"<b>💝 Поддержи проект!</b>\n\n"
         f"<b>💰 Курс:</b> 1 ⭐ = <b>{Config.DLCOIN_PER_STAR}</b> dlcoin\n"
-        f"<i>(= 1 × ежедневный бонус)</i>\n"
+        f"<i>(= 1 × ежедневный бонус {Config.DAILY_BONUS})</i>\n"
         f"<b>📦 Минимум:</b> {Config.MIN_DONATE_DLCOIN} dlcoin ({Config.MIN_DONATE_DLCOIN // Config.DLCOIN_PER_STAR}⭐)\n"
-        f"<b>📦 Максимум:</b> {format_number(Config.MAX_DONATE_DLCOIN)} dlcoin\n\n"
+        f"<b>📦 Максимум:</b> {Config.MAX_DONATE_DLCOIN} dlcoin\n\n"
         f"<b>🎁 Ежедневный бонус:</b> {Config.DAILY_BONUS} dlcoin каждые 24 часа\n"
         f"<i>Команда: <code>бонус</code> или <code>/daily</code></i>"
     )
+    
     buttons: List[Tuple[str, str, str]] = [
         (f"💰 Купить dlcoin", "donate:buy_dlcoin", "success"),
         (f"{E_GIFT} Донат-наборы (оружие/броня)", "donate:sets", "primary"),
         (f"{E_BACK} Назад", "arena:menu", "danger"),
     ]
+    
     return text, build_vertical_keyboard_with_styles(buttons)
 
 
@@ -2496,23 +2538,29 @@ def generate_donate_sets_menu(uid: int) -> Tuple[str, Optional[InlineKeyboardMar
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (uid,))
     if not p:
         return "Профиль не найден.", None
+    
     owned_items = set((safe_row_get(p, "owned_items", "") or "").split(","))
+    
     lines = [
         f"╔══════════════════════════╗\n      {E_GIFT} <b>ДОНАТ-НАБОРЫ</b>\n╚══════════════════════════╝\n\n",
         f"{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\n",
         "<b>Эксклюзивные наборы за Stars:</b>\n"
     ]
+    
     buttons: List[Tuple[str, str, str]] = []
     for item in Config.DONATION_SETS:
         item_id = item["id"]
         owned = item_id in owned_items
         status = "✅ Куплено" if owned else f"{item['price_stars']}⭐"
         lines.append(f"{item['name']}\n  {item['desc']}\n  → {status}\n")
+        
         if owned:
             buttons.append((f"{item['name']} ✅", f"donate:set_owned:{item_id}", "primary"))
         else:
             buttons.append((f"{item['name']} · {item['price_stars']}⭐", f"donate:set:{item_id}", "success"))
+    
     buttons.append((f"{E_BACK} Назад", "donate:menu", "danger"))
+    
     return "".join(lines), build_vertical_keyboard_with_styles(buttons)
 
 
@@ -2663,7 +2711,6 @@ async def handle_start_command(m: Message, state: FSMContext) -> None:
         "12 видов оружия, 32 предмета брони, 8 боссов.\n"
         f"Новые игры: 💣 Мины и 🚀 Краш!\n"
         f"Валюта: 🪙 <b>dlcoin</b>\n"
-        f"💰 Курс: 1 ⭐ = {Config.DLCOIN_PER_STAR} dlcoin\n"
         f"{E_DAILY} Ежедневный бонус: <b>{Config.DAILY_BONUS}</b> dlcoin\n\n"
         f"Как зовут твоего бойца? ({MIN_NAME_LENGTH}–{MAX_NAME_LENGTH} символов)",
         reply_markup=ReplyKeyboardRemove()
@@ -2757,7 +2804,7 @@ async def handle_help_command(m: Message) -> None:
                 f"• <code>событие дракон</code>\n"
                 f"• <code>событие демон</code>\n"
                 f"• <code>событие голем</code>\n"
-                f"• <code>босс goblin</code> / <code>skeleton</code> / <code>dragon</code> / <code>orc</code> / <code>lord</code> / <code>lich</code> / <code>titan</code> / <code>demon_king</code>\n\n"
+                f"• <code>босс goblin/skeleton/dragon/orc/lord/lich/titan/demon_king</code>\n\n"
                 f"<b>👥 Игроки:</b>\n"
                 f"• <code>бан @user</code> или <code>бан ID</code>\n"
                 f"• <code>разбан @user</code>\n"
@@ -2854,7 +2901,7 @@ async def on_menu_button(m: Message, state: FSMContext) -> None:
 
 
 # ============================================================================
-# ЕЖЕДНЕВНЫЙ БОНУС
+# ЕЖЕДНЕВНЫЙ БОНУС — команда
 # ============================================================================
 
 @router.message(F.text.regexp(r"(?i)^(бонус|daily|ежедневный)$"))
@@ -2893,7 +2940,8 @@ async def cmd_challenge_duel(m: Message, bot: Bot) -> None:
         await m.answer("Игрок не найден или забанен.")
         return
     if not safe_row_get(target, "allow_duels", 1):
-        await m.answer(f"🚫 Игрок <b>{esc(target['name'])}</b> запретил вызовы на дуэль.", parse_mode=ParseMode.HTML)
+        await m.answer(f"🚫 Игрок <b>{esc(target['name'])}</b> запретил вызовы на дуэль.",
+                       parse_mode=ParseMode.HTML)
         return
     if tid in ACTIVE_DUELS:
         await m.answer("Этот игрок уже в бою.")
@@ -2905,7 +2953,9 @@ async def cmd_challenge_duel(m: Message, bot: Bot) -> None:
     challenger_row = db.fetch_one("SELECT name FROM players WHERE user_id=?", (m.from_user.id,))
     challenger_name = challenger_row["name"]
     target_name = target["name"]
-    challenger_msg, target_msg = await send_challenge_messages(m.from_user.id, tid, challenger_name, target_name, bot)
+    challenger_msg, target_msg = await send_challenge_messages(
+        m.from_user.id, tid, challenger_name, target_name, bot
+    )
     if not target_msg:
         await m.answer("Не удалось отправить вызов (игрок не начал бота).")
         return
@@ -3100,7 +3150,8 @@ async def process_rp_action(m: Message, action_key: str) -> None:
         generate_rp_text(m.from_user.id, actor["name"], tid, target["name"], action_key),
         parse_mode=ParseMode.HTML
     )
-    db.execute("UPDATE player_stats SET rp_actions_used=rp_actions_used+1 WHERE user_id=?", (m.from_user.id,))
+    db.execute("UPDATE player_stats SET rp_actions_used=rp_actions_used+1 WHERE user_id=?",
+               (m.from_user.id,))
 
 
 RP_MAPPINGS: Dict[str, List[str]] = {
@@ -3149,7 +3200,8 @@ async def cmd_chat_slots(m: Message, bot: Bot) -> None:
         await m.answer("Сначала /start в ЛС бота.")
         return
     try:
-        bet = safe_int_parse(m.text.split()[-1], default=0, min_val=Config.CASINO_MIN_BET, max_val=Config.CASINO_MAX_BET)
+        bet = safe_int_parse(m.text.split()[-1], default=0,
+                             min_val=Config.CASINO_MIN_BET, max_val=Config.CASINO_MAX_BET)
     except Exception:
         await m.answer("Неверная ставка.")
         return
@@ -3163,7 +3215,8 @@ async def cmd_chat_slots(m: Message, bot: Bot) -> None:
     balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (m.from_user.id,))
     await m.answer(f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin")
     if not won:
-        await _handle_casino_loss(m.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в слотах.\n\n")
+        await _handle_casino_loss(m.from_user.id, bot,
+                                  f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в слотах.\n\n")
 
 
 @router.message(F.text.regexp(r"(?i)^кости\s+число\s+(\d+)\s+([1-6])$"))
@@ -3189,7 +3242,8 @@ async def cmd_dice_number(m: Message, bot: Bot) -> None:
     balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (m.from_user.id,))
     await m.answer(f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin")
     if not won:
-        await _handle_casino_loss(m.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в костях.\n\n")
+        await _handle_casino_loss(m.from_user.id, bot,
+                                  f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в костях.\n\n")
 
 
 @router.message(F.text.regexp(r"(?i)^кости\s+чет\s+(\d+)\s+(чет|нечет|четное|нечетное|ч|нч)$"))
@@ -3216,7 +3270,8 @@ async def cmd_dice_even_odd(m: Message, bot: Bot) -> None:
     balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (m.from_user.id,))
     await m.answer(f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin")
     if not won:
-        await _handle_casino_loss(m.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в костях.\n\n")
+        await _handle_casino_loss(m.from_user.id, bot,
+                                  f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в костях.\n\n")
 
 
 @router.message(F.text.regexp(r"(?i)^кости\s+больше\s+(\d+)\s+(больше|меньше|б|м)$"))
@@ -3243,7 +3298,8 @@ async def cmd_dice_high_low(m: Message, bot: Bot) -> None:
     balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (m.from_user.id,))
     await m.answer(f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin")
     if not won:
-        await _handle_casino_loss(m.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в костях.\n\n")
+        await _handle_casino_loss(m.from_user.id, bot,
+                                  f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в костях.\n\n")
 
 
 @router.message(F.text.regexp(r"(?i)^(дротик|darts|дрот)(\s+(попадание|промах))?(\s+)(\d+)$"))
@@ -3255,7 +3311,8 @@ async def cmd_chat_darts(m: Message, bot: Bot) -> None:
     text_lower = m.text.lower()
     bet_on_miss = "промах" in text_lower
     try:
-        bet = safe_int_parse(m.text.split()[-1], default=0, min_val=Config.CASINO_MIN_BET, max_val=Config.CASINO_MAX_BET)
+        bet = safe_int_parse(m.text.split()[-1], default=0,
+                             min_val=Config.CASINO_MIN_BET, max_val=Config.CASINO_MAX_BET)
     except Exception:
         await m.answer("Неверная ставка.")
         return
@@ -3269,7 +3326,8 @@ async def cmd_chat_darts(m: Message, bot: Bot) -> None:
     balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (m.from_user.id,))
     await m.answer(f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin")
     if not won:
-        await _handle_casino_loss(m.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в дротике.\n\n")
+        await _handle_casino_loss(m.from_user.id, bot,
+                                  f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в дротике.\n\n")
 
 
 @router.message(F.text.regexp(r"(?i)^(баскет|basketball|баск)(\s+(попадание|промах))?(\s+)(\d+)$"))
@@ -3281,7 +3339,8 @@ async def cmd_chat_basketball(m: Message, bot: Bot) -> None:
     text_lower = m.text.lower()
     bet_on_miss = "промах" in text_lower
     try:
-        bet = safe_int_parse(m.text.split()[-1], default=0, min_val=Config.CASINO_MIN_BET, max_val=Config.CASINO_MAX_BET)
+        bet = safe_int_parse(m.text.split()[-1], default=0,
+                             min_val=Config.CASINO_MIN_BET, max_val=Config.CASINO_MAX_BET)
     except Exception:
         await m.answer("Неверная ставка.")
         return
@@ -3295,7 +3354,8 @@ async def cmd_chat_basketball(m: Message, bot: Bot) -> None:
     balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (m.from_user.id,))
     await m.answer(f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin")
     if not won:
-        await _handle_casino_loss(m.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в баскетболе.\n\n")
+        await _handle_casino_loss(m.from_user.id, bot,
+                                  f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в баскетболе.\n\n")
 
 
 @router.message(F.text.regexp(r"(?i)^(монетка|coin|мон)\s+(\d+)\s+(орел|решка|о|р)$"))
@@ -3321,7 +3381,8 @@ async def cmd_chat_coin(m: Message, bot: Bot) -> None:
     balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (m.from_user.id,))
     await m.answer(f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin")
     if not won:
-        await _handle_casino_loss(m.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в монетке.\n\n")
+        await _handle_casino_loss(m.from_user.id, bot,
+                                  f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в монетке.\n\n")
 
 
 @router.message(F.text.regexp(r"(?i)^рул\s+цвет\s+(\d+)\s+(красное|черное|зеленое|к|ч|з)$"))
@@ -3348,7 +3409,8 @@ async def cmd_roulette_color(m: Message, bot: Bot) -> None:
     balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (m.from_user.id,))
     await m.answer(f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin")
     if not won:
-        await _handle_casino_loss(m.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в рулетке.\n\n")
+        await _handle_casino_loss(m.from_user.id, bot,
+                                  f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в рулетке.\n\n")
 
 
 @router.message(F.text.regexp(r"(?i)^рул\s+чет\s+(\d+)\s+(чет|нечет|четное|нечетное|ч|нч)$"))
@@ -3375,7 +3437,8 @@ async def cmd_roulette_even_odd(m: Message, bot: Bot) -> None:
     balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (m.from_user.id,))
     await m.answer(f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin")
     if not won:
-        await _handle_casino_loss(m.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в рулетке.\n\n")
+        await _handle_casino_loss(m.from_user.id, bot,
+                                  f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в рулетке.\n\n")
 
 
 @router.message(F.text.regexp(r"(?i)^рул\s+половина\s+(\d+)\s+(низ|верх|1\-18|19\-36|н|в)$"))
@@ -3402,7 +3465,8 @@ async def cmd_roulette_half(m: Message, bot: Bot) -> None:
     balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (m.from_user.id,))
     await m.answer(f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin")
     if not won:
-        await _handle_casino_loss(m.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в рулетке.\n\n")
+        await _handle_casino_loss(m.from_user.id, bot,
+                                  f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в рулетке.\n\n")
 
 
 @router.message(F.text.regexp(r"(?i)^рул\s+число\s+(\d+)\s+(\d{1,2})$"))
@@ -3428,7 +3492,8 @@ async def cmd_roulette_number(m: Message, bot: Bot) -> None:
     balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (m.from_user.id,))
     await m.answer(f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin")
     if not won:
-        await _handle_casino_loss(m.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в рулетке.\n\n")
+        await _handle_casino_loss(m.from_user.id, bot,
+                                  f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в рулетке.\n\n")
 
 
 @router.message(F.text.regexp(r"(?i)^рул\s+дюжина\s+(\d+)\s+(1|2|3)$"))
@@ -3454,7 +3519,8 @@ async def cmd_roulette_dozen(m: Message, bot: Bot) -> None:
     balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (m.from_user.id,))
     await m.answer(f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin")
     if not won:
-        await _handle_casino_loss(m.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в рулетке.\n\n")
+        await _handle_casino_loss(m.from_user.id, bot,
+                                  f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в рулетке.\n\n")
 
 
 @router.message(F.text.regexp(r"(?i)^(больше|high)\s+(\d+)$"))
@@ -3464,7 +3530,8 @@ async def cmd_chat_highlow_high(m: Message, bot: Bot) -> None:
         await m.answer("Сначала /start в ЛС бота.")
         return
     try:
-        bet = safe_int_parse(m.text.split()[-1], default=0, min_val=Config.CASINO_MIN_BET, max_val=Config.CASINO_MAX_BET)
+        bet = safe_int_parse(m.text.split()[-1], default=0,
+                             min_val=Config.CASINO_MIN_BET, max_val=Config.CASINO_MAX_BET)
     except Exception:
         await m.answer("Неверная ставка.")
         return
@@ -3478,7 +3545,8 @@ async def cmd_chat_highlow_high(m: Message, bot: Bot) -> None:
     balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (m.from_user.id,))
     await m.answer(f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin")
     if not won:
-        await _handle_casino_loss(m.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN}.\n\n")
+        await _handle_casino_loss(m.from_user.id, bot,
+                                  f"Ты проиграл <b>{bet}</b> {E_DLCOIN}.\n\n")
 
 
 @router.message(F.text.regexp(r"(?i)^(меньше|low)\s+(\d+)$"))
@@ -3488,7 +3556,8 @@ async def cmd_chat_highlow_low(m: Message, bot: Bot) -> None:
         await m.answer("Сначала /start в ЛС бота.")
         return
     try:
-        bet = safe_int_parse(m.text.split()[-1], default=0, min_val=Config.CASINO_MIN_BET, max_val=Config.CASINO_MAX_BET)
+        bet = safe_int_parse(m.text.split()[-1], default=0,
+                             min_val=Config.CASINO_MIN_BET, max_val=Config.CASINO_MAX_BET)
     except Exception:
         await m.answer("Неверная ставка.")
         return
@@ -3502,7 +3571,8 @@ async def cmd_chat_highlow_low(m: Message, bot: Bot) -> None:
     balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (m.from_user.id,))
     await m.answer(f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin")
     if not won:
-        await _handle_casino_loss(m.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN}.\n\n")
+        await _handle_casino_loss(m.from_user.id, bot,
+                                  f"Ты проиграл <b>{bet}</b> {E_DLCOIN}.\n\n")
 
 
 @router.message(F.text.regexp(r"(?i)^(мины|mines)\s+(\d+)\s+(\d+)$"))
@@ -3514,7 +3584,8 @@ async def cmd_chat_mines(m: Message, bot: Bot) -> None:
     parts = m.text.split()
     try:
         bet = safe_int_parse(parts[1], default=0, min_val=Config.CASINO_MIN_BET, max_val=Config.CASINO_MAX_BET)
-        mines_count = safe_int_parse(parts[2], default=0, min_val=Config.MINES_MIN_COUNT, max_val=Config.MINES_MAX_COUNT)
+        mines_count = safe_int_parse(parts[2], default=0,
+                                     min_val=Config.MINES_MIN_COUNT, max_val=Config.MINES_MAX_COUNT)
     except Exception:
         await m.answer("Неверные параметры. Используй: <code>мины 100 5</code>")
         return
@@ -3581,7 +3652,7 @@ async def cmd_chat_crash(m: Message, bot: Bot) -> None:
 
 
 # ============================================================================
-# 🔧 АДМИН КОМАНДЫ — ВСЕ ПРИНИМАЮТ bot: Bot
+# 🔧 АДМИН КОМАНДЫ — ИСПРАВЛЕНЫ ДЛЯ ГРУПП
 # ============================================================================
 
 async def _check_admin(m: Message) -> bool:
@@ -3600,24 +3671,30 @@ async def _check_admin(m: Message) -> bool:
 
 async def _spawn_event_and_pin(m: Message, bot: Bot, event_type: str, custom_hp: Optional[int] = None,
                                 custom_text: Optional[str] = None) -> None:
-    event = spawn_chat_event(event_type, m.from_user.id, bot, chat_id=m.chat.id, custom_hp=custom_hp)
+    """Создаёт событие, отправляет сообщение и закрепляет его в группе."""
+    event = spawn_chat_event(event_type, m.from_user.id, bot, custom_hp=custom_hp)
     if not event:
         await m.answer("Событие уже активно!")
         return
     template = CHAT_EVENT_TEMPLATES.get(event_type, CHAT_EVENT_TEMPLATES["boss"])
     text = custom_text or template["announce_text"].format(emoji=template["emoji"], hp=event.hp)
+    
     sent = await m.answer(text)
+    
     event.message_id = sent.message_id
-    event.chat_id = sent.chat.id
+    event.chat_id = m.chat.id
     db.execute("UPDATE chat_events SET message_id=?, chat_id=? WHERE event_id=?",
-               (sent.message_id, sent.chat.id, event.event_id))
+               (sent.message_id, m.chat.id, event.event_id))
+    
     if m.chat.type in ["group", "supergroup"]:
         try:
-            await bot.pin_chat_message(chat_id=m.chat.id, message_id=sent.message_id, disable_notification=False)
+            await bot.pin_chat_message(chat_id=m.chat.id, message_id=sent.message_id,
+                                       disable_notification=False)
         except Exception as e:
             logging.warning(f"Failed to pin: {e}")
 
 
+# 🔧 ИСПРАВЛЕНО: все админ-команды спавна событий теперь принимают bot: Bot
 @router.message(F.text.regexp(r"(?i)^событие\s+босс$"))
 async def adm_spawn_boss(m: Message, bot: Bot) -> None:
     if not await _check_admin(m):
@@ -3935,6 +4012,10 @@ async def challenge_timeout_task(challenger_id: int, target_id: int, bot: Bot) -
     PENDING_DUELS.pop(key, None)
 
 
+# ============================================================================
+# CALLBACK HANDLERS — ВЫЗОВЫ
+# ============================================================================
+
 @router.callback_query(F.data.regexp(r"^challenge:accept:(-?\d+):(-?\d+)$"))
 async def cb_challenge_accept(cb: CallbackQuery, bot: Bot) -> None:
     parts = cb.data.split(":")
@@ -4060,1002 +4141,8 @@ async def cb_profile_back(cb: CallbackQuery) -> None:
 
 
 # ============================================================================
-# CALLBACK HANDLERS — КАЗИНО
+# CALLBACK HANDLERS — ДОНАТ
 # ============================================================================
-
-@router.callback_query(F.data == "casino:menu")
-async def cb_casino_menu(cb: CallbackQuery) -> None:
-    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
-        await cb.answer("Сначала /start", show_alert=True)
-        return
-    text, kb = generate_casino_menu(cb.from_user.id)
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-
-
-@router.callback_query(F.data == "casino:slots")
-async def cb_casino_slots(cb: CallbackQuery) -> None:
-    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
-        await cb.answer("Сначала /start", show_alert=True)
-        return
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = (
-        f"{E_SLOT} <b>СЛОТЫ</b>\n\n"
-        f"{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\n"
-        f"<b>Выбери ставку или введи свою:</b>"
-    )
-    await safe_edit_message(cb, text, get_bet_kb("slots"))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:slots:bet:(\d+)$"))
-async def cb_casino_slots_bet(cb: CallbackQuery, bot: Bot) -> None:
-    bet = safe_int_parse(cb.data.split(":")[3], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    result, err, won = await play_casino_slots_animated(cb.message.chat.id, bet, cb.from_user.id, bot)
-    if err:
-        await cb.answer(err, show_alert=True)
-        return
-    balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin\n\nВыбери действие:"
-    kb = build_vertical_keyboard_with_styles([
-        ("🔁 Ещё раз", "casino:slots", "primary"),
-        (f"{E_BACK} В казино", "casino:menu", "success"),
-    ])
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-    if not won:
-        await _handle_casino_loss(cb.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в слотах.\n\n")
-
-
-@router.callback_query(F.data == "casino:dice")
-async def cb_casino_dice(cb: CallbackQuery) -> None:
-    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
-        await cb.answer("Сначала /start", show_alert=True)
-        return
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{E_DICE} <b>КОСТИ</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\n<b>Выбери режим игры:</b>"
-    await safe_edit_message(cb, text, get_dice_mode_kb())
-    await cb.answer()
-
-
-@router.callback_query(F.data == "casino:dice:number")
-async def cb_casino_dice_number(cb: CallbackQuery) -> None:
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{E_DICE} <b>КОСТИ — НА ЧИСЛО (×6)</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\nВыбери ставку:"
-    flat_buttons: List[Tuple[str, str, str]] = [(f"{b} 🪙", f"casino:dice:number:bet:{b}", "primary") for b in Config.CASINO_BETS]
-    flat_buttons.append((f"✏️ Ввести свою", "casino:dice:number:manual", "success"))
-    flat_buttons.append((f"{E_BACK} Назад", "casino:dice", "danger"))
-    await safe_edit_message(cb, text, build_vertical_keyboard_with_styles(flat_buttons))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:dice:number:bet:(\d+)$"))
-async def cb_casino_dice_number_bet(cb: CallbackQuery) -> None:
-    bet = safe_int_parse(cb.data.split(":")[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    text = f"{E_DICE} <b>КОСТИ — НА ЧИСЛО</b>\n\nСтавка: <b>{bet} 🪙</b>\n\nВыбери число от 1 до 6:"
-    await safe_edit_message(cb, text, get_dice_number_kb(bet))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:dice:num:(\d+):(\d+)$"))
-async def cb_casino_dice_num(cb: CallbackQuery, bot: Bot) -> None:
-    parts = cb.data.split(":")
-    bet = safe_int_parse(parts[3], default=0)
-    number = safe_int_parse(parts[4], default=0, min_val=1, max_val=6)
-    if bet == 0 or number == 0:
-        await cb.answer("Неверные параметры.", show_alert=True)
-        return
-    result, err, won = await play_casino_dice_game(cb.message.chat.id, bet, cb.from_user.id, bot, "number", number)
-    if err:
-        await cb.answer(err, show_alert=True)
-        return
-    balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin\n\nВыбери действие:"
-    kb = build_vertical_keyboard_with_styles([("🔁 Ещё раз", "casino:dice:number", "primary"), (f"{E_BACK} В казино", "casino:menu", "success")])
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-    if not won:
-        await _handle_casino_loss(cb.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в костях.\n\n")
-
-
-@router.callback_query(F.data == "casino:dice:even_odd")
-async def cb_casino_dice_even_odd(cb: CallbackQuery) -> None:
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{E_DICE} <b>КОСТИ — ЧЁТ/НЕЧЕТ (×2)</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\nВыбери ставку:"
-    flat_buttons: List[Tuple[str, str, str]] = [(f"{b} 🪙", f"casino:dice:even_odd:bet:{b}", "primary") for b in Config.CASINO_BETS]
-    flat_buttons.append((f"✏️ Ввести свою", "casino:dice:even_odd:manual", "success"))
-    flat_buttons.append((f"{E_BACK} Назад", "casino:dice", "danger"))
-    await safe_edit_message(cb, text, build_vertical_keyboard_with_styles(flat_buttons))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:dice:even_odd:bet:(\d+)$"))
-async def cb_casino_dice_even_odd_bet(cb: CallbackQuery) -> None:
-    bet = safe_int_parse(cb.data.split(":")[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    text = f"{E_DICE} <b>КОСТИ — ЧЁТ/НЕЧЕТ</b>\n\nСтавка: <b>{bet} 🪙</b>\n\nВыбери:"
-    await safe_edit_message(cb, text, get_dice_even_odd_kb(bet))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:dice:(even|odd):(\d+)$"))
-async def cb_casino_dice_even_odd_play(cb: CallbackQuery, bot: Bot) -> None:
-    parts = cb.data.split(":")
-    choice = parts[3]
-    bet = safe_int_parse(parts[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    result, err, won = await play_casino_dice_game(cb.message.chat.id, bet, cb.from_user.id, bot, "even_odd", choice)
-    if err:
-        await cb.answer(err, show_alert=True)
-        return
-    balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin\n\nВыбери действие:"
-    kb = build_vertical_keyboard_with_styles([("🔁 Ещё раз", "casino:dice:even_odd", "primary"), (f"{E_BACK} В казино", "casino:menu", "success")])
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-    if not won:
-        await _handle_casino_loss(cb.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в костях.\n\n")
-
-
-@router.callback_query(F.data == "casino:dice:high_low")
-async def cb_casino_dice_high_low(cb: CallbackQuery) -> None:
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{E_DICE} <b>КОСТИ — БОЛЬШЕ/МЕНЬШЕ (×2)</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\nВыбери ставку:"
-    flat_buttons: List[Tuple[str, str, str]] = [(f"{b} 🪙", f"casino:dice:high_low:bet:{b}", "primary") for b in Config.CASINO_BETS]
-    flat_buttons.append((f"✏️ Ввести свою", "casino:dice:high_low:manual", "success"))
-    flat_buttons.append((f"{E_BACK} Назад", "casino:dice", "danger"))
-    await safe_edit_message(cb, text, build_vertical_keyboard_with_styles(flat_buttons))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:dice:high_low:bet:(\d+)$"))
-async def cb_casino_dice_high_low_bet(cb: CallbackQuery) -> None:
-    bet = safe_int_parse(cb.data.split(":")[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    text = f"{E_DICE} <b>КОСТИ — БОЛЬШЕ/МЕНЬШЕ</b>\n\nСтавка: <b>{bet} 🪙</b>\n\nВыбери:"
-    await safe_edit_message(cb, text, get_dice_high_low_kb(bet))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:dice:(high|low):(\d+)$"))
-async def cb_casino_dice_high_low_play(cb: CallbackQuery, bot: Bot) -> None:
-    parts = cb.data.split(":")
-    choice = parts[3]
-    bet = safe_int_parse(parts[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    result, err, won = await play_casino_dice_game(cb.message.chat.id, bet, cb.from_user.id, bot, "high_low", choice)
-    if err:
-        await cb.answer(err, show_alert=True)
-        return
-    balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin\n\nВыбери действие:"
-    kb = build_vertical_keyboard_with_styles([("🔁 Ещё раз", "casino:dice:high_low", "primary"), (f"{E_BACK} В казино", "casino:menu", "success")])
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-    if not won:
-        await _handle_casino_loss(cb.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в костях.\n\n")
-
-
-@router.callback_query(F.data == "casino:darts")
-async def cb_casino_darts(cb: CallbackQuery) -> None:
-    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
-        await cb.answer("Сначала /start", show_alert=True)
-        return
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{E_DARTS} <b>ДРОТИК</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\n<b>Выбери режим:</b>"
-    await safe_edit_message(cb, text, get_darts_mode_kb())
-    await cb.answer()
-
-
-@router.callback_query(F.data == "casino:darts:hit")
-async def cb_casino_darts_hit(cb: CallbackQuery) -> None:
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{E_DARTS} <b>ДРОТИК — НА ПОПАДАНИЕ (×1.9)</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\nВыбери ставку:"
-    await safe_edit_message(cb, text, get_bet_kb("darts:hit"))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:darts:hit:bet:(\d+)$"))
-async def cb_casino_darts_hit_bet(cb: CallbackQuery, bot: Bot) -> None:
-    bet = safe_int_parse(cb.data.split(":")[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    result, err, won = await play_casino_darts_animated(cb.message.chat.id, bet, cb.from_user.id, bot, False)
-    if err:
-        await cb.answer(err, show_alert=True)
-        return
-    balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin\n\nВыбери действие:"
-    kb = build_vertical_keyboard_with_styles([("🔁 Ещё раз", "casino:darts:hit", "primary"), (f"{E_BACK} В казино", "casino:menu", "success")])
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-    if not won:
-        await _handle_casino_loss(cb.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в дротике.\n\n")
-
-
-@router.callback_query(F.data == "casino:darts:miss")
-async def cb_casino_darts_miss(cb: CallbackQuery) -> None:
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{E_DARTS} <b>ДРОТИК — НА ПРОМАХ (×1.9)</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\nВыбери ставку:"
-    await safe_edit_message(cb, text, get_bet_kb("darts:miss"))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:darts:miss:bet:(\d+)$"))
-async def cb_casino_darts_miss_bet(cb: CallbackQuery, bot: Bot) -> None:
-    bet = safe_int_parse(cb.data.split(":")[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    result, err, won = await play_casino_darts_animated(cb.message.chat.id, bet, cb.from_user.id, bot, True)
-    if err:
-        await cb.answer(err, show_alert=True)
-        return
-    balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin\n\nВыбери действие:"
-    kb = build_vertical_keyboard_with_styles([("🔁 Ещё раз", "casino:darts:miss", "primary"), (f"{E_BACK} В казино", "casino:menu", "success")])
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-    if not won:
-        await _handle_casino_loss(cb.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в дротике.\n\n")
-
-
-@router.callback_query(F.data == "casino:basket")
-async def cb_casino_basket(cb: CallbackQuery) -> None:
-    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
-        await cb.answer("Сначала /start", show_alert=True)
-        return
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{E_BASKET} <b>БАСКЕТБОЛ</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\n<b>Выбери режим:</b>"
-    await safe_edit_message(cb, text, get_basket_mode_kb())
-    await cb.answer()
-
-
-@router.callback_query(F.data == "casino:basket:hit")
-async def cb_casino_basket_hit(cb: CallbackQuery) -> None:
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{E_BASKET} <b>БАСКЕТБОЛ — НА ПОПАДАНИЕ (×1.9)</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\nВыбери ставку:"
-    await safe_edit_message(cb, text, get_bet_kb("basket:hit"))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:basket:hit:bet:(\d+)$"))
-async def cb_casino_basket_hit_bet(cb: CallbackQuery, bot: Bot) -> None:
-    bet = safe_int_parse(cb.data.split(":")[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    result, err, won = await play_casino_basketball_animated(cb.message.chat.id, bet, cb.from_user.id, bot, False)
-    if err:
-        await cb.answer(err, show_alert=True)
-        return
-    balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin\n\nВыбери действие:"
-    kb = build_vertical_keyboard_with_styles([("🔁 Ещё раз", "casino:basket:hit", "primary"), (f"{E_BACK} В казино", "casino:menu", "success")])
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-    if not won:
-        await _handle_casino_loss(cb.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в баскетболе.\n\n")
-
-
-@router.callback_query(F.data == "casino:basket:miss")
-async def cb_casino_basket_miss(cb: CallbackQuery) -> None:
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{E_BASKET} <b>БАСКЕТБОЛ — НА ПРОМАХ (×1.9)</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\nВыбери ставку:"
-    await safe_edit_message(cb, text, get_bet_kb("basket:miss"))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:basket:miss:bet:(\d+)$"))
-async def cb_casino_basket_miss_bet(cb: CallbackQuery, bot: Bot) -> None:
-    bet = safe_int_parse(cb.data.split(":")[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    result, err, won = await play_casino_basketball_animated(cb.message.chat.id, bet, cb.from_user.id, bot, True)
-    if err:
-        await cb.answer(err, show_alert=True)
-        return
-    balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin\n\nВыбери действие:"
-    kb = build_vertical_keyboard_with_styles([("🔁 Ещё раз", "casino:basket:miss", "primary"), (f"{E_BACK} В казино", "casino:menu", "success")])
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-    if not won:
-        await _handle_casino_loss(cb.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в баскетболе.\n\n")
-
-
-@router.callback_query(F.data == "casino:roulette")
-async def cb_casino_roulette(cb: CallbackQuery) -> None:
-    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
-        await cb.answer("Сначала /start", show_alert=True)
-        return
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"🎡 <b>РУЛЕТКА</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\n<b>Выбери режим игры:</b>"
-    await safe_edit_message(cb, text, get_roulette_mode_kb())
-    await cb.answer()
-
-
-@router.callback_query(F.data == "casino:roulette:color")
-async def cb_roulette_color(cb: CallbackQuery) -> None:
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"🎨 <b>РУЛЕТКА — НА ЦВЕТ</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\n• 🔴 Красное / ⚫ Чёрное = ×2\n• 🟢 Зеро = ×14\n\nВыбери ставку:"
-    flat_buttons: List[Tuple[str, str, str]] = [(f"{b} 🪙", f"casino:roulette:color:bet:{b}", "primary") for b in Config.CASINO_BETS]
-    flat_buttons.append((f"✏️ Ввести свою", "casino:roulette:color:manual", "success"))
-    flat_buttons.append((f"{E_BACK} Назад", "casino:roulette", "danger"))
-    await safe_edit_message(cb, text, build_vertical_keyboard_with_styles(flat_buttons))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:roulette:color:bet:(\d+)$"))
-async def cb_roulette_color_bet(cb: CallbackQuery) -> None:
-    bet = safe_int_parse(cb.data.split(":")[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    text = f"🎨 <b>РУЛЕТКА — НА ЦВЕТ</b>\n\nСтавка: <b>{bet} 🪙</b>\n\nВыбери цвет:"
-    await safe_edit_message(cb, text, get_roulette_color_kb(bet))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:roulette:color:(red|black|green):(\d+)$"))
-async def cb_roulette_color_play(cb: CallbackQuery, bot: Bot) -> None:
-    parts = cb.data.split(":")
-    color = parts[3]
-    bet = safe_int_parse(parts[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    result, err, won = play_casino_roulette(cb.from_user.id, bet, "color", color)
-    if err:
-        await cb.answer(err, show_alert=True)
-        return
-    balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin\n\nВыбери действие:"
-    kb = build_vertical_keyboard_with_styles([("🔁 Ещё раз", "casino:roulette:color", "primary"), (f"{E_BACK} В казино", "casino:menu", "success")])
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-    if not won:
-        await _handle_casino_loss(cb.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в рулетке.\n\n")
-
-
-@router.callback_query(F.data == "casino:roulette:even_odd")
-async def cb_roulette_even_odd(cb: CallbackQuery) -> None:
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"⚖️ <b>РУЛЕТКА — ЧЁТ/НЕЧЕТ (×2)</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\nВыбери ставку:"
-    flat_buttons: List[Tuple[str, str, str]] = [(f"{b} 🪙", f"casino:roulette:even_odd:bet:{b}", "primary") for b in Config.CASINO_BETS]
-    flat_buttons.append((f"✏️ Ввести свою", "casino:roulette:even_odd:manual", "success"))
-    flat_buttons.append((f"{E_BACK} Назад", "casino:roulette", "danger"))
-    await safe_edit_message(cb, text, build_vertical_keyboard_with_styles(flat_buttons))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:roulette:even_odd:bet:(\d+)$"))
-async def cb_roulette_even_odd_bet(cb: CallbackQuery) -> None:
-    bet = safe_int_parse(cb.data.split(":")[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    text = f"⚖️ <b>РУЛЕТКА — ЧЁТ/НЕЧЕТ</b>\n\nСтавка: <b>{bet} 🪙</b>\n\nВыбери:"
-    await safe_edit_message(cb, text, get_roulette_even_odd_kb(bet))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:roulette:even_odd:(even|odd):(\d+)$"))
-async def cb_roulette_even_odd_play(cb: CallbackQuery, bot: Bot) -> None:
-    parts = cb.data.split(":")
-    choice = parts[3]
-    bet = safe_int_parse(parts[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    result, err, won = play_casino_roulette(cb.from_user.id, bet, "even_odd", choice)
-    if err:
-        await cb.answer(err, show_alert=True)
-        return
-    balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin\n\nВыбери действие:"
-    kb = build_vertical_keyboard_with_styles([("🔁 Ещё раз", "casino:roulette:even_odd", "primary"), (f"{E_BACK} В казино", "casino:menu", "success")])
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-    if not won:
-        await _handle_casino_loss(cb.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в рулетке.\n\n")
-
-
-@router.callback_query(F.data == "casino:roulette:half")
-async def cb_roulette_half(cb: CallbackQuery) -> None:
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"📈 <b>РУЛЕТКА — ПОЛОВИНА (×2)</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\n• 1-18 (низ)\n• 19-36 (верх)\n\nВыбери ставку:"
-    flat_buttons: List[Tuple[str, str, str]] = [(f"{b} 🪙", f"casino:roulette:half:bet:{b}", "primary") for b in Config.CASINO_BETS]
-    flat_buttons.append((f"✏️ Ввести свою", "casino:roulette:half:manual", "success"))
-    flat_buttons.append((f"{E_BACK} Назад", "casino:roulette", "danger"))
-    await safe_edit_message(cb, text, build_vertical_keyboard_with_styles(flat_buttons))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:roulette:half:bet:(\d+)$"))
-async def cb_roulette_half_bet(cb: CallbackQuery) -> None:
-    bet = safe_int_parse(cb.data.split(":")[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    text = f"📈 <b>РУЛЕТКА — ПОЛОВИНА</b>\n\nСтавка: <b>{bet} 🪙</b>\n\nВыбери:"
-    await safe_edit_message(cb, text, get_roulette_half_kb(bet))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:roulette:half:(low|high):(\d+)$"))
-async def cb_roulette_half_play(cb: CallbackQuery, bot: Bot) -> None:
-    parts = cb.data.split(":")
-    choice = parts[3]
-    bet = safe_int_parse(parts[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    result, err, won = play_casino_roulette(cb.from_user.id, bet, "half", choice)
-    if err:
-        await cb.answer(err, show_alert=True)
-        return
-    balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin\n\nВыбери действие:"
-    kb = build_vertical_keyboard_with_styles([("🔁 Ещё раз", "casino:roulette:half", "primary"), (f"{E_BACK} В казино", "casino:menu", "success")])
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-    if not won:
-        await _handle_casino_loss(cb.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в рулетке.\n\n")
-
-
-@router.callback_query(F.data == "casino:roulette:number")
-async def cb_roulette_number(cb: CallbackQuery) -> None:
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"🔢 <b>РУЛЕТКА — НА ЧИСЛО (×36)</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\nВыбери ставку:"
-    flat_buttons: List[Tuple[str, str, str]] = [(f"{b} 🪙", f"casino:roulette:number:bet:{b}", "danger") for b in Config.CASINO_BETS]
-    flat_buttons.append((f"✏️ Ввести свою", "casino:roulette:number:manual", "success"))
-    flat_buttons.append((f"{E_BACK} Назад", "casino:roulette", "danger"))
-    await safe_edit_message(cb, text, build_vertical_keyboard_with_styles(flat_buttons))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:roulette:number:bet:(\d+)$"))
-async def cb_roulette_number_bet(cb: CallbackQuery) -> None:
-    bet = safe_int_parse(cb.data.split(":")[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    text = f"🔢 <b>РУЛЕТКА — НА ЧИСЛО</b>\n\nСтавка: <b>{bet} 🪙</b>\n\nВыбери число от 0 до 36:"
-    await safe_edit_message(cb, text, get_roulette_number_kb(bet))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:roulette:num:(\d+):(\d+)$"))
-async def cb_roulette_number_play(cb: CallbackQuery, bot: Bot) -> None:
-    parts = cb.data.split(":")
-    bet = safe_int_parse(parts[3], default=0)
-    number = safe_int_parse(parts[4], default=-1, min_val=0, max_val=36)
-    if bet == 0 or number < 0 or number > 36:
-        await cb.answer("Неверные параметры.", show_alert=True)
-        return
-    result, err, won = play_casino_roulette(cb.from_user.id, bet, "number", number)
-    if err:
-        await cb.answer(err, show_alert=True)
-        return
-    balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin\n\nВыбери действие:"
-    kb = build_vertical_keyboard_with_styles([("🔁 Ещё раз", "casino:roulette:number", "primary"), (f"{E_BACK} В казино", "casino:menu", "success")])
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-    if not won:
-        await _handle_casino_loss(cb.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в рулетке.\n\n")
-
-
-@router.callback_query(F.data == "casino:roulette:dozen")
-async def cb_roulette_dozen(cb: CallbackQuery) -> None:
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"🎯 <b>РУЛЕТКА — НА ДЮЖИНУ (×3)</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\nВыбери ставку:"
-    flat_buttons: List[Tuple[str, str, str]] = [(f"{b} 🪙", f"casino:roulette:dozen:bet:{b}", "primary") for b in Config.CASINO_BETS]
-    flat_buttons.append((f"✏️ Ввести свою", "casino:roulette:dozen:manual", "success"))
-    flat_buttons.append((f"{E_BACK} Назад", "casino:roulette", "danger"))
-    await safe_edit_message(cb, text, build_vertical_keyboard_with_styles(flat_buttons))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:roulette:dozen:bet:(\d+)$"))
-async def cb_roulette_dozen_bet(cb: CallbackQuery) -> None:
-    bet = safe_int_parse(cb.data.split(":")[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    text = f"🎯 <b>РУЛЕТКА — НА ДЮЖИНУ</b>\n\nСтавка: <b>{bet} 🪙</b>\n\nВыбери дюжину:"
-    await safe_edit_message(cb, text, get_roulette_dozen_kb(bet))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:roulette:dozen:(\d+):(\d+)$"))
-async def cb_roulette_dozen_play(cb: CallbackQuery, bot: Bot) -> None:
-    parts = cb.data.split(":")
-    dozen = safe_int_parse(parts[3], default=0, min_val=1, max_val=3)
-    bet = safe_int_parse(parts[4], default=0)
-    if dozen == 0 or bet == 0:
-        await cb.answer("Неверные параметры.", show_alert=True)
-        return
-    result, err, won = play_casino_roulette(cb.from_user.id, bet, "dozen", dozen)
-    if err:
-        await cb.answer(err, show_alert=True)
-        return
-    balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin\n\nВыбери действие:"
-    kb = build_vertical_keyboard_with_styles([("🔁 Ещё раз", "casino:roulette:dozen", "primary"), (f"{E_BACK} В казино", "casino:menu", "success")])
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-    if not won:
-        await _handle_casino_loss(cb.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в рулетке.\n\n")
-
-
-@router.callback_query(F.data == "casino:coin")
-async def cb_casino_coin(cb: CallbackQuery) -> None:
-    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
-        await cb.answer("Сначала /start", show_alert=True)
-        return
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{E_COIN} <b>МОНЕТКА (×2)</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\nВыбери ставку:"
-    flat_buttons: List[Tuple[str, str, str]] = [(f"{b} 🪙", f"casino:coin:bet:{b}", "primary") for b in Config.CASINO_BETS]
-    flat_buttons.append((f"✏️ Ввести свою", "casino:coin:manual", "success"))
-    flat_buttons.append((f"{E_BACK} Назад", "casino:menu", "danger"))
-    await safe_edit_message(cb, text, build_vertical_keyboard_with_styles(flat_buttons))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:coin:bet:(\d+)$"))
-async def cb_casino_coin_bet(cb: CallbackQuery) -> None:
-    bet = safe_int_parse(cb.data.split(":")[3], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    text = f"{E_COIN} <b>МОНЕТКА</b>\n\nСтавка: <b>{bet} 🪙</b>\n\nВыбери:"
-    kb = build_vertical_keyboard_with_styles([
-        ("🔵 Орёл (×2)", f"casino:coin:heads:{bet}", "primary"),
-        ("🔴 Решка (×2)", f"casino:coin:tails:{bet}", "danger"),
-        (f"{E_BACK} Назад", "casino:coin", "success"),
-    ])
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:coin:(heads|tails):(\d+)$"))
-async def cb_casino_coin_play(cb: CallbackQuery, bot: Bot) -> None:
-    parts = cb.data.split(":")
-    choice = parts[3]
-    bet = safe_int_parse(parts[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    result, err, won = play_casino_coin(cb.from_user.id, bet, choice)
-    if err:
-        await cb.answer(err, show_alert=True)
-        return
-    balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin\n\nВыбери действие:"
-    kb = build_vertical_keyboard_with_styles([("🔁 Ещё раз", "casino:coin", "primary"), (f"{E_BACK} В казино", "casino:menu", "success")])
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-    if not won:
-        await _handle_casino_loss(cb.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN} в монетке.\n\n")
-
-
-@router.callback_query(F.data == "casino:highlow")
-async def cb_casino_highlow(cb: CallbackQuery) -> None:
-    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
-        await cb.answer("Сначала /start", show_alert=True)
-        return
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"📊 <b>БОЛЬШЕ/МЕНЬШЕ (×1.9)</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\n• Число от 1 до 100\n• Больше: 51-100\n• Меньше: 1-49\n• 50 = возврат ставки\n\nВыбери ставку:"
-    flat_buttons: List[Tuple[str, str, str]] = [(f"{b} 🪙", f"casino:highlow:bet:{b}", "primary") for b in Config.CASINO_BETS]
-    flat_buttons.append((f"✏️ Ввести свою", "casino:highlow:manual", "success"))
-    flat_buttons.append((f"{E_BACK} Назад", "casino:menu", "danger"))
-    await safe_edit_message(cb, text, build_vertical_keyboard_with_styles(flat_buttons))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:highlow:bet:(\d+)$"))
-async def cb_casino_highlow_bet(cb: CallbackQuery) -> None:
-    bet = safe_int_parse(cb.data.split(":")[3], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    text = f"📊 <b>БОЛЬШЕ/МЕНЬШЕ</b>\n\nСтавка: <b>{bet} 🪙</b>\n\nВыбери:"
-    kb = build_vertical_keyboard_with_styles([
-        ("📈 Больше (51-100) (×1.9)", f"casino:highlow:high:{bet}", "success"),
-        ("📉 Меньше (1-49) (×1.9)", f"casino:highlow:low:{bet}", "danger"),
-        (f"{E_BACK} Назад", "casino:highlow", "primary"),
-    ])
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^casino:highlow:(high|low):(\d+)$"))
-async def cb_casino_highlow_play(cb: CallbackQuery, bot: Bot) -> None:
-    parts = cb.data.split(":")
-    choice = parts[3]
-    bet = safe_int_parse(parts[4], default=0)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    result, err, won = play_casino_highlow(cb.from_user.id, bet, choice)
-    if err:
-        await cb.answer(err, show_alert=True)
-        return
-    balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin\n\nВыбери действие:"
-    kb = build_vertical_keyboard_with_styles([("🔁 Ещё раз", "casino:highlow", "primary"), (f"{E_BACK} В казино", "casino:menu", "success")])
-    await safe_edit_message(cb, text, kb)
-    await cb.answer()
-    if not won:
-        await _handle_casino_loss(cb.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN}.\n\n")
-
-
-# ============================================================================
-# МИНЫ — CALLBACK HANDLERS
-# ============================================================================
-
-@router.callback_query(F.data == "casino:mines")
-async def cb_casino_mines(cb: CallbackQuery) -> None:
-    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
-        await cb.answer("Сначала /start", show_alert=True)
-        return
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{E_MINE} <b>МИНЫ</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\n<b>Правила:</b>\n• Поле 5×5 с минами\n• Больше мин — выше множитель\n• Открывай клетки, избегай мин\n• Забери выигрыш в любой момент\n\n<b>Выбери количество мин:</b>"
-    await safe_edit_message(cb, text, get_mines_setup_kb())
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^mines:start:(\d+)$"))
-async def cb_mines_start(cb: CallbackQuery) -> None:
-    mines_count = safe_int_parse(cb.data.split(":")[2], default=0, min_val=1, max_val=24)
-    if mines_count == 0:
-        await cb.answer("Неверное количество мин.", show_alert=True)
-        return
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{E_MINE} <b>МИНЫ</b> · {mines_count} мин\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\n<b>Выбери ставку:</b>"
-    flat_buttons: List[Tuple[str, str, str]] = [(f"{b} 🪙", f"mines:bet:{mines_count}:{b}", "primary") for b in Config.CASINO_BETS]
-    flat_buttons.append((f"✏️ Ввести свою", f"mines:manual:{mines_count}", "success"))
-    flat_buttons.append((f"{E_BACK} Назад", "casino:mines", "danger"))
-    await safe_edit_message(cb, text, build_vertical_keyboard_with_styles(flat_buttons))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^mines:bet:(\d+):(\d+)$"))
-async def cb_mines_bet(cb: CallbackQuery, bot: Bot) -> None:
-    parts = cb.data.split(":")
-    mines_count = safe_int_parse(parts[2], default=0, min_val=1, max_val=24)
-    bet = safe_int_parse(parts[3], default=0, min_val=Config.CASINO_MIN_BET, max_val=Config.CASINO_MAX_BET)
-    if mines_count == 0 or bet == 0:
-        await cb.answer("Неверные параметры.", show_alert=True)
-        return
-    p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (cb.from_user.id,))
-    if not p or p["crystals"] < bet:
-        await cb.answer("Недостаточно dlcoin.", show_alert=True)
-        return
-    if cb.from_user.id in ACTIVE_MINES:
-        await cb.answer("У тебя уже активна игра в мины.", show_alert=True)
-        return
-    db.execute_transaction([("UPDATE players SET crystals=crystals-? WHERE user_id=?", (bet, cb.from_user.id))])
-    game = start_mines_game(cb.from_user.id, bet, mines_count)
-    text = f"{E_MINE} <b>МИНЫ</b>\n\n💵 Ставка: <b>{bet}</b> {E_DLCOIN}\n{E_BOMB} Мин на поле: <b>{mines_count}</b>\n📈 Множитель: <b>×{game.current_multiplier}</b>\n\n{generate_mines_field(game)}\n\n<i>Нажимай на клетки, чтобы открыть. Избегай мин!</i>"
-    try:
-        await cb.message.edit_text(text, reply_markup=get_mines_keyboard(game), parse_mode=ParseMode.HTML)
-        game.message_id = cb.message.message_id
-        game.chat_id = cb.message.chat.id
-    except TelegramBadRequest:
-        sent = await cb.message.answer(text, reply_markup=get_mines_keyboard(game), parse_mode=ParseMode.HTML)
-        game.message_id = sent.message_id
-        game.chat_id = sent.chat.id
-    ACTIVE_MINES[cb.from_user.id] = game
-    db.execute("UPDATE player_stats SET mines_games=mines_games+1 WHERE user_id=?", (cb.from_user.id,))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^mines:cell:(\d+)$"))
-async def cb_mines_cell(cb: CallbackQuery, bot: Bot) -> None:
-    cell = safe_int_parse(cb.data.split(":")[2], default=-1)
-    game = ACTIVE_MINES.get(cb.from_user.id)
-    if not game:
-        await cb.answer("Игра не найдена.", show_alert=True)
-        return
-    if not game.active:
-        await cb.answer("Игра уже завершена.", show_alert=True)
-        return
-    survived, msg = game.open_cell(cell)
-    if not survived:
-        db.execute_transaction([
-            ("UPDATE player_stats SET casino_losses=casino_losses+1 WHERE user_id=?", (cb.from_user.id,)),
-            ("UPDATE players SET consecutive_losses=consecutive_losses+1 WHERE user_id=?", (cb.from_user.id,)),
-        ])
-        text = f"{E_BOMB} <b>БОМБА!</b>\n\n💵 Ставка: <b>{game.bet}</b> {E_DLCOIN}\n💸 Ты проиграл!\n\n{generate_mines_field(game)}\n\n<i>В следующий раз будь осторожнее!</i>"
-        await safe_edit_message(cb, text, build_vertical_keyboard_with_styles([("🔁 Играть ещё", "casino:mines", "primary"), (f"{E_BACK} В казино", "casino:menu", "success")]))
-        await cb.answer(msg, show_alert=True)
-        del ACTIVE_MINES[cb.from_user.id]
-        await _handle_casino_loss(cb.from_user.id, bot, f"Ты проиграл <b>{game.bet}</b> {E_DLCOIN} в минах.\n\n")
-        return
-    text = f"{E_GEM} <b>БЕЗОПАСНО!</b>\n\n💵 Ставка: <b>{game.bet}</b> {E_DLCOIN}\n📈 Множитель: <b>×{game.current_multiplier}</b>\n💰 potential: <b>{game.current_winnings}</b> {E_DLCOIN}\n\n{generate_mines_field(game)}\n\n{msg}"
-    await safe_edit_message(cb, text, get_mines_keyboard(game))
-    await cb.answer()
-
-
-@router.callback_query(F.data == "mines:cashout")
-async def cb_mines_cashout(cb: CallbackQuery, bot: Bot) -> None:
-    game = ACTIVE_MINES.get(cb.from_user.id)
-    if not game:
-        await cb.answer("Игра не найдена.", show_alert=True)
-        return
-    success, msg = game.cashout()
-    if not success:
-        await cb.answer(msg, show_alert=True)
-        return
-    winnings = game.current_winnings
-    db.execute_transaction([
-        ("UPDATE players SET crystals=crystals+?, consecutive_losses=0 WHERE user_id=?", (winnings, cb.from_user.id)),
-        ("UPDATE player_stats SET mines_wins=mines_wins+1, casino_wins=casino_wins+1 WHERE user_id=?", (cb.from_user.id,)),
-    ])
-    text = f"{E_CASHOUT} <b>ТЫ ЗАБРАЛ ВЫИГРЫШ!</b>\n\n💵 Ставка: <b>{game.bet}</b> {E_DLCOIN}\n📈 Множитель: <b>×{game.current_multiplier}</b>\n💰 Выигрыш: <b>{winnings}</b> {E_DLCOIN}\n\n{generate_mines_field(game)}"
-    await safe_edit_message(cb, text, build_vertical_keyboard_with_styles([("🔁 Играть ещё", "casino:mines", "primary"), (f"{E_BACK} В казино", "casino:menu", "success")]))
-    await cb.answer(f"Выигрыш: {winnings} 🪙")
-    del ACTIVE_MINES[cb.from_user.id]
-
-
-@router.callback_query(F.data == "mines:surrender")
-async def cb_mines_surrender(cb: CallbackQuery, bot: Bot) -> None:
-    game = ACTIVE_MINES.get(cb.from_user.id)
-    if not game or not game.active:
-        await cb.answer("Игра не активна.", show_alert=True)
-        return
-    game.active = False
-    db.execute_transaction([
-        ("UPDATE player_stats SET casino_losses=casino_losses+1 WHERE user_id=?", (cb.from_user.id,)),
-        ("UPDATE players SET consecutive_losses=consecutive_losses+1 WHERE user_id=?", (cb.from_user.id,)),
-    ])
-    text = f"{E_REJECT} <b>ТЫ СДАЛСЯ</b>\n\n💵 Ставка: <b>{game.bet}</b> {E_DLCOIN}\n💸 Ты проиграл!\n\n{generate_mines_field(game)}"
-    await safe_edit_message(cb, text, build_vertical_keyboard_with_styles([("🔁 Играть ещё", "casino:mines", "primary"), (f"{E_BACK} В казино", "casino:menu", "success")]))
-    await cb.answer("Ты сдался.")
-    del ACTIVE_MINES[cb.from_user.id]
-    await _handle_casino_loss(cb.from_user.id, bot, f"Ты сдался в минах и проиграл <b>{game.bet}</b> {E_DLCOIN}.\n\n")
-
-
-# ============================================================================
-# КРАШ — CALLBACK HANDLERS
-# ============================================================================
-
-@router.callback_query(F.data == "casino:crash")
-async def cb_casino_crash(cb: CallbackQuery) -> None:
-    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
-        await cb.answer("Сначала /start", show_alert=True)
-        return
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{E_ROCKET} <b>КРАШ</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\n<b>Правила:</b>\n• Множитель растёт с 1.00x\n• В любой момент может произойти крах\n• Успей забрать выигрыш до краха!\n• Если не успел — ставка сгорает\n\n<b>Выбери ставку:</b>"
-    flat_buttons: List[Tuple[str, str, str]] = [(f"{b} 🪙", f"crash:bet:{b}", "primary") for b in Config.CASINO_BETS]
-    flat_buttons.append((f"✏️ Ввести свою", "crash:manual", "success"))
-    flat_buttons.append((f"{E_BACK} Назад", "casino:menu", "danger"))
-    await safe_edit_message(cb, text, build_vertical_keyboard_with_styles(flat_buttons))
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^crash:bet:(\d+)$"))
-async def cb_crash_bet(cb: CallbackQuery, bot: Bot) -> None:
-    bet = safe_int_parse(cb.data.split(":")[2], default=0, min_val=Config.CASINO_MIN_BET, max_val=Config.CASINO_MAX_BET)
-    if bet == 0:
-        await cb.answer("Неверная ставка.", show_alert=True)
-        return
-    p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (cb.from_user.id,))
-    if not p or p["crystals"] < bet:
-        await cb.answer("Недостаточно dlcoin.", show_alert=True)
-        return
-    if cb.from_user.id in ACTIVE_CRASH:
-        await cb.answer("У тебя уже активна игра в краш.", show_alert=True)
-        return
-    db.execute_transaction([("UPDATE players SET crystals=crystals-? WHERE user_id=?", (bet, cb.from_user.id))])
-    game = start_crash_game(cb.from_user.id, bet)
-    try:
-        await cb.message.edit_text(generate_crash_display(game), reply_markup=get_crash_keyboard(game), parse_mode=ParseMode.HTML)
-        game.message_id = cb.message.message_id
-        game.chat_id = cb.message.chat.id
-    except TelegramBadRequest:
-        sent = await cb.message.answer(generate_crash_display(game), reply_markup=get_crash_keyboard(game), parse_mode=ParseMode.HTML)
-        game.message_id = sent.message_id
-        game.chat_id = sent.chat.id
-    ACTIVE_CRASH[cb.from_user.id] = game
-    game.task = asyncio.create_task(crash_tick_loop(game, bot))
-    db.execute("UPDATE player_stats SET crash_games=crash_games+1 WHERE user_id=?", (cb.from_user.id,))
-    await cb.answer()
-
-
-@router.callback_query(F.data == "crash:cashout")
-async def cb_crash_cashout(cb: CallbackQuery, bot: Bot) -> None:
-    game = ACTIVE_CRASH.get(cb.from_user.id)
-    if not game:
-        await cb.answer("Игра не найдена.", show_alert=True)
-        return
-    if game.cashed_out or game.crashed:
-        await cb.answer("Игра уже завершена.", show_alert=True)
-        return
-    game.cashed_out = True
-    game.cashout_multiplier = game.current_multiplier
-    winnings = int(game.bet * game.cashout_multiplier)
-    db.execute_transaction([
-        ("UPDATE players SET crystals=crystals+?, consecutive_losses=0 WHERE user_id=?", (winnings, cb.from_user.id)),
-        ("UPDATE player_stats SET crash_wins=crash_wins+1, casino_wins=casino_wins+1 WHERE user_id=?", (cb.from_user.id,)),
-    ])
-    if game.task and not game.task.done():
-        game.task.cancel()
-    text = generate_crash_display(game)
-    await safe_edit_message(cb, text, get_crash_keyboard(game))
-    await cb.answer(f"Забрал {winnings} 🪙 на ×{game.cashout_multiplier:.2f}!")
-    async def cleanup():
-        await asyncio.sleep(5)
-        ACTIVE_CRASH.pop(cb.from_user.id, None)
-    asyncio.create_task(cleanup())
-
-
-@router.callback_query(F.data == "crash:play")
-async def cb_crash_play_again(cb: CallbackQuery) -> None:
-    await cb.answer()
-    p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (cb.from_user.id,))
-    text = f"{E_ROCKET} <b>КРАШ</b>\n\n{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\n<b>Выбери ставку:</b>"
-    flat_buttons: List[Tuple[str, str, str]] = [(f"{b} 🪙", f"crash:bet:{b}", "primary") for b in Config.CASINO_BETS]
-    flat_buttons.append((f"✏️ Ввести свою", "crash:manual", "success"))
-    flat_buttons.append((f"{E_BACK} Назад", "casino:menu", "danger"))
-    await safe_edit_message(cb, text, build_vertical_keyboard_with_styles(flat_buttons))
-
-
-# ============================================================================
-# РУЧНОЙ ВВОД СТАВКИ
-# ============================================================================
-
-@router.callback_query(F.data.regexp(r"^casino:([^:]+):manual$"))
-async def cb_casino_manual_bet(cb: CallbackQuery, state: FSMContext) -> None:
-    game = cb.data.split(":")[1]
-    await state.update_data(manual_bet_game=game)
-    await state.set_state(ManualBetState.waiting_for_bet)
-    await cb.message.answer(f"✏️ <b>Введи сумму ставки</b>\n\nМинимум: {Config.CASINO_MIN_BET} {E_DLCOIN}\nМаксимум: {Config.CASINO_MAX_BET} {E_DLCOIN}\n\n<i>Или отправь <code>отмена</code> чтобы вернуться.</i>", parse_mode=ParseMode.HTML)
-    await cb.answer()
-
-
-@router.callback_query(F.data.regexp(r"^mines:manual:(\d+)$"))
-async def cb_mines_manual_bet(cb: CallbackQuery, state: FSMContext) -> None:
-    mines_count = safe_int_parse(cb.data.split(":")[2], default=0, min_val=1, max_val=24)
-    if mines_count == 0:
-        await cb.answer("Неверное количество мин.", show_alert=True)
-        return
-    await state.update_data(manual_bet_game="mines", mines_count=mines_count)
-    await state.set_state(ManualBetState.waiting_for_bet)
-    await cb.message.answer(f"✏️ <b>Введи сумму ставки</b>\n\nМинимум: {Config.CASINO_MIN_BET} {E_DLCOIN}\nМаксимум: {Config.CASINO_MAX_BET} {E_DLCOIN}\n\n<i>Или отправь <code>отмена</code> чтобы вернуться.</i>", parse_mode=ParseMode.HTML)
-    await cb.answer()
-
-
-@router.callback_query(F.data == "crash:manual")
-async def cb_crash_manual_bet(cb: CallbackQuery, state: FSMContext) -> None:
-    await state.update_data(manual_bet_game="crash")
-    await state.set_state(ManualBetState.waiting_for_bet)
-    await cb.message.answer(f"✏️ <b>Введи сумму ставки</b>\n\nМинимум: {Config.CASINO_MIN_BET} {E_DLCOIN}\nМаксимум: {Config.CASINO_MAX_BET} {E_DLCOIN}\n\n<i>Или отправь <code>отмена</code> чтобы вернуться.</i>", parse_mode=ParseMode.HTML)
-    await cb.answer()
-
-
-@router.message(ManualBetState.waiting_for_bet, F.text)
-async def handle_manual_bet(m: Message, state: FSMContext, bot: Bot) -> None:
-    data = await state.get_data()
-    game = data.get("manual_bet_game")
-    if m.text.lower() in ["отмена", "cancel", "назад"]:
-        await state.clear()
-        text, kb = generate_casino_menu(m.from_user.id)
-        await m.answer(text, reply_markup=kb)
-        return
-    try:
-        bet = int(m.text.strip())
-    except ValueError:
-        await m.answer(f"❌ Введи число. Минимум: {Config.CASINO_MIN_BET}")
-        return
-    if bet < Config.CASINO_MIN_BET or bet > Config.CASINO_MAX_BET:
-        await m.answer(f"❌ Ставка должна быть от {Config.CASINO_MIN_BET} до {Config.CASINO_MAX_BET}.")
-        return
-    await state.clear()
-    if game == "slots":
-        result, err, won = await play_casino_slots_animated(m.chat.id, bet, m.from_user.id, bot)
-    elif game == "coin":
-        result, err, won = play_casino_coin(m.from_user.id, bet, "heads")
-    elif game == "highlow":
-        result, err, won = play_casino_highlow(m.from_user.id, bet, "high")
-    elif game == "mines":
-        mines_count = data.get("mines_count", 5)
-        p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (m.from_user.id,))
-        if not p or p["crystals"] < bet:
-            await m.answer("Недостаточно dlcoin.")
-            return
-        if m.from_user.id in ACTIVE_MINES:
-            await m.answer("У тебя уже активна игра в мины.")
-            return
-        db.execute_transaction([("UPDATE players SET crystals=crystals-? WHERE user_id=?", (bet, m.from_user.id))])
-        mines_game = start_mines_game(m.from_user.id, bet, mines_count)
-        sent = await m.answer(f"{E_MINE} <b>МИНЫ</b>\n\n💵 Ставка: <b>{bet}</b> {E_DLCOIN}\n{E_BOMB} Мин на поле: <b>{mines_count}</b>\n📈 Множитель: <b>×{mines_game.current_multiplier}</b>\n\n{generate_mines_field(mines_game)}\n\n<i>Нажимай на клетки, чтобы открыть. Избегай мин!</i>", reply_markup=get_mines_keyboard(mines_game), parse_mode=ParseMode.HTML)
-        mines_game.message_id = sent.message_id
-        mines_game.chat_id = sent.chat.id
-        ACTIVE_MINES[m.from_user.id] = mines_game
-        db.execute("UPDATE player_stats SET mines_games=mines_games+1 WHERE user_id=?", (m.from_user.id,))
-        return
-    elif game == "crash":
-        p = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (m.from_user.id,))
-        if not p or p["crystals"] < bet:
-            await m.answer("Недостаточно dlcoin.")
-            return
-        if m.from_user.id in ACTIVE_CRASH:
-            await m.answer("У тебя уже активна игра в краш.")
-            return
-        db.execute_transaction([("UPDATE players SET crystals=crystals-? WHERE user_id=?", (bet, m.from_user.id))])
-        crash_game = start_crash_game(m.from_user.id, bet)
-        sent = await m.answer(generate_crash_display(crash_game), reply_markup=get_crash_keyboard(crash_game), parse_mode=ParseMode.HTML)
-        crash_game.message_id = sent.message_id
-        crash_game.chat_id = sent.chat.id
-        ACTIVE_CRASH[m.from_user.id] = crash_game
-        crash_game.task = asyncio.create_task(crash_tick_loop(crash_game, bot))
-        db.execute("UPDATE player_stats SET crash_games=crash_games+1 WHERE user_id=?", (m.from_user.id,))
-        return
-    else:
-        await m.answer("❌ Неизвестная игра.")
-        return
-    if err:
-        await m.answer(err)
-        return
-    balance = db.fetch_one("SELECT crystals FROM players WHERE user_id=?", (m.from_user.id,))
-    await m.answer(f"{result}\n\n{E_DLCOIN} Баланс: <b>{format_number(balance['crystals'])}</b> dlcoin")
-    if not won:
-        await _handle_casino_loss(m.from_user.id, bot, f"Ты проиграл <b>{bet}</b> {E_DLCOIN}.\n\n")
-
-
-# ============================================================================
-# ДОНАТ
-# ============================================================================
-
-async def send_donation_invoice(bot: Bot, user_id: int, stars: int, title: str, description: str = "") -> bool:
-    provider_token = Config.PROVIDER_TOKEN or ""
-    try:
-        await bot.send_invoice(
-            chat_id=user_id, title=f"{E_DONATE} {title}",
-            description=description or "Спасибо за поддержку проекта! 💎",
-            payload=f"donation_{user_id}_{int(time.time())}_{stars}",
-            provider_token=provider_token, currency="XTR",
-            prices=[LabeledPrice(label=title, amount=stars)],
-        )
-        return True
-    except Exception as e:
-        logging.error(f"Donation invoice error: {e}")
-        return False
-
-
-async def offer_donation(bot: Bot, user_id: int, context: str = "") -> None:
-    p = db.fetch_one("SELECT consecutive_losses FROM players WHERE user_id=?", (user_id,))
-    if not p:
-        return
-    if p["consecutive_losses"] < Config.DONATION_AFTER_LOSSES:
-        return
-    db.execute("UPDATE players SET consecutive_losses=0 WHERE user_id=?", (user_id,))
-    text = f"{E_DONATE} <b>ПОДДЕРЖИ ПРОЕКТ!</b>\n\n{context}Тебе не везёт? Купи dlcoin и испытай удачу снова!\n\n💝 Нажми кнопку <b>«💝 Донат»</b> в меню.\n💰 Курс: 1 ⭐ = {Config.DLCOIN_PER_STAR} dlcoin"
-    try:
-        await bot.send_message(user_id, text, parse_mode=ParseMode.HTML)
-    except Exception as e:
-        logging.error(f"Failed to offer donation: {e}")
-
 
 @router.callback_query(F.data == "donate:menu")
 async def cb_donate_menu(cb: CallbackQuery) -> None:
@@ -5070,7 +4157,15 @@ async def cb_donate_menu(cb: CallbackQuery) -> None:
 @router.callback_query(F.data == "donate:buy_dlcoin")
 async def cb_donate_buy_dlcoin(cb: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(DonateState.waiting_for_dlcoin_amount)
-    text = f"💰 <b>ПОКУПКА DLCOIN</b>\n\n📊 <b>Курс:</b> 1 ⭐ = {Config.DLCOIN_PER_STAR} dlcoin\n\n✏️ <b>Введи сумму dlcoin, которую хочешь купить:</b>\n\n📦 Минимум: {Config.MIN_DONATE_DLCOIN} dlcoin ({Config.MIN_DONATE_DLCOIN // Config.DLCOIN_PER_STAR}⭐)\n📦 Максимум: {format_number(Config.MAX_DONATE_DLCOIN)} dlcoin\n\n<i>Или отправь <code>отмена</code> чтобы вернуться.</i>"
+    text = (
+        f"💰 <b>ПОКУПКА DLCOIN</b>\n\n"
+        f"📊 <b>Курс:</b> 1 ⭐ = {Config.DLCOIN_PER_STAR} dlcoin\n"
+        f"<i>(= 1 × ежедневный бонус {Config.DAILY_BONUS})</i>\n\n"
+        f"✏️ <b>Введи сумму dlcoin, которую хочешь купить:</b>\n\n"
+        f"📦 Минимум: {Config.MIN_DONATE_DLCOIN} dlcoin ({Config.MIN_DONATE_DLCOIN // Config.DLCOIN_PER_STAR}⭐)\n"
+        f"📦 Максимум: {Config.MAX_DONATE_DLCOIN} dlcoin\n\n"
+        f"<i>Или отправь <code>отмена</code> чтобы вернуться.</i>"
+    )
     await cb.message.answer(text, parse_mode=ParseMode.HTML)
     await cb.answer()
 
@@ -5082,27 +4177,39 @@ async def handle_donate_amount(m: Message, state: FSMContext, bot: Bot) -> None:
         text, kb = generate_donate_menu(m.from_user.id)
         await m.answer(text, reply_markup=kb)
         return
+    
     try:
         dlcoin_amount = int(m.text.strip())
     except ValueError:
         await m.answer(f"❌ Введи число. Минимум: {Config.MIN_DONATE_DLCOIN} dlcoin")
         return
+    
     if dlcoin_amount < Config.MIN_DONATE_DLCOIN:
         await m.answer(f"❌ Минимум: {Config.MIN_DONATE_DLCOIN} dlcoin ({Config.MIN_DONATE_DLCOIN // Config.DLCOIN_PER_STAR}⭐)")
         return
+    
     if dlcoin_amount > Config.MAX_DONATE_DLCOIN:
-        await m.answer(f"❌ Максимум: {format_number(Config.MAX_DONATE_DLCOIN)} dlcoin")
+        await m.answer(f"❌ Максимум: {Config.MAX_DONATE_DLCOIN} dlcoin")
         return
+    
     stars_needed = (dlcoin_amount + Config.DLCOIN_PER_STAR - 1) // Config.DLCOIN_PER_STAR
+    
     await state.clear()
+    
     provider_token = Config.PROVIDER_TOKEN or ""
     try:
         await bot.send_invoice(
             chat_id=m.from_user.id,
             title=f"{E_DLCOIN} Покупка {format_number(dlcoin_amount)} dlcoin",
-            description=f"💰 Курс: 1 ⭐ = {Config.DLCOIN_PER_STAR} dlcoin\n📦 Ты получишь: {format_number(dlcoin_amount)} dlcoin\n💳 К оплате: {stars_needed} ⭐\n\n❤️ Спасибо за поддержку!",
+            description=(
+                f"💰 Курс: 1 ⭐ = {Config.DLCOIN_PER_STAR} dlcoin\n"
+                f"📦 Ты получишь: {format_number(dlcoin_amount)} dlcoin\n"
+                f"💳 К оплате: {stars_needed} ⭐\n\n"
+                f"❤️ Спасибо за поддержку проекта!"
+            ),
             payload=f"dlcoin_{m.from_user.id}_{dlcoin_amount}_{int(time.time())}",
-            provider_token=provider_token, currency="XTR",
+            provider_token=provider_token,
+            currency="XTR",
             prices=[LabeledPrice(label=f"{format_number(dlcoin_amount)} dlcoin", amount=stars_needed)],
         )
     except Exception as e:
@@ -5127,20 +4234,25 @@ async def cb_donate_set(cb: CallbackQuery, bot: Bot) -> None:
     if not item:
         await cb.answer("Набор не найден.", show_alert=True)
         return
+    
     p = db.fetch_one("SELECT owned_items FROM players WHERE user_id=?", (cb.from_user.id,))
     if p:
         owned = set((safe_row_get(p, "owned_items", "") or "").split(","))
         if item_id in owned:
             await cb.answer("Этот набор уже куплен.", show_alert=True)
             return
+    
     await cb.answer()
+    
     provider_token = Config.PROVIDER_TOKEN or ""
     try:
         await bot.send_invoice(
-            chat_id=cb.from_user.id, title=f"{E_GIFT} {item['name']}",
+            chat_id=cb.from_user.id,
+            title=f"{E_GIFT} {item['name']}",
             description=f"{item['desc']}\n\n💎 Спасибо за поддержку!",
             payload=f"set_{cb.from_user.id}_{item_id}_{int(time.time())}",
-            provider_token=provider_token, currency="XTR",
+            provider_token=provider_token,
+            currency="XTR",
             prices=[LabeledPrice(label=item['name'], amount=item['price_stars'])],
         )
     except Exception as e:
@@ -5169,7 +4281,10 @@ async def process_pre_checkout(pre_checkout_query: PreCheckoutQuery, bot: Bot) -
     except Exception as e:
         logging.error(f"Pre-checkout error: {e}")
         try:
-            await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=False, error_message="Произошла ошибка. Попробуй позже.")
+            await bot.answer_pre_checkout_query(
+                pre_checkout_query.id, ok=False,
+                error_message="Произошла ошибка. Попробуй позже."
+            )
         except Exception:
             pass
 
@@ -5179,6 +4294,7 @@ async def process_successful_payment(m: Message, bot: Bot) -> None:
     payment = m.successful_payment
     stars = payment.total_amount
     payload = payment.payload
+    
     if payload.startswith("dlcoin_"):
         parts = payload.split("_")
         if len(parts) >= 3:
@@ -5188,8 +4304,15 @@ async def process_successful_payment(m: Message, bot: Bot) -> None:
                     ("UPDATE players SET crystals=crystals+?, total_stars_donated=total_stars_donated+?, consecutive_losses=0 WHERE user_id=?",
                      (dlcoin_amount, stars, m.from_user.id)),
                 ])
-                await m.answer(f"{E_GIFT} <b>СПАСИБО ЗА ПОДДЕРЖКУ!</b>\n\n⭐ Оплачено: <b>{stars}</b>\n{E_DLCOIN} Получено: <b>+{format_number(dlcoin_amount)}</b> dlcoin!\n\n❤️ Твоя поддержка помогает развивать бота!")
+                await m.answer(
+                    f"{E_GIFT} <b>СПАСИБО ЗА ПОДДЕРЖКУ!</b>\n\n"
+                    f"⭐ Оплачено: <b>{stars}</b>\n"
+                    f"{E_DLCOIN} Получено: <b>+{format_number(dlcoin_amount)}</b> dlcoin!\n\n"
+                    f"❤️ Твоя поддержка помогает развивать бота!"
+                )
+                logging.info(f"Donation dlcoin: user {m.from_user.id} paid {stars} stars, got {dlcoin_amount} dlcoin")
                 return
+    
     elif payload.startswith("set_"):
         parts = payload.split("_")
         if len(parts) >= 3:
@@ -5200,7 +4323,12 @@ async def process_successful_payment(m: Message, bot: Bot) -> None:
                 owned = set((safe_row_get(p, "owned_items", "") or "").split(","))
                 owned.add(item_id)
                 owned_str = ",".join(filter(None, owned))
-                statements = [("UPDATE players SET owned_items=?, total_stars_donated=total_stars_donated+? WHERE user_id=?", (owned_str, stars, m.from_user.id))]
+                
+                statements = [
+                    ("UPDATE players SET owned_items=?, total_stars_donated=total_stars_donated+? WHERE user_id=?",
+                     (owned_str, stars, m.from_user.id)),
+                ]
+                
                 if item["type"] == "weapon" and "weapon_key" in item:
                     weapon_key = item["weapon_key"]
                     if weapon_key in WEAPONS:
@@ -5211,18 +4339,23 @@ async def process_successful_payment(m: Message, bot: Bot) -> None:
                         if owned_weapons:
                             owned_w = set((owned_weapons["weapons_owned"] or "").split(","))
                             owned_w.add(weapon_key)
-                            statements.append(("UPDATE players SET weapons_owned=? WHERE user_id=?", (",".join(owned_w), m.from_user.id)))
+                            statements.append(("UPDATE players SET weapons_owned=? WHERE user_id=?",
+                                              (",".join(owned_w), m.from_user.id)))
+                
                 if item["type"] == "armor" and "armor_keys" in item:
                     for i, armor_key in enumerate(item["armor_keys"]):
                         if i < len(ZONES):
                             slot = ZONES[i]
-                            statements.append((f"UPDATE players SET armor_{slot}=? WHERE user_id=?", (armor_key, m.from_user.id)))
+                            statements.append((f"UPDATE players SET armor_{slot}=? WHERE user_id=?",
+                                              (armor_key, m.from_user.id)))
                     current_armors = db.fetch_one("SELECT armors_owned FROM players WHERE user_id=?", (m.from_user.id,))
                     if current_armors:
                         owned_a = set((current_armors["armors_owned"] or "").split(","))
                         for armor_key in item["armor_keys"]:
                             owned_a.add(armor_key)
-                        statements.append(("UPDATE players SET armors_owned=? WHERE user_id=?", (",".join(owned_a), m.from_user.id)))
+                        statements.append(("UPDATE players SET armors_owned=? WHERE user_id=?",
+                                          (",".join(owned_a), m.from_user.id)))
+                
                 if item["type"] == "bundle":
                     if "weapon_key" in item and item["weapon_key"] in WEAPONS:
                         weapon_key = item["weapon_key"]
@@ -5233,47 +4366,91 @@ async def process_successful_payment(m: Message, bot: Bot) -> None:
                         if owned_weapons:
                             owned_w = set((owned_weapons["weapons_owned"] or "").split(","))
                             owned_w.add(weapon_key)
-                            statements.append(("UPDATE players SET weapons_owned=? WHERE user_id=?", (",".join(owned_w), m.from_user.id)))
+                            statements.append(("UPDATE players SET weapons_owned=? WHERE user_id=?",
+                                              (",".join(owned_w), m.from_user.id)))
                     if "armor_keys" in item:
                         for i, armor_key in enumerate(item["armor_keys"]):
                             if i < len(ZONES):
                                 slot = ZONES[i]
-                                statements.append((f"UPDATE players SET armor_{slot}=? WHERE user_id=?", (armor_key, m.from_user.id)))
+                                statements.append((f"UPDATE players SET armor_{slot}=? WHERE user_id=?",
+                                                  (armor_key, m.from_user.id)))
                         current_armors = db.fetch_one("SELECT armors_owned FROM players WHERE user_id=?", (m.from_user.id,))
                         if current_armors:
                             owned_a = set((current_armors["armors_owned"] or "").split(","))
                             for armor_key in item["armor_keys"]:
                                 owned_a.add(armor_key)
-                            statements.append(("UPDATE players SET armors_owned=? WHERE user_id=?", (",".join(owned_a), m.from_user.id)))
+                            statements.append(("UPDATE players SET armors_owned=? WHERE user_id=?",
+                                              (",".join(owned_a), m.from_user.id)))
+                
                 if item.get("dlcoin_bonus", 0) > 0:
-                    statements.append(("UPDATE players SET crystals=crystals+? WHERE user_id=?", (item["dlcoin_bonus"], m.from_user.id)))
+                    statements.append(("UPDATE players SET crystals=crystals+? WHERE user_id=?",
+                                      (item["dlcoin_bonus"], m.from_user.id)))
+                
                 db.execute_transaction(statements)
-                bonus_text = f"\n{E_DLCOIN} Бонус: <b>+{format_number(item['dlcoin_bonus'])}</b> dlcoin!" if item["dlcoin_bonus"] > 0 else ""
-                await m.answer(f"{E_GIFT} <b>НАБОР ПОЛУЧЕН!</b>\n\n{item['name']}\n{item['desc']}{bonus_text}\n\n⭐ Оплачено: <b>{stars}</b> Stars\n❤️ Спасибо за поддержку!")
+                
+                bonus_text = ""
+                if item.get("dlcoin_bonus", 0) > 0:
+                    bonus_text = f"\n{E_DLCOIN} Бонус: <b>+{format_number(item['dlcoin_bonus'])}</b> dlcoin!"
+                
+                await m.answer(
+                    f"{E_GIFT} <b>НАБОР ПОЛУЧЕН!</b>\n\n"
+                    f"{item['name']}\n"
+                    f"{item['desc']}{bonus_text}\n\n"
+                    f"⭐ Оплачено: <b>{stars}</b> Stars\n"
+                    f"❤️ Спасибо за поддержку!"
+                )
+                logging.info(f"Donation set: user {m.from_user.id} bought {item_id} for {stars} stars")
                 return
 
 
+async def offer_donation(bot: Bot, user_id: int, context: str = "") -> None:
+    p = db.fetch_one("SELECT consecutive_losses FROM players WHERE user_id=?", (user_id,))
+    if not p:
+        return
+    if p["consecutive_losses"] < Config.DONATION_AFTER_LOSSES:
+        return
+    db.execute("UPDATE players SET consecutive_losses=0 WHERE user_id=?", (user_id,))
+    
+    text = (
+        f"{E_DONATE} <b>ПОДДЕРЖИ ПРОЕКТ!</b>\n\n"
+        f"{context}"
+        f"Тебе не везёт? Купи dlcoin и испытай удачу снова!\n\n"
+        f"💝 Нажми кнопку <b>«💝 Донат»</b> в меню, чтобы купить dlcoin за Stars.\n"
+        f"💰 Курс: 1 ⭐ = {Config.DLCOIN_PER_STAR} dlcoin"
+    )
+    
+    try:
+        await bot.send_message(user_id, text, parse_mode=ParseMode.HTML)
+    except Exception as e:
+        logging.error(f"Failed to offer donation: {e}")
+
+
 # ============================================================================
-# ЛОГИКА ДУЭЛЕЙ
+# 🔧 ЛОГИКА ДУЭЛЕЙ — ИСПРАВЛЕНА ЛОГИКА ПОБЕДЫ
 # ============================================================================
 
-def initiate_duel(a_id: int, b_id: int, is_boss: bool = False, boss_key: Optional[str] = None, reward_mult: int = 1) -> Optional[Duel]:
+def initiate_duel(a_id: int, b_id: int, is_boss: bool = False, boss_key: Optional[str] = None,
+                  reward_mult: int = 1) -> Optional[Duel]:
     a_row = db.fetch_one("SELECT * FROM players WHERE user_id=?", (a_id,))
     if not a_row:
         return None
     fa = create_fighter_from_db(a_row)
     if is_boss and boss_key and boss_key in BOSSES:
         boss_data = BOSSES[boss_key]
-        fb = Fighter(name=boss_data["name"], max_hp=boss_data["hp"], hp=boss_data["hp"],
-                     weapon=boss_data["weapon"], armor_slots=boss_data["armor_keys"])
+        fb = Fighter(
+            name=boss_data["name"], max_hp=boss_data["hp"], hp=boss_data["hp"],
+            weapon=boss_data["weapon"], armor_slots=boss_data["armor_keys"],
+        )
     else:
         b_row = db.fetch_one("SELECT * FROM players WHERE user_id=?", (b_id,))
         if not b_row:
             return None
         fb = create_fighter_from_db(b_row)
-    duel = Duel(a_id=a_id, b_id=b_id, a=fa, b=fb,
-                attacker_is_a=random.random() < 0.5,
-                is_boss=is_boss, boss_key=boss_key, reward_mult=reward_mult)
+    duel = Duel(
+        a_id=a_id, b_id=b_id, a=fa, b=fb,
+        attacker_is_a=random.random() < 0.5,
+        is_boss=is_boss, boss_key=boss_key, reward_mult=reward_mult,
+    )
     first_attacker = fa.name if duel.attacker_is_a else fb.name
     prefix = f"{E_BOSS} <b>БОСС</b> " if is_boss else ""
     duel.add_log(f"{prefix}Бой начался! Первым атакует <b>{first_attacker}</b>.")
@@ -5297,7 +4474,10 @@ async def initiate_duel_message(aid: int, bid: int, m: Message, bot: Bot, is_bos
         return
     role = duel.get_state_for(aid)
     if role == "attacker":
-        await m.answer(generate_duel_status_text(duel, aid, timer_left=Config.TURN_TIMEOUT), reply_markup=get_attack_variant_kb(aid))
+        await m.answer(
+            generate_duel_status_text(duel, aid, timer_left=Config.TURN_TIMEOUT),
+            reply_markup=get_attack_variant_kb(aid)
+        )
         start_duel_timer(duel, aid, "attacker", bot)
     else:
         atk_id = duel.get_attacker_id()
@@ -5305,17 +4485,26 @@ async def initiate_duel_message(aid: int, bid: int, m: Message, bot: Bot, is_bos
             variant_idx = bot_decide_attack_variant(duel.get_attacker())
             duel.chosen_variant_idx = variant_idx
             duel.atk_zone = bot_decide_attack_zone(duel.get_attacker(), duel.get_defender())
-            await m.answer(generate_duel_status_text(duel, aid, extra="⚔️ Соперник уже выбрал удар.", timer_left=Config.TURN_TIMEOUT), reply_markup=get_defend_zone_kb())
+            await m.answer(
+                generate_duel_status_text(duel, aid, extra="⚔️ Соперник уже выбрал удар.",
+                                          timer_left=Config.TURN_TIMEOUT),
+                reply_markup=get_defend_zone_kb()
+            )
             start_duel_timer(duel, aid, "defender", bot)
         else:
-            await m.answer(generate_duel_status_text(duel, aid, extra="⏳ Соперник выбирает удар…"),
-                          reply_markup=build_vertical_keyboard_with_styles([(f"{E_REFRESH} Обновить", "duel:refresh", "primary")]))
+            await m.answer(
+                generate_duel_status_text(duel, aid, extra="⏳ Соперник выбирает удар…"),
+                reply_markup=build_vertical_keyboard_with_styles(
+                    [(f"{E_REFRESH} Обновить", "duel:refresh", "primary")])
+            )
     if bid > 0 and not is_boss:
         attacker_name = db.fetch_one("SELECT name FROM players WHERE user_id=?", (aid,))["name"]
         notify_player(bid, f"{E_GLOVE} <b>{esc(attacker_name)}</b> кинул тебе перчатку!")
 
 
-async def process_duel_round(duel: Duel, bot: Bot, cb: Optional[CallbackQuery], atk_zone: str, def_zone: Optional[str]) -> None:
+# 🔧 ИСПРАВЛЕНО: корректная логика победы
+async def process_duel_round(duel: Duel, bot: Bot, cb: Optional[CallbackQuery], atk_zone: str,
+                              def_zone: Optional[str]) -> None:
     if duel.finished:
         return
     stop_duel_timer(duel)
@@ -5327,13 +4516,14 @@ async def process_duel_round(duel: Duel, bot: Bot, cb: Optional[CallbackQuery], 
         duel.add_log(f"🛡 {defender.name} → {ZONE_INFO[def_zone]['emoji']} {ZONE_INFO[def_zone]['name']}")
     process_dots(attacker, duel.log)
     if not attacker.is_alive():
-        # 🔧 Атакующий умер — защитник (defender) выиграл
+        # 🔧 ИСПРАВЛЕНО: если attacker умер, значит defender победил
+        # defender — это duel.b если attacker_is_a=True, иначе duel.a
         winner_is_a = (defender is duel.a)
         await finalize_duel(duel, winner_is_a=winner_is_a, bot=bot)
         return
     execute_attack_phase(attacker, defender, atk_zone, def_zone, duel.chosen_variant_idx, duel.log)
     if not defender.is_alive():
-        # 🔧 Защитник умер — атакующий (attacker) выиграл
+        # 🔧 ИСПРАВЛЕНО: если defender умер, значит attacker победил
         winner_is_a = (attacker is duel.a)
         await finalize_duel(duel, winner_is_a=winner_is_a, bot=bot)
         return
@@ -5355,7 +4545,12 @@ async def start_next_duel_round(duel: Duel, bot: Bot) -> None:
     atk_id = duel.get_attacker_id()
     def_id = duel.get_defender_id()
     if atk_id > 0:
-        await bot.send_message(atk_id, generate_duel_status_text(duel, atk_id, extra="🎯 Твой ход — выбери вариант атаки.", timer_left=Config.TURN_TIMEOUT), reply_markup=get_attack_variant_kb(atk_id))
+        await bot.send_message(
+            atk_id,
+            generate_duel_status_text(duel, atk_id, extra="🎯 Твой ход — выбери вариант атаки.",
+                                      timer_left=Config.TURN_TIMEOUT),
+            reply_markup=get_attack_variant_kb(atk_id)
+        )
         start_duel_timer(duel, atk_id, "attacker", bot)
     else:
         variant_idx = bot_decide_attack_variant(duel.get_attacker())
@@ -5365,7 +4560,13 @@ async def start_next_duel_round(duel: Duel, bot: Bot) -> None:
         variant_name = weapon_data["variants"][variant_idx].name
         duel.add_log(f"⚔️ {duel.get_attacker().name} использует [{variant_name}]")
         if def_id > 0:
-            await bot.send_message(def_id, generate_duel_status_text(duel, def_id, extra=f"{E_SHIELD} Соперник атакует — выбери зону защиты.", timer_left=Config.TURN_TIMEOUT), reply_markup=get_defend_zone_kb())
+            await bot.send_message(
+                def_id,
+                generate_duel_status_text(duel, def_id,
+                                          extra=f"{E_SHIELD} Соперник атакует — выбери зону защиты.",
+                                          timer_left=Config.TURN_TIMEOUT),
+                reply_markup=get_defend_zone_kb()
+            )
             start_duel_timer(duel, def_id, "defender", bot)
 
 
@@ -5379,12 +4580,19 @@ async def finalize_duel(duel: Duel, winner_is_a: bool, bot: Bot, reason: str = "
         return
     mult = duel.reward_mult if duel.is_boss else 1
     if winner_is_a:
-        db.execute("UPDATE players SET wins=wins+1, total_duels=total_duels+1, consecutive_losses=0 WHERE user_id=?", (aid,))
+        db.execute("UPDATE players SET wins=wins+1, total_duels=total_duels+1, consecutive_losses=0 WHERE user_id=?",
+                   (aid,))
         current_wins = db.fetch_one("SELECT wins FROM players WHERE user_id=?", (aid,))["wins"]
         prize = ARENAS[determine_arena(current_wins)]["prize"] * mult
-        db.execute("UPDATE players SET crystals=crystals+?, total_crystals_earned=total_crystals_earned+? WHERE user_id=?", (prize, prize, aid))
+        db.execute("UPDATE players SET crystals=crystals+?, total_crystals_earned=total_crystals_earned+? WHERE user_id=?",
+                   (prize, prize, aid))
         if bid and bid > 0:
-            db.execute("UPDATE players SET losses=losses+1, total_duels=total_duels+1, wins=CASE WHEN wins>0 THEN wins-1 ELSE 0 END, consecutive_losses=consecutive_losses+1 WHERE user_id=?", (bid,))
+            db.execute(
+                "UPDATE players SET losses=losses+1, total_duels=total_duels+1, "
+                "wins=CASE WHEN wins>0 THEN wins-1 ELSE 0 END, "
+                "consecutive_losses=consecutive_losses+1 WHERE user_id=?",
+                (bid,)
+            )
             a_name = a_row["name"]
             notify_player(bid, f"{E_SKULL} <b>{esc(a_name)}</b> одолел тебя. −1 {E_TROPHY}.")
         result_line = f"{E_TROPHY} <b>ТЫ ПОБЕДИЛ!</b>  +1 {E_TROPHY}  ·  +{prize} {E_DLCOIN}"
@@ -5392,21 +4600,36 @@ async def finalize_duel(duel: Duel, winner_is_a: bool, bot: Bot, reason: str = "
             db.execute("UPDATE player_stats SET boss_kills=boss_kills+1 WHERE user_id=?", (aid,))
     else:
         if bid and bid > 0:
-            db.execute("UPDATE players SET wins=wins+1, total_duels=total_duels+1, consecutive_losses=0 WHERE user_id=?", (bid,))
+            db.execute("UPDATE players SET wins=wins+1, total_duels=total_duels+1, consecutive_losses=0 WHERE user_id=?",
+                       (bid,))
             current_wins_b = db.fetch_one("SELECT wins FROM players WHERE user_id=?", (bid,))["wins"]
             prize_b = ARENAS[determine_arena(current_wins_b)]["prize"] * mult
-            db.execute("UPDATE players SET crystals=crystals+?, total_crystals_earned=total_crystals_earned+? WHERE user_id=?", (prize_b, prize_b, bid))
+            db.execute("UPDATE players SET crystals=crystals+?, total_crystals_earned=total_crystals_earned+? WHERE user_id=?",
+                       (prize_b, prize_b, bid))
             a_name = a_row["name"]
             notify_player(bid, f"{E_TROPHY} <b>{esc(a_name)}</b> проиграл тебе! +1 {E_TROPHY}, +{prize_b} {E_DLCOIN}")
             if duel.is_boss:
                 db.execute("UPDATE player_stats SET boss_kills=boss_kills+1 WHERE user_id=?", (bid,))
-        db.execute("UPDATE players SET losses=losses+1, total_duels=total_duels+1, wins=CASE WHEN wins>0 THEN wins-1 ELSE 0 END, consecutive_losses=consecutive_losses+1 WHERE user_id=?", (aid,))
+        db.execute(
+            "UPDATE players SET losses=losses+1, total_duels=total_duels+1, "
+            "wins=CASE WHEN wins>0 THEN wins-1 ELSE 0 END, "
+            "consecutive_losses=consecutive_losses+1 WHERE user_id=?",
+            (aid,)
+        )
         result_line = f"{E_SKULL} <b>ТЫ ПРОИГРАЛ.</b>  −1 {E_TROPHY}  ·  без награды"
     terminate_duel(duel)
     reason_line = f"\n⏱ Соперник не успел за {Config.TURN_TIMEOUT} сек." if reason == "timeout" else ""
     new_a = db.fetch_one("SELECT * FROM players WHERE user_id=?", (aid,))
     a_arena = ARENAS[determine_arena(new_a["wins"])]
-    text = f"╔══════════════════════════╗\n        ⚔️ <b>ИТОГ БОЯ</b>\n╚══════════════════════════╝\n\n{result_line}\n\n{E_TROPHY} Кубки: <b>{new_a['wins']}</b>\n{E_SKULL} Поражения: <b>{new_a['losses']}</b>\n{E_DLCOIN} Баланс: <b>{format_number(new_a['crystals'])}</b> dlcoin\n📍 {a_arena['emoji']} {a_arena['name']}{reason_line}\n\nВыбери действие:"
+    text = (
+        f"╔══════════════════════════╗\n        ⚔️ <b>ИТОГ БОЯ</b>\n╚══════════════════════════╝\n\n"
+        f"{result_line}\n\n"
+        f"{E_TROPHY} Кубки: <b>{new_a['wins']}</b>\n"
+        f"{E_SKULL} Поражения: <b>{new_a['losses']}</b>\n"
+        f"{E_DLCOIN} Баланс: <b>{format_number(new_a['crystals'])}</b> dlcoin\n"
+        f"📍 {a_arena['emoji']} {a_arena['name']}"
+        f"{reason_line}\n\nВыбери действие:"
+    )
     try:
         await bot.send_message(aid, text, reply_markup=get_finish_duel_kb())
     except Exception as e:
@@ -5416,7 +4639,15 @@ async def finalize_duel(duel: Duel, winner_is_a: bool, bot: Bot, reason: str = "
         if new_b:
             b_arena = ARENAS[determine_arena(new_b["wins"])]
             res_b = f"{E_SKULL} <b>ТЫ ПРОИГРАЛ.</b>  −1 {E_TROPHY}" if winner_is_a else f"{E_TROPHY} <b>ТЫ ПОБЕДИЛ!</b>  +1 {E_TROPHY}"
-            text_b = f"╔══════════════════════════╗\n        ⚔️ <b>ИТОГ БОЯ</b>\n╚══════════════════════════╝\n\n{res_b}\n\n{E_TROPHY} Кубки: <b>{new_b['wins']}</b>\n{E_SKULL} Поражения: <b>{new_b['losses']}</b>\n{E_DLCOIN} Баланс: <b>{format_number(new_b['crystals'])}</b> dlcoin\n📍 {b_arena['emoji']} {b_arena['name']}{reason_line}\n\nВыбери действие:"
+            text_b = (
+                f"╔══════════════════════════╗\n        ⚔️ <b>ИТОГ БОЯ</b>\n╚══════════════════════════╝\n\n"
+                f"{res_b}\n\n"
+                f"{E_TROPHY} Кубки: <b>{new_b['wins']}</b>\n"
+                f"{E_SKULL} Поражения: <b>{new_b['losses']}</b>\n"
+                f"{E_DLCOIN} Баланс: <b>{format_number(new_b['crystals'])}</b> dlcoin\n"
+                f"📍 {b_arena['emoji']} {b_arena['name']}"
+                f"{reason_line}\n\nВыбери действие:"
+            )
             try:
                 await bot.send_message(bid, text_b, reply_markup=get_finish_duel_kb())
             except Exception as e:
@@ -5458,19 +4689,28 @@ async def cb_arena_boss_fight(cb: CallbackQuery, bot: Bot) -> None:
     if bkey not in BOSSES or p["wins"] < BOSSES[bkey]["min_wins"]:
         await cb.answer(f"Нужно {BOSSES[bkey]['min_wins']} {E_TROPHY} для этого босса.", show_alert=True)
         return
-    duel = initiate_duel(cb.from_user.id, -1, is_boss=True, boss_key=bkey, reward_mult=BOSSES[bkey]["reward_mult"])
+    duel = initiate_duel(cb.from_user.id, -1, is_boss=True, boss_key=bkey,
+                         reward_mult=BOSSES[bkey]["reward_mult"])
     if not duel:
         await cb.answer("Ошибка запуска боя.", show_alert=True)
         return
     role = duel.get_state_for(cb.from_user.id)
     if role == "attacker":
-        await safe_edit_message(cb, generate_duel_status_text(duel, cb.from_user.id, timer_left=Config.TURN_TIMEOUT), get_attack_variant_kb(cb.from_user.id))
+        await safe_edit_message(cb,
+                                generate_duel_status_text(duel, cb.from_user.id,
+                                                          timer_left=Config.TURN_TIMEOUT),
+                                get_attack_variant_kb(cb.from_user.id))
         start_duel_timer(duel, cb.from_user.id, "attacker", bot)
     else:
         variant_idx = bot_decide_attack_variant(duel.get_attacker())
         duel.chosen_variant_idx = variant_idx
         duel.atk_zone = bot_decide_attack_zone(duel.get_attacker(), duel.get_defender())
-        await safe_edit_message(cb, generate_duel_status_text(duel, cb.from_user.id, extra="⚔️ Босс уже выбрал удар.", timer_left=Config.TURN_TIMEOUT), get_defend_zone_kb())
+        await safe_edit_message(
+            cb,
+            generate_duel_status_text(duel, cb.from_user.id, extra="⚔️ Босс уже выбрал удар.",
+                                      timer_left=Config.TURN_TIMEOUT),
+            get_defend_zone_kb()
+        )
         start_duel_timer(duel, cb.from_user.id, "defender", bot)
     await cb.answer(f"Бой с {BOSSES[bkey]['name']} начался!")
 
@@ -5548,10 +4788,14 @@ async def cb_duel_profile(cb: CallbackQuery) -> None:
     if not row:
         await cb.answer("Игрок не найден.", show_alert=True)
         return
-    await safe_edit_message(cb, generate_profile_text(row), build_vertical_keyboard_with_styles([
-        (f"{E_BACK} Назад", "arena:list", "primary"),
-        (f"⚔️ Вызвать на бой", f"duel:pick:{tid}", "danger"),
-    ]))
+    await safe_edit_message(
+        cb,
+        generate_profile_text(row),
+        build_vertical_keyboard_with_styles([
+            (f"{E_BACK} Назад", "arena:list", "primary"),
+            (f"⚔️ Вызвать на бой", f"duel:pick:{tid}", "danger"),
+        ])
+    )
     await cb.answer()
 
 
@@ -5600,7 +4844,12 @@ async def cb_duel_variant(cb: CallbackQuery, bot: Bot) -> None:
         await cb.answer("Неверный вариант атаки.", show_alert=True)
         return
     duel.chosen_variant_idx = variant_idx
-    await safe_edit_message(cb, generate_duel_status_text(duel, cb.from_user.id, extra="🎯 Теперь выбери зону удара.", timer_left=Config.TURN_TIMEOUT), get_attack_zone_kb())
+    await safe_edit_message(
+        cb,
+        generate_duel_status_text(duel, cb.from_user.id, extra="🎯 Теперь выбери зону удара.",
+                                  timer_left=Config.TURN_TIMEOUT),
+        get_attack_zone_kb()
+    )
     await cb.answer("Вариант атаки выбран.")
 
 
@@ -5637,10 +4886,18 @@ async def cb_duel_attack(cb: CallbackQuery, bot: Bot) -> None:
             duel.bot_block_streak = 0
         await process_duel_round(duel, bot, cb=cb, atk_zone=duel.atk_zone, def_zone=duel.def_zone)
     else:
-        await bot.send_message(def_id, generate_duel_status_text(duel, def_id, extra=f"⚔️ {duel.get_attacker().name} выбрал зону удара!", timer_left=Config.TURN_TIMEOUT), reply_markup=get_defend_zone_kb())
+        await bot.send_message(
+            def_id,
+            generate_duel_status_text(duel, def_id, extra=f"⚔️ {duel.get_attacker().name} выбрал зону удара!",
+                                      timer_left=Config.TURN_TIMEOUT),
+            reply_markup=get_defend_zone_kb()
+        )
         start_duel_timer(duel, def_id, "defender", bot)
-        await safe_edit_message(cb, generate_duel_status_text(duel, cb.from_user.id, extra="⏳ Ждём защиту соперника…"),
-                               build_vertical_keyboard_with_styles([(f"{E_REFRESH} Обновить", "duel:refresh", "primary")]))
+        await safe_edit_message(
+            cb,
+            generate_duel_status_text(duel, cb.from_user.id, extra="⏳ Ждём защиту соперника…"),
+            build_vertical_keyboard_with_styles([(f"{E_REFRESH} Обновить", "duel:refresh", "primary")])
+        )
     await cb.answer("Зона удара выбрана.")
 
 
@@ -5671,15 +4928,34 @@ async def cb_duel_refresh(cb: CallbackQuery) -> None:
     time_left = max(0, int(round(duel.timer_deadline - time.time()))) if duel.timer_for == cb.from_user.id else None
     if role == "attacker":
         if duel.chosen_variant_idx is None:
-            await safe_edit_message(cb, generate_duel_status_text(duel, cb.from_user.id, extra="🎯 Выбери вариант атаки.", timer_left=time_left), get_attack_variant_kb(cb.from_user.id))
+            await safe_edit_message(
+                cb,
+                generate_duel_status_text(duel, cb.from_user.id, extra="🎯 Выбери вариант атаки.",
+                                          timer_left=time_left),
+                get_attack_variant_kb(cb.from_user.id)
+            )
         else:
-            await safe_edit_message(cb, generate_duel_status_text(duel, cb.from_user.id, extra="🎯 Теперь выбери зону удара.", timer_left=time_left), get_attack_zone_kb())
+            await safe_edit_message(
+                cb,
+                generate_duel_status_text(duel, cb.from_user.id, extra="🎯 Теперь выбери зону удара.",
+                                          timer_left=time_left),
+                get_attack_zone_kb()
+            )
     else:
         if not duel.atk_zone:
-            await safe_edit_message(cb, generate_duel_status_text(duel, cb.from_user.id, extra="⏳ Соперник ещё выбирает удар…"),
-                                   build_vertical_keyboard_with_styles([(f"{E_REFRESH} Обновить", "duel:refresh", "primary")]))
+            await safe_edit_message(
+                cb,
+                generate_duel_status_text(duel, cb.from_user.id, extra="⏳ Соперник ещё выбирает удар…"),
+                build_vertical_keyboard_with_styles([(f"{E_REFRESH} Обновить", "duel:refresh", "primary")])
+            )
         else:
-            await safe_edit_message(cb, generate_duel_status_text(duel, cb.from_user.id, extra=f"{E_SHIELD} Выбери зону защиты.", timer_left=time_left), get_defend_zone_kb())
+            await safe_edit_message(
+                cb,
+                generate_duel_status_text(duel, cb.from_user.id,
+                                          extra=f"{E_SHIELD} Выбери зону защиты.",
+                                          timer_left=time_left),
+                get_defend_zone_kb()
+            )
     await cb.answer("Обновлено")
 
 
@@ -5723,12 +4999,15 @@ async def cb_buy_weapon(cb: CallbackQuery) -> None:
         db.execute("UPDATE players SET weapon=? WHERE user_id=?", (key, cb.from_user.id))
         toast = f"Надето: {item['name']}"
     elif p["crystals"] >= item["price"]:
-        db.execute("UPDATE players SET crystals=crystals-?, weapons_owned=?, weapon=? WHERE user_id=?",
-                   (item["price"], ",".join(owned | {key}), key, cb.from_user.id))
+        db.execute(
+            "UPDATE players SET crystals=crystals-?, weapons_owned=?, weapon=? WHERE user_id=?",
+            (item["price"], ",".join(owned | {key}), key, cb.from_user.id)
+        )
         toast = f"Куплено: {item['name']}"
-        db.execute("UPDATE player_stats SET items_bought=items_bought+1, crystals_spent=crystals_spent+? WHERE user_id=?", (item["price"], cb.from_user.id))
+        db.execute("UPDATE player_stats SET items_bought=items_bought+1, crystals_spent=crystals_spent+? WHERE user_id=?",
+                   (item["price"], cb.from_user.id))
     else:
-        await cb.answer(f"Нужно {format_number(item['price'])}🪙", show_alert=True)
+        await cb.answer(f"Нужно {item['price']}🪙", show_alert=True)
         return
     text, kb = generate_weapon_list(cb.from_user.id)
     await safe_edit_message(cb, text, kb)
@@ -5778,12 +5057,15 @@ async def cb_buy_armor(cb: CallbackQuery) -> None:
         db.execute(f"UPDATE players SET {col}=? WHERE user_id=?", (key, cb.from_user.id))
         toast = f"Надето: {item['name']}"
     elif p["crystals"] >= item["price"]:
-        db.execute(f"UPDATE players SET crystals=crystals-?, armors_owned=?, {col}=? WHERE user_id=?",
-                   (item["price"], ",".join(owned | {key}), key, cb.from_user.id))
+        db.execute(
+            f"UPDATE players SET crystals=crystals-?, armors_owned=?, {col}=? WHERE user_id=?",
+            (item["price"], ",".join(owned | {key}), key, cb.from_user.id)
+        )
         toast = f"Куплено: {item['name']}"
-        db.execute("UPDATE player_stats SET items_bought=items_bought+1, crystals_spent=crystals_spent+? WHERE user_id=?", (item["price"], cb.from_user.id))
+        db.execute("UPDATE player_stats SET items_bought=items_bought+1, crystals_spent=crystals_spent+? WHERE user_id=?",
+                   (item["price"], cb.from_user.id))
     else:
-        await cb.answer(f"Нужно {format_number(item['price'])}🪙", show_alert=True)
+        await cb.answer(f"Нужно {item['price']}🪙", show_alert=True)
         return
     text, kb = generate_armor_slot_list(cb.from_user.id, slot)
     await safe_edit_message(cb, text, kb)
@@ -5837,7 +5119,8 @@ async def duel_find_target_handler(m: Message, state: FSMContext, bot: Bot) -> N
         return
     key = m.text.strip().lstrip("@")
     if key.isdigit():
-        row = db.fetch_one("SELECT user_id FROM players WHERE user_id=? AND banned=0", (safe_int_parse(key, default=0),))
+        row = db.fetch_one("SELECT user_id FROM players WHERE user_id=? AND banned=0",
+                           (safe_int_parse(key, default=0),))
     else:
         row = None
     if not row:
@@ -5854,7 +5137,7 @@ async def duel_find_target_handler(m: Message, state: FSMContext, bot: Bot) -> N
 
 
 # ============================================================================
-# 🔧 FALLBACK — В ГРУППАХ БОТ МОЛЧИТ
+# 🔧 FALLBACK — ИСПРАВЛЕНО: в группах бот молчит
 # ============================================================================
 
 @router.message()
@@ -5862,20 +5145,19 @@ async def fallback_handler(m: Message) -> None:
     if not m.from_user:
         return
     if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (m.from_user.id,)):
-        # 🔧 Только в ЛС предлагаем /start
+        # Только в ЛС предлагаем /start
         if m.chat.type == "private":
             await m.answer("Отправь /start, чтобы создать бойца ⚔️")
-        # 🔧 В группах молчим
         return
     if is_user_banned(m.from_user.id):
         if m.chat.type == "private":
             await m.answer("🚫 Доступ закрыт.")
         return
     db.execute("UPDATE players SET last_active=? WHERE user_id=?", (time.time(), m.from_user.id))
-    # 🔧 Только в ЛС отвечаем на нераспознанные сообщения
+    # Только в ЛС отвечаем на нераспознанные сообщения
     if m.chat.type == "private":
         await m.answer("Пиши <code>help</code> или пользуйся меню внизу 👇", reply_markup=MENU_KB)
-    # 🔧 В группах бот молчит
+    # В группах бот молчит на нераспознанные сообщения
 
 
 # ============================================================================
@@ -5906,18 +5188,21 @@ async def periodic_cleanup() -> None:
             await asyncio.sleep(300)
             cleanup_rp_cooldowns()
             now = time.time()
-            expired_pending = [k for k, v in PENDING_DUELS.items() if now - v.created_at > Config.CHALLENGE_TIMEOUT * 2]
+            expired_pending = [k for k, v in PENDING_DUELS.items()
+                              if now - v.created_at > Config.CHALLENGE_TIMEOUT * 2]
             for k in expired_pending:
                 pending = PENDING_DUELS.pop(k, None)
                 if pending and pending.timeout_task and not pending.timeout_task.done():
                     pending.timeout_task.cancel()
-            finished_duels = [uid for uid, duel in ACTIVE_DUELS.items() if duel.finished]
+            finished_duels = [uid for uid, duel in ACTIVE_DDUELS.items() if duel.finished]
             for uid in finished_duels:
                 ACTIVE_DUELS.pop(uid, None)
-            expired_mines = [uid for uid, g in ACTIVE_MINES.items() if not g.active or now - g.started_at > 600]
+            expired_mines = [uid for uid, g in ACTIVE_MINES.items()
+                            if not g.active or now - g.started_at > 600]
             for uid in expired_mines:
                 ACTIVE_MINES.pop(uid, None)
-            expired_crash = [uid for uid, g in ACTIVE_CRASH.items() if (g.cashed_out or g.crashed)]
+            expired_crash = [uid for uid, g in ACTIVE_CRASH.items()
+                            if (g.cashed_out or g.crashed)]
             for uid in expired_crash:
                 game = ACTIVE_CRASH.pop(uid, None)
                 if game and game.task and not game.task.done():

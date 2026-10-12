@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 ⚔️ АРЕНА ДУЭЛЯНТОВ — v26.0 Final
-Полная реализация. Все ошибки исправлены.
+Полная реализация: боссы, цены ×1.5, медленный краш, чаты, закреп
 """
 
 import asyncio
@@ -15,7 +15,7 @@ import sqlite3
 import time
 import traceback
 from dataclasses import dataclass, field
-from typing import Optional, Tuple, List, Dict, Any, Callable, Set
+from typing import Optional, Tuple, List, Dict, Any, Union, Callable, Set
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
@@ -38,7 +38,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 # ============================================================================
 
 class Config:
-    BOT_TOKEN: str = os.getenv("BOT_TOKEN", "8684125903:AAGlja8nj_r3HCb8aZwubOqJ_MAGDFAWCoc")
+    BOT_TOKEN: str = os.getenv("BOT_TOKEN", "8996813076:AAHVvKjRl0nCScWCgLned92Lx_KhRtpcQ1Q")
     ADMIN_ID: int = int(os.getenv("ADMIN_ID", "5356400377"))
     DB_PATH: str = os.getenv("DB_PATH", "arena_ultimate.db")
     PROVIDER_TOKEN: str = os.getenv("PROVIDER_TOKEN", "")
@@ -62,7 +62,7 @@ class Config:
     MINES_MAX_COUNT: int = 24
     
     CRASH_TICK_INTERVAL: float = 0.1
-    CRASH_GROWTH_RATE: float = 0.2  # 🔧 Медленный рост
+    CRASH_GROWTH_RATE: float = 0.2  # 🔧 Медленный рост (было 0.5)
     CRASH_MAX_MULTIPLIER: float = 100.0
     
     DLCOIN_PER_STAR: int = 100
@@ -136,7 +136,7 @@ E_DONATE = "💝"; E_BOMB = "💣"; E_DAILY = "🎁"
 
 
 # ============================================================================
-# ИГРОВЫЕ ДАННЫЕ (цены × 1.5)
+# ИГРОВЫЕ ДАННЫЕ — ЦЕНЫ × 1.5
 # ============================================================================
 
 ZONES: List[str] = ["head", "torso", "arms", "legs"]
@@ -167,7 +167,7 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
                             AttackVariant("Рассечение", "Кровотечение", 1.1, 0.1, 2, "bleed"),
                             AttackVariant("Тысяча порезов", "3 удара", 1.4, 0.3, 3, "triple")]},
     "whip": {"emoji": "🪢", "name": "Кнут", "base_dmg": 22, "price": 2250,
-             "description": "Гибкое оружие.",
+             "description": "Гибкое оружие дрессировщика.",
              "variants": [AttackVariant("Хлёсткий удар", "Быстрая", 1.0, 0.1, 0, None),
                           AttackVariant("Обвивание", "Замедляет", 1.1, 0.2, 2, "stun"),
                           AttackVariant("Шквал ударов", "Серия", 1.6, 0.15, 3, "triple")]},
@@ -177,7 +177,7 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
                            AttackVariant("Пронзающий выпад", "Игнор 50%", 1.2, 0.5, 2, "pierce"),
                            AttackVariant("Казнь", "Двойной урон", 2.0, 0.0, 4, "exec")]},
     "spear": {"emoji": "🔱", "name": "Копьё", "base_dmg": 34, "price": 9000,
-              "description": "Длинное оружие.",
+              "description": "Длинное оружие копейщика.",
               "variants": [AttackVariant("Колющий удар", "Точный", 1.0, 0.25, 0, None),
                            AttackVariant("Круговой взмах", "По площади", 1.3, 0.15, 2, "triple"),
                            AttackVariant("Пронзание", "Полное пробитие", 1.5, 0.7, 3, "pierce")]},
@@ -187,12 +187,12 @@ WEAPONS: Dict[str, Dict[str, Any]] = {
                               AttackVariant("Двойной выстрел", "Два болта", 1.5, 0.3, 2, "triple"),
                               AttackVariant("Бронебойный болт", "Пробивает всё", 1.4, 0.9, 3, "pierce")]},
     "bow": {"emoji": "🏹", "name": "Лук", "base_dmg": 46, "price": 22500,
-            "description": "Дальнобойное оружие.",
+            "description": "Дальнобойное оружие охотника.",
             "variants": [AttackVariant("Прицельный выстрел", "Стандартная", 1.0, 0.3, 0, None),
                          AttackVariant("Залп", "2 выстрела", 1.6, 0.2, 2, "triple"),
                          AttackVariant("Бронебойная стрела", "Полный игнор", 1.3, 1.0, 3, "pierce")]},
     "wand": {"emoji": "🪄", "name": "Жезл", "base_dmg": 52, "price": 37500,
-             "description": "Магический жезл.",
+             "description": "Магический жезл заклинателя.",
              "variants": [AttackVariant("Искра", "Быстрая", 1.0, 0.35, 0, None),
                           AttackVariant("Молния", "Оглушает", 1.3, 0.45, 2, "stun"),
                           AttackVariant("Цунами огня", "Массовое", 2.0, 0.3, 4, "burn")]},
@@ -536,10 +536,12 @@ class DatabaseManager:
                                   ("title", "''"), ("last_daily_bonus", 0)]:
                 if col not in cols:
                     self._connection.execute(f"ALTER TABLE players ADD COLUMN {col} NOT NULL DEFAULT {default}")
+            
             cols_events = {row[1] for row in self._connection.execute("PRAGMA table_info(chat_events)").fetchall()}
             for col, default in [("message_id", 0), ("chat_id", 0)]:
                 if col not in cols_events:
                     self._connection.execute(f"ALTER TABLE chat_events ADD COLUMN {col} NOT NULL DEFAULT {default}")
+            
             cols_stats = {row[1] for row in self._connection.execute("PRAGMA table_info(player_stats)").fetchall()}
             for col in ["mines_games", "mines_wins", "crash_games", "crash_wins"]:
                 if col not in cols_stats:
@@ -904,6 +906,7 @@ def get_mines_keyboard(game: MinesGame) -> InlineKeyboardMarkup:
                 text = "⬜"; callback = f"mines:cell:{idx}"
             row_buttons.append(InlineKeyboardButton(text=text, callback_data=callback))
         builder.row(*row_buttons)
+    
     if game.active and len(game.opened) > 0:
         builder.row(
             InlineKeyboardButton(text=f"{E_CASHOUT} Забрать {game.current_winnings}🪙",
@@ -918,7 +921,7 @@ def get_mines_keyboard(game: MinesGame) -> InlineKeyboardMarkup:
 
 
 # ============================================================================
-# 🔧 КРАШ — МЕДЛЕННЫЙ
+# 🔧 КРАШ — МЕДЛЕННЫЙ РЕЖИМ
 # ============================================================================
 
 def generate_crash_point() -> float:
@@ -986,6 +989,7 @@ def get_crash_keyboard(game: CrashGame) -> InlineKeyboardMarkup:
     ])
 
 
+# 🔧 Медленный рост множителя (0.2x/сек вместо 0.5)
 async def crash_tick_loop(game: CrashGame, bot: Bot) -> None:
     try:
         last_update = 0.0
@@ -993,6 +997,7 @@ async def crash_tick_loop(game: CrashGame, bot: Bot) -> None:
             await asyncio.sleep(Config.CRASH_TICK_INTERVAL)
             elapsed = time.time() - game.started_at
             game.current_multiplier = round(1.0 + elapsed * Config.CRASH_GROWTH_RATE, 2)
+            
             if game.current_multiplier >= game.crash_point:
                 game.crashed = True
                 game.current_multiplier = game.crash_point
@@ -1002,6 +1007,7 @@ async def crash_tick_loop(game: CrashGame, bot: Bot) -> None:
                 db.execute("UPDATE players SET consecutive_losses=consecutive_losses+1 WHERE user_id=?",
                            (game.user_id,))
                 break
+            
             now = time.time()
             if now - last_update >= 0.5:
                 last_update = now
@@ -1383,7 +1389,7 @@ def format_game_result(title: str, emoji: str, won: bool, bet: int,
 
 
 # ============================================================================
-# КАЗИНО — ИГРЫ
+# КАЗИНО — ВСЕ ИГРЫ
 # ============================================================================
 
 async def play_casino_slots_animated(chat_id: int, bet: int, uid: int, bot: Bot) -> Tuple[Optional[str], Optional[str], bool]:
@@ -1401,13 +1407,15 @@ async def play_casino_slots_animated(chat_id: int, bet: int, uid: int, bot: Bot)
             ("UPDATE players SET crystals=crystals+?, consecutive_losses=0 WHERE user_id=?", (win, uid)),
             ("UPDATE player_stats SET casino_wins=casino_wins+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Слоты", E_SLOT, True, bet, "комбинация 1", "", win), None, True
+        result = format_game_result("Слоты", E_SLOT, True, bet, "комбинация 1", "", win)
+        return result, None, True
     else:
         db.execute_transaction([
             ("UPDATE player_stats SET casino_losses=casino_losses+1 WHERE user_id=?", (uid,)),
             ("UPDATE players SET consecutive_losses=consecutive_losses+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Слоты", E_SLOT, False, bet, "комбинация 1", f"выпало {dice_value}"), None, False
+        result = format_game_result("Слоты", E_SLOT, False, bet, "комбинация 1", f"выпало {dice_value}")
+        return result, None, False
 
 
 async def play_casino_dice_game(chat_id: int, bet: int, uid: int, bot: Bot, mode: str,
@@ -1438,13 +1446,15 @@ async def play_casino_dice_game(chat_id: int, bet: int, uid: int, bot: Bot, mode
             ("UPDATE players SET crystals=crystals+?, consecutive_losses=0 WHERE user_id=?", (payout, uid)),
             ("UPDATE player_stats SET casino_wins=casino_wins+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Кости", E_DICE, True, bet, choice_text, "", payout), None, True
+        result = format_game_result("Кости", E_DICE, True, bet, choice_text, "", payout)
+        return result, None, True
     else:
         db.execute_transaction([
             ("UPDATE player_stats SET casino_losses=casino_losses+1 WHERE user_id=?", (uid,)),
             ("UPDATE players SET consecutive_losses=consecutive_losses+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Кости", E_DICE, False, bet, choice_text, f"выпало {dice_value}"), None, False
+        result = format_game_result("Кости", E_DICE, False, bet, choice_text, f"выпало {dice_value}")
+        return result, None, False
 
 
 async def play_casino_darts_animated(chat_id: int, bet: int, uid: int, bot: Bot,
@@ -1466,14 +1476,16 @@ async def play_casino_darts_animated(chat_id: int, bet: int, uid: int, bot: Bot,
             ("UPDATE players SET crystals=crystals+?, consecutive_losses=0 WHERE user_id=?", (payout, uid)),
             ("UPDATE player_stats SET casino_wins=casino_wins+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Дротик", E_DARTS, True, bet, choice_text, "", payout), None, True
+        result = format_game_result("Дротик", E_DARTS, True, bet, choice_text, "", payout)
+        return result, None, True
     else:
         db.execute_transaction([
             ("UPDATE player_stats SET casino_losses=casino_losses+1 WHERE user_id=?", (uid,)),
             ("UPDATE players SET consecutive_losses=consecutive_losses+1 WHERE user_id=?", (uid,)),
         ])
         result_detail = "попадание" if bet_on_miss else "промах"
-        return format_game_result("Дротик", E_DARTS, False, bet, choice_text, result_detail), None, False
+        result = format_game_result("Дротик", E_DARTS, False, bet, choice_text, result_detail)
+        return result, None, False
 
 
 async def play_casino_basketball_animated(chat_id: int, bet: int, uid: int, bot: Bot,
@@ -1495,14 +1507,16 @@ async def play_casino_basketball_animated(chat_id: int, bet: int, uid: int, bot:
             ("UPDATE players SET crystals=crystals+?, consecutive_losses=0 WHERE user_id=?", (payout, uid)),
             ("UPDATE player_stats SET casino_wins=casino_wins+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Баскетбол", E_BASKET, True, bet, choice_text, "", payout), None, True
+        result = format_game_result("Баскетбол", E_BASKET, True, bet, choice_text, "", payout)
+        return result, None, True
     else:
         db.execute_transaction([
             ("UPDATE player_stats SET casino_losses=casino_losses+1 WHERE user_id=?", (uid,)),
             ("UPDATE players SET consecutive_losses=consecutive_losses+1 WHERE user_id=?", (uid,)),
         ])
         result_detail = "слэм-данк" if bet_on_miss else "мимо"
-        return format_game_result("Баскетбол", E_BASKET, False, bet, choice_text, result_detail), None, False
+        result = format_game_result("Баскетбол", E_BASKET, False, bet, choice_text, result_detail)
+        return result, None, False
 
 
 def play_casino_roulette(uid: int, bet: int, bet_type: str, bet_value: Any = None) -> Tuple[Optional[str], Optional[str], bool]:
@@ -1547,13 +1561,15 @@ def play_casino_roulette(uid: int, bet: int, bet_type: str, bet_value: Any = Non
             ("UPDATE players SET crystals=crystals+?, consecutive_losses=0 WHERE user_id=?", (payout, uid)),
             ("UPDATE player_stats SET casino_wins=casino_wins+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Рулетка", "🎡", True, bet, choice_text, "", payout), None, True
+        result = format_game_result("Рулетка", "🎡", True, bet, choice_text, "", payout)
+        return result, None, True
     else:
         db.execute_transaction([
             ("UPDATE player_stats SET casino_losses=casino_losses+1 WHERE user_id=?", (uid,)),
             ("UPDATE players SET consecutive_losses=consecutive_losses+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Рулетка", "🎡", False, bet, choice_text, f"{color_emoji} {num} ({color_name})"), None, False
+        result = format_game_result("Рулетка", "🎡", False, bet, choice_text, f"{color_emoji} {num} ({color_name})")
+        return result, None, False
 
 
 def play_casino_coin(uid: int, bet: int, choice: str = "heads") -> Tuple[Optional[str], Optional[str], bool]:
@@ -1572,12 +1588,14 @@ def play_casino_coin(uid: int, bet: int, choice: str = "heads") -> Tuple[Optiona
             ("UPDATE players SET crystals=crystals+?, consecutive_losses=0 WHERE user_id=?", (bet * 2, uid)),
             ("UPDATE player_stats SET casino_wins=casino_wins+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Монетка", E_COIN, True, bet, choice_text, "", bet * 2), None, True
+        result_str = format_game_result("Монетка", E_COIN, True, bet, choice_text, "", bet * 2)
+        return result_str, None, True
     db.execute_transaction([
         ("UPDATE player_stats SET casino_losses=casino_losses+1 WHERE user_id=?", (uid,)),
         ("UPDATE players SET consecutive_losses=consecutive_losses+1 WHERE user_id=?", (uid,)),
     ])
-    return format_game_result("Монетка", E_COIN, False, bet, choice_text, f"{result_emoji} {result_text}"), None, False
+    result_str = format_game_result("Монетка", E_COIN, False, bet, choice_text, f"{result_emoji} {result_text}")
+    return result_str, None, False
 
 
 def play_casino_highlow(uid: int, bet: int, choice: str = "high") -> Tuple[Optional[str], Optional[str], bool]:
@@ -1591,7 +1609,8 @@ def play_casino_highlow(uid: int, bet: int, choice: str = "high") -> Tuple[Optio
     choice_text = "больше" if choice == "high" else "меньше"
     if result_num == 50:
         db.execute_transaction([("UPDATE players SET crystals=crystals+? WHERE user_id=?", (bet, uid))])
-        return format_game_result("Больше/Меньше", "📊", False, bet, choice_text, "🤝 ровно 50 (возврат)"), None, False
+        result = format_game_result("Больше/Меньше", "📊", False, bet, choice_text, f"🤝 ровно 50 (возврат)")
+        return result, None, False
     win = (choice == "high" and result_num > 50) or (choice == "low" and result_num < 50)
     if win:
         payout = int(bet * 1.9)
@@ -1599,16 +1618,18 @@ def play_casino_highlow(uid: int, bet: int, choice: str = "high") -> Tuple[Optio
             ("UPDATE players SET crystals=crystals+?, consecutive_losses=0 WHERE user_id=?", (payout, uid)),
             ("UPDATE player_stats SET casino_wins=casino_wins+1 WHERE user_id=?", (uid,)),
         ])
-        return format_game_result("Больше/Меньше", "📊", True, bet, choice_text, "", payout), None, True
+        result = format_game_result("Больше/Меньше", "📊", True, bet, choice_text, "", payout)
+        return result, None, True
     db.execute_transaction([
         ("UPDATE player_stats SET casino_losses=casino_losses+1 WHERE user_id=?", (uid,)),
         ("UPDATE players SET consecutive_losses=consecutive_losses+1 WHERE user_id=?", (uid,)),
     ])
-    return format_game_result("Больше/Меньше", "📊", False, bet, choice_text, f"выпало {result_num}"), None, False
+    result = format_game_result("Больше/Меньше", "📊", False, bet, choice_text, f"выпало {result_num}")
+    return result, None, False
 
 
 # ============================================================================
-# ЧАТОВЫЕ СОБЫТИЯ — С ЗАКРЕПОМ
+# ЧАТОВЫЕ СОБЫТИЯ
 # ============================================================================
 
 def is_admin(uid: int) -> bool:
@@ -1782,21 +1803,25 @@ def activate_promo_code(user_id: int, code: str) -> Tuple[bool, str]:
         return False, f"❌ Промокод <code>{code}</code> истёк."
     if promo["current_uses"] >= promo["max_uses"]:
         return False, f"❌ Промокод <code>{code}</code> исчерпан."
-    already = db.fetch_one("SELECT 1 FROM promo_activations WHERE user_id=? AND code=?", (user_id, code))
+    already = db.fetch_one("SELECT 1 FROM promo_activations WHERE user_id=? AND code=?",
+                           (user_id, code))
     if already:
         return False, f"❌ Ты уже активировал промокод <code>{code}</code>."
     now = time.time()
     if not db.execute_transaction([
-        ("INSERT INTO promo_activations (user_id, code, activated_at) VALUES (?, ?, ?)", (user_id, code, now)),
+        ("INSERT INTO promo_activations (user_id, code, activated_at) VALUES (?, ?, ?)",
+         (user_id, code, now)),
         ("UPDATE promo_codes SET current_uses=current_uses+1 WHERE code=?", (code,)),
     ]):
         return False, "❌ Ошибка активации. Попробуй позже."
     rewards = []
     if promo["reward_crystals"] > 0:
-        db.execute("UPDATE players SET crystals=crystals+? WHERE user_id=?", (promo["reward_crystals"], user_id))
+        db.execute("UPDATE players SET crystals=crystals+? WHERE user_id=?",
+                   (promo["reward_crystals"], user_id))
         rewards.append(f"{E_DLCOIN} +{promo['reward_crystals']} dlcoin")
     if promo["reward_wins"] > 0:
-        db.execute("UPDATE players SET wins=wins+? WHERE user_id=?", (promo["reward_wins"], user_id))
+        db.execute("UPDATE players SET wins=wins+? WHERE user_id=?",
+                   (promo["reward_wins"], user_id))
         rewards.append(f"{E_TROPHY} +{promo['reward_wins']} побед")
     rewards_text = "\n".join(rewards) if rewards else "🎁 Секретный бонус!"
     remaining = promo["max_uses"] - promo["current_uses"] - 1
@@ -1900,7 +1925,7 @@ MENU_KB = ReplyKeyboardMarkup(
 
 
 # ============================================================================
-# ЕЖЕДНЕВНЫЙ БОНУС
+# UI ГЕНЕРАТОРЫ
 # ============================================================================
 
 def can_claim_daily_bonus(user_id: int) -> Tuple[bool, int]:
@@ -1933,10 +1958,6 @@ def claim_daily_bonus(user_id: int) -> Tuple[bool, str]:
         f"<i>💝 Совет: купи dlcoin за Stars — 1⭐ = {Config.DLCOIN_PER_STAR} dlcoin!</i>"
     )
 
-
-# ============================================================================
-# UI ГЕНЕРАТОРЫ
-# ============================================================================
 
 def generate_arena_menu_screen(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]:
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (uid,))
@@ -3568,7 +3589,7 @@ async def cmd_chat_crash(m: Message, bot: Bot) -> None:
 
 
 # ============================================================================
-# 🔧 АДМИН КОМАНДЫ — С ЗАКРЕПОМ
+# 🔧 АДМИН КОМАНДЫ — ИСПРАВЛЕНЫ ДЛЯ ГРУПП
 # ============================================================================
 
 async def _check_admin(m: Message) -> bool:
@@ -3599,12 +3620,11 @@ async def _spawn_event_and_pin(m: Message, bot: Bot, event_type: str, custom_hp:
     event.chat_id = m.chat.id
     db.execute("UPDATE chat_events SET message_id=?, chat_id=? WHERE event_id=?",
                (sent.message_id, m.chat.id, event.event_id))
-    # 🔧 Закрепление в группе
+    # 🔧 Закрепление сообщения в группе
     if m.chat.type in ["group", "supergroup"]:
         try:
             await bot.pin_chat_message(chat_id=m.chat.id, message_id=sent.message_id,
                                        disable_notification=False)
-            logging.info(f"Pinned event message {sent.message_id} in chat {m.chat.id}")
         except Exception as e:
             logging.warning(f"Failed to pin: {e}")
 
@@ -5166,7 +5186,7 @@ async def cb_casino_crash(cb: CallbackQuery) -> None:
         f"{E_ROCKET} <b>КРАШ</b>\n\n"
         f"{E_DLCOIN} Баланс: <b>{format_number(p['crystals'])}</b> dlcoin\n\n"
         f"<b>Правила:</b>\n"
-        f"• Множитель растёт с 1.00x (медленно)\n"
+        f"• Множитель растёт с 1.00x\n"
         f"• В любой момент может произойти крах\n"
         f"• Успей забрать выигрыш до краха!\n"
         f"• Если не успел — ставка сгорает\n\n"
@@ -5907,7 +5927,7 @@ async def finalize_duel(duel: Duel, winner_is_a: bool, bot: Bot, reason: str = "
 
 
 # ============================================================================
-# CALLBACK HANDLERS — АРЕНА
+# 🔧 CALLBACK HANDLERS — АРЕНА (ИСПРАВЛЕНЫ КНОПКИ БОССОВ)
 # ============================================================================
 
 @router.callback_query(F.data == "arena:menu")
@@ -5931,15 +5951,17 @@ async def cb_arena_bosses(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
+# 🔧 ИСПРАВЛЕНО: правильный regex для кнопок боссов
 @router.callback_query(F.data.regexp(r"^arena:boss:(\w+)$"))
 async def cb_arena_boss_fight(cb: CallbackQuery, bot: Bot) -> None:
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (cb.from_user.id,))
     if not p or cb.from_user.id in ACTIVE_DUELS:
         await cb.answer("Сначала /start или бой уже идёт", show_alert=True)
         return
-    bkey = cb.data.split(":")[2]
-    if bkey not in BOSSES or p["wins"] < BOSSES[bkey]["min_wins"]:
-        await cb.answer(f"Нужно {BOSSES[bkey]['min_wins']} {E_TROPHY} для этого босса.", show_alert=True)
+    # 🔧 Исправлено: корректный парсинг bkey
+    bkey = cb.data.split(":", 2)[2] if ":" in cb.data else ""
+    if not bkey or bkey not in BOSSES or p["wins"] < BOSSES[bkey]["min_wins"]:
+        await cb.answer(f"Нужно {BOSSES.get(bkey, {}).get('min_wins', 0)} {E_TROPHY} для этого босса.", show_alert=True)
         return
     duel = initiate_duel(cb.from_user.id, -1, is_boss=True, boss_key=bkey,
                          reward_mult=BOSSES[bkey]["reward_mult"])
@@ -6012,7 +6034,7 @@ async def cb_arena_find_name(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
 
 
-@router.callback_query(F.data.regexp(r"^duel:pick:(-?\d+)$"))
+@router.callback_query(F.data.regexp(r"^duel:pick:-?\d+$"))
 async def cb_duel_pick(cb: CallbackQuery, bot: Bot) -> None:
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (cb.from_user.id,))
     if not p or cb.from_user.id in ACTIVE_DUELS:
@@ -6030,7 +6052,7 @@ async def cb_duel_pick(cb: CallbackQuery, bot: Bot) -> None:
     await cb.answer()
 
 
-@router.callback_query(F.data.regexp(r"^duel:profile:(-?\d+)$"))
+@router.callback_query(F.data.regexp(r"^duel:profile:-?\d+$"))
 async def cb_duel_profile(cb: CallbackQuery) -> None:
     tid = safe_int_parse(cb.data.split(":")[2], default=0)
     if tid == 0:
@@ -6075,7 +6097,7 @@ async def cb_duel_again(cb: CallbackQuery, bot: Bot) -> None:
     await cb.answer()
 
 
-@router.callback_query(F.data.regexp(r"^duel:variant:(\d+)$"))
+@router.callback_query(F.data.regexp(r"^duel:variant:\d+$"))
 async def cb_duel_variant(cb: CallbackQuery, bot: Bot) -> None:
     duel = ACTIVE_DUELS.get(cb.from_user.id)
     if not duel or duel.finished or duel.get_state_for(cb.from_user.id) != "attacker":
@@ -6105,7 +6127,7 @@ async def cb_duel_variant(cb: CallbackQuery, bot: Bot) -> None:
     await cb.answer("Вариант атаки выбран.")
 
 
-@router.callback_query(F.data.regexp(r"^duel:variant_disabled:(\d+)$"))
+@router.callback_query(F.data.regexp(r"^duel:variant_disabled:\d+$"))
 async def cb_duel_variant_disabled(cb: CallbackQuery) -> None:
     await cb.answer("Эта атака на перезарядке!", show_alert=True)
 
@@ -6407,6 +6429,7 @@ async def fallback_handler(m: Message) -> None:
     db.execute("UPDATE players SET last_active=? WHERE user_id=?", (time.time(), m.from_user.id))
     if m.chat.type == "private":
         await m.answer("Пиши <code>help</code> или пользуйся меню внизу 👇", reply_markup=MENU_KB)
+    # В группах бот молчит на нераспознанные сообщения
 
 
 # ============================================================================

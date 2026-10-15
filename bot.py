@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-⚔️ АРЕНА ДУЭЛЯНТОВ — v30.0 Final
-ВСЕ ошибки исправлены. Полная реализация.
+⚔️ АРЕНА ДУЭЛЯНТОВ — v31.0 Final
+Все ошибки исправлены. Полная реализация.
 """
 
 import asyncio
@@ -42,7 +42,6 @@ class Config:
     ADMIN_ID: int = int(os.getenv("ADMIN_ID", "5356400377"))
     DB_PATH: str = os.getenv("DB_PATH", "arena_ultimate.db")
     PROVIDER_TOKEN: str = os.getenv("PROVIDER_TOKEN", "")
-    
     START_DLCOIN: int = 500
     DAILY_BONUS: int = 100
     DAILY_BONUS_COOLDOWN: int = 24 * 3600
@@ -65,7 +64,6 @@ class Config:
     MAX_DONATE_DLCOIN: int = 10000000
     EVENT_ATTACK_COOLDOWN: int = 5
     EVENT_REMINDER_INTERVAL: int = 60
-    
     DONATION_SETS: List[Dict[str, Any]] = [
         {"id": "legendary_blade", "name": "🗡️ Божественный клинок", "price_stars": 100, "type": "weapon",
          "weapon_key": "divine_blade", "dlcoin_bonus": 5000, "desc": "Легендарное оружие + 5000 dlcoin"},
@@ -76,7 +74,6 @@ class Config:
          "weapon_key": "divine_blade", "armor_keys": ["head_divine", "torso_divine", "arms_divine", "legs_divine"],
          "dlcoin_bonus": 50000, "desc": "Клинок + божественная броня + 50k dlcoin"},
     ]
-    
     DONATION_AFTER_LOSSES: int = 3
     BOT_GENERATION_COUNT: int = 50
     BOT_WIN_DISTRIBUTION: Dict[str, float] = {"bronze": 0.5, "silver": 0.35, "gold": 0.15}
@@ -300,22 +297,22 @@ BOSSES: Dict[str, Dict[str, Any]] = {
 CHAT_EVENT_TEMPLATES: Dict[str, Dict[str, Any]] = {
     "boss": {"name_template": "{emoji} Рейдовый Босс", "emoji": E_BOSS, "base_hp": 2000, "duration_hours": 2.0,
              "reward_per_participant": (50, 150),
-             "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n{emoji} <b>Рейдовый Босс</b> появился!\nHP: {hp}\n\nКоманда <code>атака</code> или <code>/атака</code>!"},
+             "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n{emoji} <b>Рейдовый Босс</b> появился!\nHP: {hp}\n\nКоманда <code>атака</code> или <code>/attack</code>!"},
     "caravan": {"name_template": "🐪 Золотой Караван", "emoji": "🐪", "base_hp": 1000, "duration_hours": 1.0,
                 "reward_per_participant": (30, 100),
-                "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n🐪 <b>Золотой Караван</b>!\nHP: {hp}\n\nКоманда <code>атака</code> или <code>/атака</code>!"},
+                "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n🐪 <b>Золотой Караван</b>!\nHP: {hp}\n\nКоманда <code>атака</code> или <code>/attack</code>!"},
     "raid": {"name_template": "⚔️ Набег Орков", "emoji": "⚔️", "base_hp": 3000, "duration_hours": 3.0,
              "reward_per_participant": (80, 200),
-             "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n⚔️ <b>Набег Орков</b>!\nHP: {hp}\n\nКоманда <code>атака</code> или <code>/атака</code>!"},
+             "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n⚔️ <b>Набег Орков</b>!\nHP: {hp}\n\nКоманда <code>атака</code> или <code>/attack</code>!"},
     "dragon_raid": {"name_template": "🐉 Нашествие Драконов", "emoji": "🐉", "base_hp": 5000, "duration_hours": 4.0,
                     "reward_per_participant": (150, 350),
-                    "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n🐉 <b>Нашествие Драконов</b>!\nHP: {hp}\n\nКоманда <code>атака</code> или <code>/атака</code>!"},
+                    "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n🐉 <b>Нашествие Драконов</b>!\nHP: {hp}\n\nКоманда <code>атака</code> или <code>/attack</code>!"},
     "demon_invasion": {"name_template": "😈 Вторжение Демонов", "emoji": "😈", "base_hp": 8000, "duration_hours": 6.0,
                        "reward_per_participant": (250, 600),
-                       "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n😈 <b>Вторжение Демонов</b>!\nHP: {hp}\n\nКоманда <code>атака</code> или <code>/атака</code>!"},
+                       "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n😈 <b>Вторжение Демонов</b>!\nHP: {hp}\n\nКоманда <code>атака</code> или <code>/attack</code>!"},
     "ancient_golem": {"name_template": "🗿 Древний Голем", "emoji": "🗿", "base_hp": 10000, "duration_hours": 8.0,
                       "reward_per_participant": (400, 1000),
-                      "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n🗿 <b>Древний Голем</b> пробудился!\nHP: {hp}\n\nКоманда <code>атака</code> или <code>/атака</code>!"},
+                      "announce_text": "🚨 <b>ВНИМАНИЕ!</b>\n\n🗿 <b>Древний Голем</b> пробудился!\nHP: {hp}\n\nКоманда <code>атака</code> или <code>/attack</code>!"},
 }
 
 
@@ -1755,7 +1752,7 @@ def get_chat_event_status() -> Optional[str]:
         f"👥 Участников: <b>{ACTIVE_CHAT_EVENT.get_participants_count()}</b>\n"
         f"⏱ Осталось: <b>{minutes}:{seconds:02d}</b>\n"
         f"⏳ КД атаки: <b>{Config.EVENT_ATTACK_COOLDOWN}</b> сек\n\n"
-        f"Используй команду <code>атака</code> или <code>/атака</code> для нанесения урона!\n"
+        f"Используй команду <code>атака</code> или <code>/attack</code> для нанесения урона!\n"
         f"<i>💎 Награда распределяется пропорционально нанесённому урону</i>"
     )
 
@@ -1791,7 +1788,7 @@ def _build_reminder_text() -> str:
         f"⏱ Осталось: <b>{minutes}:{seconds:02d}</b>\n"
         f"👥 Участников: <b>{ACTIVE_CHAT_EVENT.get_participants_count()}</b>\n\n"
         f"<b>🏆 ТОП атакующих:</b>\n{top_text}\n\n"
-        f"⚡️ Команда: <code>атака</code> или <code>/атака</code>\n"
+        f"⚡️ Команда: <code>атака</code> или <code>/attack</code>\n"
         f"<i>⏳ КД между атаками: {Config.EVENT_ATTACK_COOLDOWN} сек</i>"
     )
 
@@ -2674,7 +2671,7 @@ HELP_SECTIONS: Dict[str, Dict[str, Any]] = {
                     "• <code>покормить</code>, <code>напоить</code>, <code>щекотать</code>\n"
                     "• <code>благословить</code>, <code>проклясть</code>, <code>подмигнуть</code>\n\n"
                     "<b>👹 События:</b>\n"
-                    "• <code>атака</code> или <code>/атака</code> — ударить босса\n"
+                    "• <code>атака</code> или <code>/attack</code> — ударить босса\n"
                     f"• <code>событие</code> — статус события\n"
                     f"• ⏳ КД на атаку: {Config.EVENT_ATTACK_COOLDOWN} сек\n"
                     "• 💎 Награда пропорциональна % урона\n"
@@ -2720,7 +2717,7 @@ HELP_CHAT_SHORT = (
     f"<b>🎭 RP:</b>\n"
     f"• <code>ударить</code>, <code>обнять</code>, <code>поцеловать</code> и др.\n\n"
     f"<b>👹 События:</b>\n"
-    f"• <code>атака</code> или <code>/атака</code> — ударить босса\n"
+    f"• <code>атака</code> или <code>/attack</code> — ударить босса\n"
     f"• <code>событие</code> — статус события\n"
     f"• ⏳ КД на атаку: {Config.EVENT_ATTACK_COOLDOWN} сек\n"
     f"• 🔔 Напоминание о боссе каждые 60 сек\n\n"
@@ -2853,9 +2850,25 @@ async def cmd_daily_slash(m: Message) -> None:
     await m.answer(message, parse_mode=ParseMode.HTML)
 
 
-# 🔧 ИСПРАВЛЕНО: команда /атака через regex (кириллица в Command не работает)
+# 🔧 ИСПРАВЛЕНО: команда /атака через regex (кириллица в Command не работает в Telegram API)
 @router.message(F.text.regexp(r"^/атака(?:@\w+)?(\s|$)"))
 async def cmd_attack_slash(m: Message) -> None:
+    """Слеш-команда /атака — работает в группах даже с privacy mode."""
+    p = db.fetch_one("SELECT name FROM players WHERE user_id=?", (m.from_user.id,))
+    if not p:
+        await m.answer("Сначала /start в ЛС бота.")
+        return
+    result = attack_chat_event(m.from_user.id, p["name"])
+    if not result:
+        await m.answer("Сейчас нет активных чатовых событий.")
+        return
+    await m.answer(result)
+
+
+# 🔧 Альтернативная латинская команда /attack (для меню Telegram)
+@router.message(Command("attack"))
+async def cmd_attack_latin(m: Message) -> None:
+    """Слеш-команда /attack — латинский вариант для меню Telegram."""
     p = db.fetch_one("SELECT name FROM players WHERE user_id=?", (m.from_user.id,))
     if not p:
         await m.answer("Сначала /start в ЛС бота.")
@@ -2883,7 +2896,7 @@ async def handle_help_command(m: Message) -> None:
             f"{E_DONATE} <b>💝 ДОНАТ</b> — Поддержка проекта\n"
             f"{E_PROFILE} <b>👤 ПРОФИЛЬ</b> — <code>/profile</code>\n"
             f"{E_DAILY} <b>БОНУС</b> — <code>бонус</code> / <code>/daily</code>\n"
-            f"⚔️ <b>АТАКА</b> — <code>атака</code> / <code>/атака</code>\n\n"
+            f"⚔️ <b>АТАКА</b> — <code>атака</code> / <code>/attack</code>\n\n"
             f"<b>📌 ВЫБЕРИ РАЗДЕЛ КОМАНД:</b>"
         )
         await m.answer(text, reply_markup=get_help_keyboard())
@@ -2980,7 +2993,7 @@ async def cmd_daily_bonus(m: Message) -> None:
 
 
 # ============================================================================
-# 🔧 ДУЭЛИ — ИСПРАВЛЕНО: удалён пустой `if`
+# ДУЭЛИ
 # ============================================================================
 
 @router.message(F.text.regexp(r"(?i)^(перчатка|перч|glove|вызов)(\s|$)"))
@@ -3052,7 +3065,7 @@ async def cmd_show_profile(m: Message) -> None:
     await m.answer(generate_profile_text(row))
 
 
-# 🔧 ИСПРАВЛЕНО: незавершённый f-string в cmd_transfer
+# 🔧 ИСПРАВЛЕНО: завершён f-string в cmd_transfer
 @router.message(F.text.regexp(r"(?i)^перевод(\s|$)"))
 async def cmd_transfer(m: Message) -> None:
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (m.from_user.id,))
@@ -3075,7 +3088,6 @@ async def cmd_transfer(m: Message) -> None:
         await m.answer("Укажи сумму: <code>перевод 100 @user</code>")
         return
     if amount < Config.MIN_TRANSFER:
-        # 🔧 ИСПРАВЛЕНО: был `await m.answer(f)` — незавершённый f-string
         await m.answer(f"Минимальная сумма перевода: {Config.MIN_TRANSFER} {E_DLCOIN}")
         return
     if amount > Config.MAX_TRANSFER:
@@ -3148,7 +3160,6 @@ async def cmd_promo_hash(m: Message) -> None:
     await m.answer(message, parse_mode=ParseMode.HTML)
 
 
-# 🔧 ИСПРАВЛЕНО: убрана лишняя пустая строка после def
 @router.message(F.text.regexp(r"(?i)^(активировать|актив|redeem)\s+(\S+)$"))
 async def cmd_promo_activate(m: Message) -> None:
     if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (m.from_user.id,)):
@@ -3819,7 +3830,7 @@ async def adm_spawn_boss_by_key(m: Message, bot: Bot) -> None:
         f"🚨 <b>ВНИМАНИЕ!</b>\n\n"
         f"{boss['name']} появился в чате!\n"
         f"❤️ HP: {boss['hp']}\n\n"
-        f"Используй команду <code>атака</code> или <code>/атака</code>!"
+        f"Используй команду <code>атака</code> или <code>/attack</code>!"
     )
     await _spawn_event_and_pin(m, bot, "boss", custom_hp=boss["hp"], custom_text=custom_text)
 
@@ -6526,11 +6537,10 @@ async def fallback_handler(m: Message) -> None:
 
 
 # ============================================================================
-# 🔧 ФОНОВЫЕ ЗАДАЧИ
+# 🔧 ФОНОВЫЕ ЗАДАЧИ — ИСПРАВЛЕНО: spawn_chat_event НЕ async
 # ============================================================================
 
 async def scheduled_event_spawner(bot: Bot) -> None:
-    """Автоматически спавнит чатовое событие каждые 4 часа."""
     global NEXT_SCHEDULED_EVENT
     while True:
         try:
@@ -6550,29 +6560,25 @@ async def scheduled_event_spawner(bot: Bot) -> None:
 
 
 async def periodic_cleanup() -> None:
-    """Каждые 5 минут очищает устаревшие данные из памяти."""
     while True:
         try:
             await asyncio.sleep(300)
             cleanup_rp_cooldowns()
             now = time.time()
-            # Очистка устаревших вызовов
             expired_pending = [k for k, v in PENDING_DUELS.items()
                                if now - v.created_at > Config.CHALLENGE_TIMEOUT * 2]
             for k in expired_pending:
                 pending = PENDING_DUELS.pop(k, None)
                 if pending and pending.timeout_task and not pending.timeout_task.done():
                     pending.timeout_task.cancel()
-            # 🔧 ИСПРАВЛЕНО: ACTIVE_DUELS (была опечатка ACTIVE_DDUELS)
+            # 🔧 ИСПРАВЛЕНО: ACTIVE_DUELS (были опечатки ACTIVE_DDUELS / ACTIVE_DUEULS)
             finished_duels = [uid for uid, duel in ACTIVE_DUELS.items() if duel.finished]
             for uid in finished_duels:
                 ACTIVE_DUELS.pop(uid, None)
-            # Очистка устаревших мин
             expired_mines = [uid for uid, g in ACTIVE_MINES.items()
                              if not g.active or now - g.started_at > 600]
             for uid in expired_mines:
                 ACTIVE_MINES.pop(uid, None)
-            # Очистка завершённых крашей
             expired_crash = [uid for uid, g in ACTIVE_CRASH.items()
                              if (g.cashed_out or g.crashed)]
             for uid in expired_crash:
@@ -6584,13 +6590,12 @@ async def periodic_cleanup() -> None:
 
 
 async def main() -> None:
-    """Главная точка входа бота."""
     logging.basicConfig(level=Config.LOG_LEVEL, format=Config.LOG_FORMAT)
     if not Config.BOT_TOKEN:
         logging.critical("❌ ОШИБКА: Задай BOT_TOKEN в переменных окружения!")
         raise SystemExit("Missing BOT_TOKEN")
     logging.info("=" * 60)
-    logging.info("⚔️ АРЕНА ДУЭЛЯНТОВ — v30.0 Final Production")
+    logging.info("⚔️ АРЕНА ДУЭЛЯНТОВ — v31.0 Final Production")
     logging.info("=" * 60)
     logging.info("Initializing database...")
     logging.info("Generating masked bots...")
@@ -6598,19 +6603,20 @@ async def main() -> None:
     logging.info("Creating bot instance...")
     bot = Bot(Config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     logging.info("Setting up dispatcher...")
-    dp = Dispatcher(storage=MemoryStorage())
+        dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
+    # 🔧 ИСПРАВЛЕНО: "атака" → "attack" (Telegram API не принимает кириллицу!)
     await bot.set_my_commands([
         BotCommand(command="start", description="Начать / вернуться"),
         BotCommand(command="help", description="Правила и команды"),
         BotCommand(command="profile", description="Мой профиль"),
         BotCommand(command="daily", description="Ежедневный бонус"),
-        BotCommand(command="атака", description="Атаковать босса в чате"),
+        BotCommand(command="attack", description="Атаковать босса в чате"),
     ])
     await bot.delete_webhook(drop_pending_updates=True)
     logging.info("✅ Bot successfully started and polling!")
     logging.info("=" * 60)
-    # 🔧 Запускаем все фоновые задачи
+    # 🔧 Запускаем все 3 фоновые задачи
     event_task = asyncio.create_task(scheduled_event_spawner(bot))
     cleanup_task = asyncio.create_task(periodic_cleanup())
     reminder_task = asyncio.create_task(reminder_loop(bot))

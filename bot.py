@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-⚔️ АРЕНА ДУЭЛЯНТОВ — v31.0 Final
-+ Изображения персонажа с наложением брони
-+ HP чатовых боссов × 10
-+ Открепление сообщения после победы
-+ Все команды в чатах
+⚔️ АРЕНА ДУЭЛЯНТОВ — v32.0 Final
+Все синтаксические и логические ошибки исправлены.
 """
 
 import asyncio
@@ -37,14 +34,11 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-# 🔧 Pillow для работы с изображениями
 try:
     from PIL import Image
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
-    print("⚠️  Pillow не установлен. Изображения персонажей будут отключены.")
-    print("    Установи: pip install Pillow")
 
 
 # ============================================================================
@@ -57,7 +51,7 @@ class Config:
     DB_PATH: str = os.getenv("DB_PATH", "arena_ultimate.db")
     PROVIDER_TOKEN: str = os.getenv("PROVIDER_TOKEN", "")
     IMAGES_DIR: str = os.getenv("IMAGES_DIR", "images")
-    
+
     START_DLCOIN: int = 500
     DAILY_BONUS: int = 100
     DAILY_BONUS_COOLDOWN: int = 24 * 3600
@@ -80,7 +74,7 @@ class Config:
     MAX_DONATE_DLCOIN: int = 10000000
     EVENT_ATTACK_COOLDOWN: int = 5
     EVENT_REMINDER_INTERVAL: int = 60
-    
+
     DONATION_SETS: List[Dict[str, Any]] = [
         {"id": "legendary_blade", "name": "🗡️ Божественный клинок", "price_stars": 100, "type": "weapon",
          "weapon_key": "divine_blade", "dlcoin_bonus": 5000, "desc": "Легендарное оружие + 5000 dlcoin"},
@@ -91,7 +85,7 @@ class Config:
          "weapon_key": "divine_blade", "armor_keys": ["head_divine", "torso_divine", "arms_divine", "legs_divine"],
          "dlcoin_bonus": 50000, "desc": "Клинок + божественная броня + 50k dlcoin"},
     ]
-    
+
     DONATION_AFTER_LOSSES: int = 3
     BOT_GENERATION_COUNT: int = 50
     BOT_WIN_DISTRIBUTION: Dict[str, float] = {"bronze": 0.5, "silver": 0.35, "gold": 0.15}
@@ -119,7 +113,6 @@ BOT_NAME_GENERATION_ATTEMPTS: int = 300
 MAX_NOTIFICATIONS_PER_USER: int = 15
 PAGINATION_PAGE_SIZE: int = 5
 
-# 🔧 Глобальная переменная для доступа к боту из любых функций
 GLOBAL_BOT: Optional[Bot] = None
 
 
@@ -145,7 +138,7 @@ E_CHARACTER = "🧙"
 
 
 # ============================================================================
-# 🔧 ИГРОВЫЕ ДАННЫЕ — HP БОССОВ × 10
+# ИГРОВЫЕ ДАННЫЕ
 # ============================================================================
 
 ZONES: List[str] = ["head", "torso", "arms", "legs"]
@@ -316,7 +309,6 @@ BOSSES: Dict[str, Dict[str, Any]] = {
 }
 
 
-# 🔧 ИСПРАВЛЕНО: HP чатовых боссов × 10
 CHAT_EVENT_TEMPLATES: Dict[str, Dict[str, Any]] = {
     "boss": {"name_template": "{emoji} Рейдовый Босс", "emoji": E_BOSS, "base_hp": 20000, "duration_hours": 2.0,
              "reward_per_participant": (500, 1500),
@@ -340,11 +332,10 @@ CHAT_EVENT_TEMPLATES: Dict[str, Dict[str, Any]] = {
 
 
 # ============================================================================
-# 🔧 СИСТЕМА ИЗОБРАЖЕНИЙ ПЕРСОНАЖА
+# 🔧 ИЗОБРАЖЕНИЯ ПЕРСОНАЖА
 # ============================================================================
 
 def _get_image_path(filename: str) -> Optional[str]:
-    """Возвращает путь к файлу изображения, если он существует."""
     if not PIL_AVAILABLE:
         return None
     path = os.path.join(Config.IMAGES_DIR, filename)
@@ -354,89 +345,46 @@ def _get_image_path(filename: str) -> Optional[str]:
 
 
 def compose_character_image(user_id: int) -> Optional[bytes]:
-    """
-    Создаёт изображение персонажа с наложенной бронёй и оружием.
-    Возвращает PNG-байты или None, если Pillow недоступен/нет базового изображения.
-    """
     if not PIL_AVAILABLE:
         return None
-    
     base_path = _get_image_path("base.png")
     if not base_path:
         return None
-    
     row = db.fetch_one("SELECT * FROM players WHERE user_id=?", (user_id,))
     if not row:
         return None
-    
     try:
-        # Открываем базовое изображение
         base = Image.open(base_path).convert("RGBA")
-        
-        # Порядок наложения: ноги → торс → руки → голова → оружие
-        # (чтобы оружие было поверх всего)
         layers = []
-        
-        # Ноги
-        legs_key = row["armor_legs"]
-        if legs_key and legs_key != "legs_none":
-            img_path = _get_image_path(f"legs_{legs_key}.png")
-            if img_path:
-                layers.append(img_path)
-        
-        # Торс
-        torso_key = row["armor_torso"]
-        if torso_key and torso_key != "torso_none":
-            img_path = _get_image_path(f"torso_{torso_key}.png")
-            if img_path:
-                layers.append(img_path)
-        
-        # Руки
-        arms_key = row["armor_arms"]
-        if arms_key and arms_key != "arms_none":
-            img_path = _get_image_path(f"arms_{arms_key}.png")
-            if img_path:
-                layers.append(img_path)
-        
-        # Голова
-        head_key = row["armor_head"]
-        if head_key and head_key != "head_none":
-            img_path = _get_image_path(f"head_{head_key}.png")
-            if img_path:
-                layers.append(img_path)
-        
-        # Оружие (поверх всего)
+        for slot in ["legs", "torso", "arms", "head"]:
+            key = row[f"armor_{slot}"]
+            if key and key != f"{slot}_none":
+                img_path = _get_image_path(f"{slot}_{key}.png")
+                if img_path:
+                    layers.append(img_path)
         weapon_key = row["weapon"]
         if weapon_key and weapon_key != "fists":
             img_path = _get_image_path(f"weapon_{weapon_key}.png")
             if img_path:
                 layers.append(img_path)
-        
-        # Накладываем слои
         for layer_path in layers:
             try:
                 layer = Image.open(layer_path).convert("RGBA")
-                # Масштабируем слой под размер базы, если нужно
                 if layer.size != base.size:
                     layer = layer.resize(base.size, Image.Resampling.LANCZOS)
                 base.paste(layer, (0, 0), layer)
             except Exception as e:
                 logging.warning(f"Failed to load layer {layer_path}: {e}")
-                continue
-        
-        # Конвертируем в PNG-байты
         buffer = io.BytesIO()
         base.save(buffer, format="PNG")
         buffer.seek(0)
         return buffer.getvalue()
-    
     except Exception as e:
         logging.error(f"compose_character_image error: {e}")
         return None
 
 
 async def send_character_image(bot: Bot, chat_id: int, user_id: int, caption: str = "") -> bool:
-    """Отправляет изображение персонажа в чат."""
     image_bytes = compose_character_image(user_id)
     if not image_bytes:
         return False
@@ -451,6 +399,24 @@ async def send_character_image(bot: Bot, chat_id: int, user_id: int, caption: st
     except Exception as e:
         logging.error(f"send_character_image error: {e}")
         return False
+
+
+# 🔧 Универсальная функция показа персонажа (исправляет дублирование)
+async def _show_character(bot: Bot, chat_id: int, user_id: int) -> None:
+    row = db.fetch_one("SELECT * FROM players WHERE user_id=?", (user_id,))
+    if not row:
+        await bot.send_message(chat_id, "Профиль не найден.")
+        return
+    caption = (
+        f"{E_CHARACTER} <b>{esc(row['name'])}</b>\n"
+        f"{E_TROPHY} Победы: <b>{row['wins']}</b>\n"
+        f"{E_DLCOIN} Баланс: <b>{format_number(row['crystals'])}</b> dlcoin\n"
+        f"📍 {ARENAS[determine_arena(row['wins'])]['emoji']} {ARENAS[determine_arena(row['wins'])]['name']}"
+    )
+    sent = await send_character_image(bot, chat_id, user_id, caption)
+    if not sent:
+        text = generate_profile_text(row)
+        await bot.send_message(chat_id, text, parse_mode=ParseMode.HTML)
 
 
 # ============================================================================
@@ -1530,7 +1496,7 @@ def format_game_result(title: str, emoji: str, won: bool, bet: int,
 
 
 # ============================================================================
-# 🔧 ЧАТОВЫЕ СОБЫТИЯ — С ОТКРЕПЛЕНИЕМ ПОСЛЕ ПОБЕДЫ
+# ЧАТОВЫЕ СОБЫТИЯ
 # ============================================================================
 
 def is_admin(uid: int) -> bool:
@@ -1598,21 +1564,15 @@ def attack_chat_event(attacker_id: int, attacker_name: str) -> Optional[str]:
     return log_entry
 
 
-# 🔧 ИСПРАВЛЕНО: открепление сообщения после победы
 def _finish_event_with_proportional_rewards() -> str:
     global ACTIVE_CHAT_EVENT
     if not ACTIVE_CHAT_EVENT:
         return ""
-    
     ACTIVE_CHAT_EVENT.active = False
-    
-    # 🔧 Сохраняем данные для открепления ДО обнуления
     chat_id = ACTIVE_CHAT_EVENT.chat_id
     message_id = ACTIVE_CHAT_EVENT.message_id
     reminder_message_id = ACTIVE_CHAT_EVENT.reminder_message_id
-    
     db.execute("UPDATE chat_events SET active=0 WHERE event_id=?", (ACTIVE_CHAT_EVENT.event_id,))
-    
     template = CHAT_EVENT_TEMPLATES.get(ACTIVE_CHAT_EVENT.event_type, {})
     reward_range = template.get("reward_per_participant", (300, 1000))
     total_base_reward = len(ACTIVE_CHAT_EVENT.participants) * ((reward_range[0] + reward_range[1]) // 2)
@@ -1643,25 +1603,22 @@ def _finish_event_with_proportional_rewards() -> str:
         f"💎 Общий пул наград: <b>{total_base_reward}</b> {E_DLCOIN}\n\n"
         f"<b>🏆 ТОП-5 бойцов:</b>\n" + "\n".join(top_text_lines)
     )
-    
-    # 🔧 Открепляем сообщение с боссом после победы
+    # 🔧 Открепление через ensure_future (работает из синхронного контекста)
     bot = GLOBAL_BOT
     if bot and chat_id:
-        # Открепляем основное сообщение
         if message_id:
-            try:
-                asyncio.create_task(bot.unpin_chat_message(chat_id=chat_id, message_id=message_id))
-            except Exception as e:
-                logging.warning(f"Failed to unpin main message: {e}")
-        # Открепляем сообщение напоминания
-        if reminder_message_id:
-            try:
-                asyncio.create_task(bot.unpin_chat_message(chat_id=chat_id, message_id=reminder_message_id))
-            except Exception as e:
-                logging.warning(f"Failed to unpin reminder message: {e}")
-    
+            asyncio.ensure_future(_safe_unpin(bot, chat_id, message_id))
+        if reminder_message_id and reminder_message_id != message_id:
+            asyncio.ensure_future(_safe_unpin(bot, chat_id, reminder_message_id))
     ACTIVE_CHAT_EVENT = None
     return log_entry
+
+
+async def _safe_unpin(bot: Bot, chat_id: int, message_id: int) -> None:
+    try:
+        await bot.unpin_chat_message(chat_id=chat_id, message_id=message_id)
+    except Exception as e:
+        logging.warning(f"Failed to unpin {message_id}: {e}")
 
 
 def get_chat_event_status() -> Optional[str]:
@@ -2068,7 +2025,7 @@ def generate_gear_screen(uid: int) -> Tuple[str, Optional[InlineKeyboardMarkup]]
         ("⚔️ Оружие", "gear:w", "primary"),
         ("🛡 Броня", "gear:armor_menu", "primary"),
         (f"{E_CHARACTER} Показать персонажа", "character:show", "success"),
-        (f"{E_PROFILE} Мой профиль", "duel:myprofile", "success"),
+        (f"{E_PROFILE} Мой профиль", "duel:myprofile", "primary"),
         (f"{E_BACK} Назад", "arena:menu", "danger"),
     ])
     return "\n".join(lines), kb
@@ -2471,7 +2428,7 @@ def get_roulette_number_kb(bet: int) -> InlineKeyboardMarkup:
     for i in range(0, 37):
         buttons.append((f"{i} (×36)", f"casino:roulette:num:{bet}:{i}", "danger"))
     buttons.append((f"{E_BACK} Назад", "casino:roulette", "success"))
-    return build_horizontal_keyboard([(t, c) for t, c, _ in [(b[0], b[1], "danger") for b in buttons]], 4)
+    return build_horizontal_keyboard([(t, c) for t, c, _ in buttons], 4)
 
 
 def get_roulette_dozen_kb(bet: int) -> InlineKeyboardMarkup:
@@ -2782,36 +2739,18 @@ async def cmd_daily_slash(m: Message) -> None:
     await m.answer(message, parse_mode=ParseMode.HTML)
 
 
-# 🔧 НОВОЕ: команда /character — показать персонажа с бронёй
+# ✅ /character — показ персонажа
 @router.message(Command("character"))
 async def cmd_character_slash(m: Message, bot: Bot) -> None:
-    """Слеш-команда /character — показывает изображение персонажа."""
     if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (m.from_user.id,)):
         await m.answer("Сначала отправь /start в ЛС бота.")
         return
-    row = db.fetch_one("SELECT * FROM players WHERE user_id=?", (m.from_user.id,))
-    if not row:
-        await m.answer("Профиль не найден.")
-        return
-    
-    caption = (
-        f"{E_CHARACTER} <b>{esc(row['name'])}</b>\n"
-        f"{E_TROPHY} Победы: <b>{row['wins']}</b>\n"
-        f"{E_DLCOIN} Баланс: <b>{format_number(row['crystals'])}</b> dlcoin\n"
-        f"📍 {ARENAS[determine_arena(row['wins'])]['emoji']} {ARENAS[determine_arena(row['wins'])]['name']}"
-    )
-    
-    sent = await send_character_image(bot, m.chat.id, m.from_user.id, caption)
-    if not sent:
-        # Если изображения нет — показываем текстовый профиль
-        text = generate_profile_text(row)
-        await m.answer(text, parse_mode=ParseMode.HTML)
+    await _show_character(bot, m.chat.id, m.from_user.id)
 
 
-# ✅ Латиница /attack — валидная команда для Telegram Bot API
+# ✅ /attack — атака босса
 @router.message(Command("attack"))
 async def cmd_attack_slash(m: Message) -> None:
-    """Слеш-команда /attack — работает в группах даже с privacy mode."""
     p = db.fetch_one("SELECT name FROM players WHERE user_id=?", (m.from_user.id,))
     if not p:
         await m.answer("Сначала /start в ЛС бота.")
@@ -2821,44 +2760,6 @@ async def cmd_attack_slash(m: Message) -> None:
         await m.answer("Сейчас нет активных чатовых событий.")
         return
     await m.answer(result)
-
-
-# ✅ Текстовая команда "атака" — работает и в ЛС, и в группах
-@router.message(F.text.regexp(r"(?i)^атака(\s|$)"))
-async def cmd_attack_event(m: Message) -> None:
-    p = db.fetch_one("SELECT name FROM players WHERE user_id=?", (m.from_user.id,))
-    if not p:
-        await m.answer("Сначала /start в ЛС бота.")
-        return
-    result = attack_chat_event(m.from_user.id, p["name"])
-    if not result:
-        await m.answer("Сейчас нет активных чатовых событий. Напиши админу: <code>событие босс</code>")
-        return
-    await m.answer(result)
-
-
-# ✅ Текстовая команда "персонаж" — показывает изображение
-@router.message(F.text.regexp(r"(?i)^(персонаж|character|чар)(\s|$)"))
-async def cmd_character_text(m: Message, bot: Bot) -> None:
-    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (m.from_user.id,)):
-        await m.answer("Сначала отправь /start в ЛС бота.")
-        return
-    row = db.fetch_one("SELECT * FROM players WHERE user_id=?", (m.from_user.id,))
-    if not row:
-        await m.answer("Профиль не найден.")
-        return
-    
-    caption = (
-        f"{E_CHARACTER} <b>{esc(row['name'])}</b>\n"
-        f"{E_TROPHY} Победы: <b>{row['wins']}</b>\n"
-        f"{E_DLCOIN} Баланс: <b>{format_number(row['crystals'])}</b> dlcoin\n"
-        f"📍 {ARENAS[determine_arena(row['wins'])]['emoji']} {ARENAS[determine_arena(row['wins'])]['name']}"
-    )
-    
-    sent = await send_character_image(bot, m.chat.id, m.from_user.id, caption)
-    if not sent:
-        text = generate_profile_text(row)
-        await m.answer(text, parse_mode=ParseMode.HTML)
 
 
 @router.message(F.text.regexp(r"(?i)^(help|помощь|хелп)$"))
@@ -3085,6 +2986,29 @@ async def cmd_transfer(m: Message) -> None:
         f"💰 Налог: {tax} ({Config.TRANSFER_TAX * 100:.0f}%)"
     )
     notify_player(tid, f"{E_DLCOIN} <b>{esc(p['name'])}</b> перевёл тебе <b>{net_amount}</b> dlcoin!")
+
+
+# ✅ Текстовая команда "атака"
+@router.message(F.text.regexp(r"(?i)^атака(\s|$)"))
+async def cmd_attack_event(m: Message) -> None:
+    p = db.fetch_one("SELECT name FROM players WHERE user_id=?", (m.from_user.id,))
+    if not p:
+        await m.answer("Сначала /start в ЛС бота.")
+        return
+    result = attack_chat_event(m.from_user.id, p["name"])
+    if not result:
+        await m.answer("Сейчас нет активных чатовых событий. Напиши админу: <code>событие босс</code>")
+        return
+    await m.answer(result)
+
+
+# ✅ Текстовая команда "персонаж"
+@router.message(F.text.regexp(r"(?i)^(персонаж|character|чар)(\s|$)"))
+async def cmd_character_text(m: Message, bot: Bot) -> None:
+    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (m.from_user.id,)):
+        await m.answer("Сначала отправь /start в ЛС бота.")
+        return
+    await _show_character(bot, m.chat.id, m.from_user.id)
 
 
 @router.message(F.text.regexp(r"(?i)^(событие|статус\s+события)$"))
@@ -3786,7 +3710,7 @@ async def adm_spawn_boss_by_key(m: Message, bot: Bot) -> None:
         return
     parts = m.text.split()
     if len(parts) < 2:
-        await m.answer(f"❌ Использование: <code>босс goblin</code>")
+        await m.answer("❌ Использование: <code>босс goblin</code>")
         return
     bkey = parts[1].lower()
     if bkey not in BOSSES:
@@ -4154,25 +4078,8 @@ async def cb_character_show(cb: CallbackQuery, bot: Bot) -> None:
     if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
         await cb.answer("Сначала /start", show_alert=True)
         return
-    row = db.fetch_one("SELECT * FROM players WHERE user_id=?", (cb.from_user.id,))
-    if not row:
-        await cb.answer("Профиль не найден.", show_alert=True)
-        return
-    
-    caption = (
-        f"{E_CHARACTER} <b>{esc(row['name'])}</b>\n"
-        f"{E_TROPHY} Победы: <b>{row['wins']}</b>\n"
-        f"{E_DLCOIN} Баланс: <b>{format_number(row['crystals'])}</b> dlcoin\n"
-        f"📍 {ARENAS[determine_arena(row['wins'])]['emoji']} {ARENAS[determine_arena(row['wins'])]['name']}"
-    )
-    
     await cb.answer()
-    
-    sent = await send_character_image(bot, cb.from_user.id, cb.from_user.id, caption)
-    if not sent:
-        # Если изображения нет — показываем текстовый профиль
-        text = generate_profile_text(row)
-        await cb.message.answer(text, parse_mode=ParseMode.HTML)
+    await _show_character(bot, cb.from_user.id, cb.from_user.id)
 
 
 # ============================================================================
@@ -5464,6 +5371,11 @@ async def cb_crash_manual_bet(cb: CallbackQuery, state: FSMContext) -> None:
 async def handle_manual_bet(m: Message, state: FSMContext, bot: Bot) -> None:
     data = await state.get_data()
     game = data.get("manual_bet_game")
+    # 🔧 ИСПРАВЛЕНО: проверка game на None
+    if not game:
+        await state.clear()
+        await m.answer("❌ Ошибка: игра не выбрана. Начни заново.")
+        return
     if m.text.lower() in ["отмена", "cancel", "назад"]:
         await state.clear()
         text, kb = generate_casino_menu(m.from_user.id)
@@ -5841,24 +5753,36 @@ def initiate_duel(a_id: int, b_id: int, is_boss: bool = False, boss_key: Optiona
     return duel
 
 
-async def initiate_duel_message(aid: int, bid: int, m: Message, bot: Bot, is_boss: bool = False,
+# 🔧 ИСПРАВЛЕНО: проверка m на None
+async def initiate_duel_message(aid: int, bid: int, m: Optional[Message], bot: Bot, is_boss: bool = False,
                                  boss_key: Optional[str] = None, reward_mult: int = 1) -> None:
     if bid == aid:
-        await m.answer("🤨 Нельзя драться с самим собой.")
+        if m:
+            await m.answer("🤨 Нельзя драться с самим собой.")
         return
     if aid in ACTIVE_DUELS:
-        await m.answer("У тебя уже идёт активный бой.")
+        if m:
+            await m.answer("У тебя уже идёт активный бой.")
         return
     duel = initiate_duel(aid, bid, is_boss, boss_key, reward_mult)
     if not duel:
-        await m.answer("Не удалось начать бой.")
+        if m:
+            await m.answer("Не удалось начать бой.")
         return
     role = duel.get_state_for(aid)
+    target_msg = m if m else None
     if role == "attacker":
-        await m.answer(
-            generate_duel_status_text(duel, aid, timer_left=Config.TURN_TIMEOUT),
-            reply_markup=get_attack_variant_kb(aid)
-        )
+        if target_msg:
+            await target_msg.answer(
+                generate_duel_status_text(duel, aid, timer_left=Config.TURN_TIMEOUT),
+                reply_markup=get_attack_variant_kb(aid)
+            )
+        else:
+            await bot.send_message(
+                aid,
+                generate_duel_status_text(duel, aid, timer_left=Config.TURN_TIMEOUT),
+                reply_markup=get_attack_variant_kb(aid)
+            )
         start_duel_timer(duel, aid, "attacker", bot)
     else:
         atk_id = duel.get_attacker_id()
@@ -5866,18 +5790,34 @@ async def initiate_duel_message(aid: int, bid: int, m: Message, bot: Bot, is_bos
             variant_idx = bot_decide_attack_variant(duel.get_attacker())
             duel.chosen_variant_idx = variant_idx
             duel.atk_zone = bot_decide_attack_zone(duel.get_attacker(), duel.get_defender())
-            await m.answer(
-                generate_duel_status_text(duel, aid, extra="⚔️ Соперник уже выбрал удар.",
-                                          timer_left=Config.TURN_TIMEOUT),
-                reply_markup=get_defend_zone_kb()
-            )
+            if target_msg:
+                await target_msg.answer(
+                    generate_duel_status_text(duel, aid, extra="⚔️ Соперник уже выбрал удар.",
+                                              timer_left=Config.TURN_TIMEOUT),
+                    reply_markup=get_defend_zone_kb()
+                )
+            else:
+                await bot.send_message(
+                    aid,
+                    generate_duel_status_text(duel, aid, extra="⚔️ Соперник уже выбрал удар.",
+                                              timer_left=Config.TURN_TIMEOUT),
+                    reply_markup=get_defend_zone_kb()
+                )
             start_duel_timer(duel, aid, "defender", bot)
         else:
-            await m.answer(
-                generate_duel_status_text(duel, aid, extra="⏳ Соперник выбирает удар…"),
-                reply_markup=build_vertical_keyboard_with_styles(
-                    [(f"{E_REFRESH} Обновить", "duel:refresh", "primary")])
-            )
+            if target_msg:
+                await target_msg.answer(
+                    generate_duel_status_text(duel, aid, extra="⏳ Соперник выбирает удар…"),
+                    reply_markup=build_vertical_keyboard_with_styles(
+                        [(f"{E_REFRESH} Обновить", "duel:refresh", "primary")])
+                )
+            else:
+                await bot.send_message(
+                    aid,
+                    generate_duel_status_text(duel, aid, extra="⏳ Соперник выбирает удар…"),
+                    reply_markup=build_vertical_keyboard_with_styles(
+                        [(f"{E_REFRESH} Обновить", "duel:refresh", "primary")])
+                )
     if bid > 0 and not is_boss:
         attacker_name = db.fetch_one("SELECT name FROM players WHERE user_id=?", (aid,))["name"]
         notify_player(bid, f"{E_GLOVE} <b>{esc(attacker_name)}</b> кинул тебе перчатку!")
@@ -6391,11 +6331,21 @@ async def cb_buy_weapon(cb: CallbackQuery) -> None:
     await cb.answer(toast)
 
 
+@router.callback_query(F.data == "gear:armor_menu")
+async def cb_gear_armor_menu(cb: CallbackQuery) -> None:
+    if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
+        await cb.answer("Сначала /start", show_alert=True)
+        return
+    text, kb = generate_armor_slot_menu(cb.from_user.id)
+    await safe_edit_message(cb, text, kb)
+    await cb.answer()
+
+
+# 🔧 ИСПРАВЛЕНО: "Сначала /start" вместо "\n/start"
 @router.callback_query(F.data.regexp(r"^gear:(head|torso|arms|legs)$"))
 async def cb_gear_armor_slot(cb: CallbackQuery) -> None:
     if not db.fetch_one("SELECT 1 FROM players WHERE user_id=?", (cb.from_user.id,)):
-        await cb.answer("
-/start", show_alert=True)
+        await cb.answer("Сначала /start", show_alert=True)
         return
     slot = cb.data.split(":")[1]
     text, kb = generate_armor_slot_list(cb.from_user.id, slot)
@@ -6526,11 +6476,10 @@ async def fallback_handler(m: Message) -> None:
 
 
 # ============================================================================
-# 🔧 ФОНОВЫЕ ЗАДАЧИ
+# ФОНОВЫЕ ЗАДАЧИ
 # ============================================================================
 
 async def scheduled_event_spawner(bot: Bot) -> None:
-    """Автоматически спавнит чатовое событие каждые 4 часа."""
     global NEXT_SCHEDULED_EVENT
     while True:
         try:
@@ -6540,7 +6489,7 @@ async def scheduled_event_spawner(bot: Bot) -> None:
                 continue
             event_types = list(CHAT_EVENT_TEMPLATES.keys())
             event_type = random.choice(event_types)
-            # 🔧 spawn_chat_event НЕ async — вызываем без await
+            # ✅ spawn_chat_event НЕ async — вызываем без await
             event = spawn_chat_event(event_type, 0, bot)
             if event:
                 logging.info(f"Scheduled event spawned: {event.name}")
@@ -6549,30 +6498,26 @@ async def scheduled_event_spawner(bot: Bot) -> None:
             await asyncio.sleep(60)
 
 
+# 🔧 ИСПРАВЛЕНО: ACTIVE_DUELS (не ACTIVE_DDUELS)
 async def periodic_cleanup() -> None:
-    """Каждые 5 минут очищает устаревшие данные из памяти."""
     while True:
         try:
             await asyncio.sleep(300)
             cleanup_rp_cooldowns()
             now = time.time()
-            # Очистка устаревших вызовов
             expired_pending = [k for k, v in PENDING_DUELS.items()
                                if now - v.created_at > Config.CHALLENGE_TIMEOUT * 2]
             for k in expired_pending:
                 pending = PENDING_DUELS.pop(k, None)
                 if pending and pending.timeout_task and not pending.timeout_task.done():
                     pending.timeout_task.cancel()
-            # 🔧 ИСПРАВЛЕНО: ACTIVE_DUELS (была опечатка ACTIVE_DDUELS)
             finished_duels = [uid for uid, duel in ACTIVE_DUELS.items() if duel.finished]
             for uid in finished_duels:
                 ACTIVE_DUELS.pop(uid, None)
-            # Очистка устаревших мин
             expired_mines = [uid for uid, g in ACTIVE_MINES.items()
                              if not g.active or now - g.started_at > 600]
             for uid in expired_mines:
                 ACTIVE_MINES.pop(uid, None)
-            # Очистка завершённых крашей
             expired_crash = [uid for uid, g in ACTIVE_CRASH.items()
                              if (g.cashed_out or g.crashed)]
             for uid in expired_crash:
@@ -6584,7 +6529,11 @@ async def periodic_cleanup() -> None:
 
 
 # ============================================================================
-# 🔧 MAIN — ИСПРАВЛЕНО: только латиница в командах + GLOBAL_BOT
+# MAIN
+# ============================================================================
+
+# ============================================================================
+# 🔧 MAIN — ИСПРАВЛЕНО: закрытие сессии + только латиница в командах
 # ============================================================================
 
 async def main() -> None:
@@ -6594,13 +6543,13 @@ async def main() -> None:
         logging.critical("❌ ОШИБКА: Задай BOT_TOKEN в переменных окружения!")
         raise SystemExit("Missing BOT_TOKEN")
     logging.info("=" * 60)
-    logging.info("⚔️ АРЕНА ДУЭЛЯНТОВ — v31.0 Final Production")
+    logging.info("⚔️ АРЕНА ДУЭЛЯНТОВ — v32.0 Final Production")
     logging.info("=" * 60)
     logging.info("Initializing database...")
     logging.info("Generating masked bots...")
     ensure_masked_bots_exist(Config.BOT_GENERATION_COUNT)
     logging.info("Creating bot instance...")
-    # ✅ Явно создаём сессию
+    # ✅ Явно создаём сессию для корректного закрытия
     session = AiohttpSession()
     bot = Bot(
         token=Config.BOT_TOKEN,
@@ -6612,7 +6561,7 @@ async def main() -> None:
     logging.info("Setting up dispatcher...")
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
-    # 🔧 ИСПРАВЛЕНО: только латиница в именах команд!
+    # ✅ Только латиница в именах команд (исправляет BOT_COMMAND_INVALID)
     try:
         await bot.set_my_commands([
             BotCommand(command="start", description="Начать / вернуться"),
@@ -6641,13 +6590,14 @@ async def main() -> None:
     except Exception as e:
         logging.critical(f"Fatal error: {e}\n{traceback.format_exc()}")
     finally:
+        # ✅ Корректно отменяем все фоновые задачи
         for task in (event_task, cleanup_task, reminder_task):
             task.cancel()
             try:
                 await task
             except (asyncio.CancelledError, Exception):
                 pass
-        # ✅ Корректно закрываем сессию
+        # ✅ Корректно закрываем сессию (устраняет "Unclosed connector")
         try:
             await bot.session.close()
         except Exception as e:
@@ -6667,5 +6617,3 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Fatal error: {e}")
         traceback.print_exc()
-
-@router.callback_query(F.data.regexp(r"^gear:(head|torso|arms|legs)$"))

@@ -6394,7 +6394,7 @@ async def cb_buy_armor(cb: CallbackQuery) -> None:
 async def cb_top_leaderboard(cb: CallbackQuery) -> None:
     p = db.fetch_one("SELECT * FROM players WHERE user_id=?", (cb.from_user.id,))
     if not p:
-        await cb.answer("Сначала /start", show_alert=True)
+        await cb.answer("/start", show_alert=True)
         return
     key = cb.data.split(":")[1]
     if key == "cur":
